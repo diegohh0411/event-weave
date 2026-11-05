@@ -47,3 +47,23 @@ def test_mark_done_without_active_jobs(service, good_config):
     with session_scope(service.engine) as session:
         assert mark_done_if_finished(session, run)
     assert service.status(run).state == RunState.done
+
+@pytest.mark.parametrize("changed_stage,equal", [(Stage.cluster, True), (Stage.provide, False)])
+def test_provider_hash_uses_only_normalized_provider_choice(service, good_config, changed_stage, equal):
+    import hashlib
+    import sqlalchemy as sa
+    from weave_core.schema import jobs, runs
+    other = good_config.model_copy(deep=True)
+    other.stages[changed_stage].settings = {"window": 9}
+    ids = [service.create(cfg).run_id for cfg in (good_config, other)]
+    for run in ids:
+        service.start(run)
+    with service.engine.connect() as conn:
+        rows = [conn.execute(sa.select(jobs).where(jobs.c.run_id == run)).one() for run in ids]
+        configs = [conn.execute(sa.select(runs).where(runs.c.id == run)).one() for run in ids]
+    assert configs[0].config_hash != configs[1].config_hash
+    expected = hashlib.sha256(b'{"adapter":"fake-provider","deployments":{},"settings":{"window":1}}').hexdigest()
+    assert rows[0].unit_content_hash == rows[0].input_hash == expected
+    assert (rows[0].input_hash == rows[1].input_hash) == equal
+    assert rows[1].unit_content_hash == rows[1].input_hash
+    assert configs[0].config_hash == config_hash(validate(good_config, service.registry, service.catalog))

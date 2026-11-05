@@ -1,3 +1,5 @@
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -68,7 +70,10 @@ class RunService:
     def start(self, run_id):
         now = datetime.now(timezone.utc)
         with session_scope(self.engine) as session:
-            digest = self._transition(session, run_id, RunState.created, RunState.running, started_at=now)
+            self._transition(session, run_id, RunState.created, RunState.running, started_at=now)
+            config = session.execute(sa.select(runs.c.config).where(runs.c.id == run_id)).scalar_one()
+            provider = RunConfig.model_validate(config).stages[Stage.provide]
+            digest = hashlib.sha256(json.dumps(provider.model_dump(mode='json'), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
             session.execute(jobs.insert().values(run_id=run_id, stage=Stage.provide, unit_kind=UnitKind.run, unit_id=str(run_id), unit_content_hash=digest, partition='*', order_key=[], input_hash=digest, status=JobStatus.pending, available_at=now))
 
     def cancel(self, run_id):
