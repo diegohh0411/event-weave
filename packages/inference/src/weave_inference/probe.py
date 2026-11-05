@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import os
-from contextvars import ContextVar
 from collections.abc import Mapping
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 
 import httpx
@@ -59,23 +58,25 @@ def _from_architecture(data: dict) -> Listing:
 
 
 def _list_llamacpp(client: httpx.Client, p: Provider, headers: dict, env) -> Listing:
-    return _from_architecture(_get(client, f'{p.base_url.rstrip("/")}/models', headers))
+    data, server = _get(client, f'{p.base_url.rstrip("/")}/models', headers)
+    return _from_architecture(data), server
 
 
 def _list_openrouter(client, p, headers, env) -> Listing:
     base = p.base_url.rstrip('/')
-    listing = _from_architecture(_get(client, f'{base}/models', headers))
+    data, server = _get(client, f'{base}/models', headers)
+    listing = _from_architecture(data)
     try:  # embeddings models are listed separately; best effort
         listing.update({k: frozenset({Capability.embeddings})
-                        for k in _from_architecture(_get(client, f'{base}/embeddings/models', headers))})
+                        for k in _from_architecture(_get(client, f'{base}/embeddings/models', headers)[0])})
     except httpx.HTTPError:
         pass
-    return listing
+    return listing, server
 
 
 def _list_typesafe(client, p, headers, env) -> Listing:
-    data = _get(client, f'{p.base_url.rstrip("/")}/v1/models', headers)
-    return {m['id']: frozenset({Capability.system_one}) for m in _entries(data)}
+    data, server = _get(client, f'{p.base_url.rstrip("/")}/v1/models', headers)
+    return {m['id']: frozenset({Capability.system_one}) for m in _entries(data)}, server
 
 
 def _cloudflare_caps(task: str) -> frozenset[Capability]:
@@ -89,19 +90,15 @@ def _cloudflare_caps(task: str) -> frozenset[Capability]:
 
 def _list_cloudflare(client, p, headers, env) -> Listing:
     account = env['CLOUDFLARE_ACCOUNT_ID']
-    data = _get(client, f'{p.base_url.rstrip("/")}/accounts/{account}/ai/models/search', headers)
+    data, server = _get(client, f'{p.base_url.rstrip("/")}/accounts/{account}/ai/models/search', headers)
     return {m['name']: _cloudflare_caps((m.get('task') or {}).get('name', ''))
-            for m in data.get('result', []) if isinstance(m, dict) and 'name' in m}
+            for m in data.get('result', []) if isinstance(m, dict) and 'name' in m}, server
 
 
-_server: ContextVar[str | None] = ContextVar('server', default=None)
-
-
-def _get(client: httpx.Client, url: str, headers: dict) -> dict:
+def _get(client: httpx.Client, url: str, headers: dict) -> tuple[dict, str | None]:
     r = client.get(url, headers=headers)
     r.raise_for_status()
-    _server.set(r.headers.get('server'))
-    return r.json()
+    return r.json(), r.headers.get('server')
 
 
 # Generic OpenAI-compatible server: GET {base}/models, capability from architecture if given, else llm.
@@ -120,13 +117,11 @@ def _probe_provider(catalog: Catalog, p: Provider, deployments: list[Deployment]
     if missing:
         return {d.id: _not_ready(f'credential missing: {missing[0]}') for d in deployments}
     headers = {'authorization': f'Bearer {env[p.credential_env]}'} if p.credential_env else {}
-    _server.set(None)
     try:
         with httpx.Client(transport=transport, timeout=timeout) as client:
-            listing = _LISTERS[p.kind](client, p, headers, env)
-    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+            listing, version = _LISTERS[p.kind](client, p, headers, env)
+    except (httpx.HTTPError, ValueError, TypeError):
         return {d.id: _not_ready('unreachable') for d in deployments}
-    version = _server.get()
     out = {}
     for d in deployments:
         wanted = d.settings.get('remote_model') or d.model
@@ -150,10 +145,19 @@ def probe(catalog: Catalog, env: Mapping[str, str] = os.environ,
         by_provider.setdefault(d.provider, []).append(d)
     result: dict[str, Readiness] = {}
     if by_provider:
-        with ThreadPoolExecutor(max_workers=len(by_provider)) as pool:
-            futures = [pool.submit(_probe_provider, catalog, catalog.providers[pid], deps, env, transport, timeout)
-                       for pid, deps in by_provider.items()]
-            for f in futures:
-                result.update(f.result())
+        # One wall-clock deadline for all providers (they run concurrently); a provider
+        # that has not answered by then is unreachable, whatever its sockets are doing.
+        pool = ThreadPoolExecutor(max_workers=len(by_provider))
+        try:
+            futures = {pool.submit(_probe_provider, catalog, catalog.providers[pid], deps, env, transport, timeout): deps
+                       for pid, deps in by_provider.items()}
+            wait(futures, timeout=timeout + 0.05)
+            for f, deps in futures.items():
+                if f.done():
+                    result.update(f.result())
+                else:
+                    result.update({d.id: _not_ready('unreachable') for d in deps})
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
     catalog.readiness = result
     return result

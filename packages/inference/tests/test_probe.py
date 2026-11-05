@@ -166,3 +166,18 @@ def test_run_refused_when_deployment_asks_system_one_of_plain_lm(tmp_path):
         with admin.connect() as c:
             c.exec_driver_sql(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
         admin.dispose()
+
+
+def test_blocking_provider_bounded_by_wall_clock_timeout():
+    import time
+    def handler(request):
+        if request.url.host == LOCAL:
+            time.sleep(1.5)
+        return httpx.Response(200, json=fixture("typesafe"))
+    t0 = time.monotonic()
+    r = probe(cat_with("lfm2-d1-q8@local", "jev-1.14.0@typesafe"), env={"TYPESAFE_API_KEY": "k"},
+              transport=httpx.MockTransport(handler), timeout=0.2)
+    elapsed = time.monotonic() - t0
+    assert elapsed < 1.0
+    assert r["lfm2-d1-q8@local"].render() == "not ready: unreachable"
+    assert r["jev-1.14.0@typesafe"].render() == "ready"
