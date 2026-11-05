@@ -127,3 +127,15 @@ def test_limiter_for_is_per_deployment_and_process_wide():
     b = Deployment(id="b1", model="m", provider="p", rate=RateLimit(concurrency=1))
     assert limiter_for(a) is limiter_for(a)
     assert limiter_for(a) is not limiter_for(b)
+
+
+def test_other_transport_errors_retry_then_typed_provider_error():
+    c = client(httpx.ReadError("boom"), httpx.RemoteProtocolError("bad"), httpx.ReadError("boom"))
+    with pytest.raises(ProviderError) as e:
+        send_with_retries(c, req(), lim(), sleep=lambda s: None)
+    assert len(c.calls) == 3 and e.value.retryable is True
+
+
+def test_retry_after_nan_is_ignored():
+    assert parse_retry_after("nan") is None
+    assert parse_retry_after("inf") is None

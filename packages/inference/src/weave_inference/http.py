@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import random
 import threading
 import time
@@ -64,6 +65,8 @@ def parse_retry_after(value: str | None, *, now: datetime | None = None) -> floa
         if when.tzinfo is None:
             when = when.replace(tzinfo=timezone.utc)
         seconds = (when - (now or datetime.now(timezone.utc))).total_seconds()
+    if not math.isfinite(seconds):
+        return None
     return min(max(seconds, 0.0), MAX_RETRY_AFTER)
 
 
@@ -76,7 +79,7 @@ def send_with_retries(client: httpx.Client, request: httpx.Request, limiter, *, 
         try:
             with limiter:
                 response = client.send(request)
-        except (httpx.TimeoutException, httpx.ConnectError) as error:
+        except httpx.TransportError as error:
             last = ProviderError(0, f"{type(error).__name__}: {error}")
             last.retryable = True
         else:

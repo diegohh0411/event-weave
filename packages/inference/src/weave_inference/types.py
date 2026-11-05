@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Literal
+from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 from weave_core.adapters import AdapterFailure
@@ -61,6 +61,107 @@ class Usage(_Strict):
     output_tokens: int | None = None
     cached_tokens: int | None = None
     reported_cost: Decimal | None = None
+
+
+T = TypeVar('T')
+
+
+class Result(_Strict, Generic[T]):
+    value: T
+    usage: Usage
+    deployment: str
+
+
+class Choice(_Strict):
+    id: str
+    prompt: str
+    options: list[str]
+
+
+class Score(_Strict):
+    id: str
+    prompt: str
+    low: float
+    high: float
+
+
+class Noul(_Strict):
+    id: str
+    prompt: str
+
+
+Question = Choice | Score | Noul
+
+
+class SystemOneRequest(_Strict):
+    state: str | dict
+    questions: list[Choice | Score | Noul]
+
+    @property
+    def choice_option_counts(self) -> list[int]:
+        return [len(q.options) for q in self.questions if isinstance(q, Choice)]
+
+    @property
+    def text_for_context(self) -> str:
+        import json
+        state = self.state if isinstance(self.state, str) else json.dumps(self.state)
+        return state + "\n" + "\n".join(q.prompt for q in self.questions)
+
+
+class Answer(_Strict):
+    question_id: str
+    value: str | float
+    probabilities: dict[str, float] | None = None
+
+
+class SystemOneResponse(_Strict):
+    answers: list[Answer]
+
+
+class ChatRequest(_Strict):
+    messages: list[dict]
+    template_args: dict = Field(default_factory=dict)
+    max_tokens: int | None = None
+
+    @property
+    def text_for_context(self) -> str:
+        return "\n".join(str(m.get("content", "")) for m in self.messages)
+
+
+class ChatResponse(_Strict):
+    text: str
+
+
+class EmbeddingsRequest(_Strict):
+    texts: list[str]
+
+    @property
+    def text_for_context(self) -> str:
+        return "\n".join(self.texts)
+
+
+class EmbeddingsResponse(_Strict):
+    vectors: list[list[float]]
+
+
+class Span(_Strict):
+    text: str
+    start: int
+    end: int
+    confidence: float | None = None
+
+
+class ExtractionRequest(_Strict):
+    text: str
+    fields: dict
+
+    @property
+    def text_for_context(self) -> str:
+        return self.text
+
+
+class ExtractionResponse(_Strict):
+    fields: dict[str, list[Span]]
 
 
 class InferenceError(AdapterFailure):
