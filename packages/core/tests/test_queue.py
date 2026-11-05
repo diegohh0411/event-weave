@@ -250,6 +250,24 @@ def test_output_write_rollback_then_stale_retry(queue, started_run, service, cou
     assert count_jobs(started_run, Stage.extract) == 1
 
 
+def test_stale_reclaim_respects_retry_limit(queue, started_run, job_row, service):
+    from weave_core.queue import MAX_ATTEMPTS
+    for attempt in range(MAX_ATTEMPTS):
+        clock = later(minutes=attempt * 5)
+        [job] = queue.claim(Stage.provide, 1, "dying", now=clock)
+        assert queue.release_stale(now=clock + timedelta(seconds=61)) == 1
+        row = job_row(started_run, Stage.provide)
+        assert row.attempts == attempt + 1
+        if attempt < MAX_ATTEMPTS - 1:
+            assert row.status == JobStatus.pending
+    assert row.status == JobStatus.failed
+    assert row.error == "worker lost"
+    assert row.attempts == MAX_ATTEMPTS
+    assert row.claim_token is None and row.claimed_by is None and row.heartbeat_at is None
+    assert queue.claim(Stage.provide, 1, "w", now=later(hours=1)) == []
+    assert service.status(started_run).state == RunState.done
+
+
 def test_stale_boundary_and_worker_heartbeat_scope(queue, started_run, job_row):
     clock = later()
     [job] = queue.claim(Stage.provide, 1, "owner", now=clock)

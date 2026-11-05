@@ -147,11 +147,28 @@ class Queue:
     def release_stale(self, now: datetime | None = None) -> int:
         clock = now if now is not None else sa.func.now()
         with session_scope(self.engine) as session:
-            result = session.execute(jobs.update().where(
-                jobs.c.status == JobStatus.claimed, jobs.c.heartbeat_at < clock - STALE_AFTER
-            ).values(status=JobStatus.pending, claim_token=None, claimed_by=None,
-                     heartbeat_at=None, attempts=jobs.c.attempts + 1))
-            return result.rowcount
+            # Job rows first, then their runs, like fail_in_session.
+            stale = session.execute(
+                sa.select(jobs.c.id, jobs.c.run_id, jobs.c.attempts)
+                .where(jobs.c.status == JobStatus.claimed, jobs.c.heartbeat_at < clock - STALE_AFTER)
+                .order_by(jobs.c.id).with_for_update()).all()
+            if not stale:
+                return 0
+            run_ids = sorted({row.run_id for row in stale})
+            session.execute(sa.select(runs.c.id).where(runs.c.id.in_(run_ids))
+                            .order_by(runs.c.id).with_for_update(key_share=True)).all()
+            lost = [row.id for row in stale if row.attempts + 1 >= MAX_ATTEMPTS]
+            retry = [row.id for row in stale if row.attempts + 1 < MAX_ATTEMPTS]
+            cleared = dict(claim_token=None, claimed_by=None, heartbeat_at=None, attempts=jobs.c.attempts + 1)
+            if retry:
+                session.execute(jobs.update().where(jobs.c.id.in_(retry))
+                                .values(status=JobStatus.pending, **cleared))
+            if lost:
+                session.execute(jobs.update().where(jobs.c.id.in_(lost))
+                                .values(status=JobStatus.failed, error="worker lost", **cleared))
+                for run_id in sorted({row.run_id for row in stale if row.id in lost}):
+                    mark_done_if_finished(session, run_id)
+            return len(stale)
 
     def upstream(self, job: ClaimedJob) -> dict[Stage, dict]:
         with session_scope(self.engine) as session:
