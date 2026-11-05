@@ -62,7 +62,7 @@ def test_provider_hash_uses_only_normalized_provider_choice(service, good_config
         rows = [conn.execute(sa.select(jobs).where(jobs.c.run_id == run)).one() for run in ids]
         configs = [conn.execute(sa.select(runs).where(runs.c.id == run)).one() for run in ids]
     assert configs[0].config_hash != configs[1].config_hash
-    expected = hashlib.sha256(b'{"adapter":"fake-provider","deployments":{},"settings":{"window":1}}').hexdigest()
+    expected = hashlib.sha256(b'{"adapter":"fake-provider","deployments":{},"settings":{"docs":3,"duplicate_first":false,"no_topic":false,"window":1}}').hexdigest()
     assert rows[0].unit_content_hash == rows[0].input_hash == expected
     assert (rows[0].input_hash == rows[1].input_hash) == equal
     assert rows[1].unit_content_hash == rows[1].input_hash
