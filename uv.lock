@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = "==3.12.*"
 
 [manifest]
@@ -7,6 +7,7 @@ members = [
     "event-weave",
     "weave-api",
     "weave-core",
+    "weave-inference",
 ]
 
 [[package]]
@@ -93,6 +94,7 @@ dev = [
     { name = "pytest-xdist" },
     { name = "weave-api" },
     { name = "weave-core" },
+    { name = "weave-inference" },
 ]
 
 [package.metadata]
@@ -104,6 +106,7 @@ dev = [
     { name = "pytest-xdist" },
     { name = "weave-api", editable = "packages/api" },
     { name = "weave-core", editable = "packages/core" },
+    { name = "weave-inference", editable = "packages/inference" },
 ]
 
 [[package]]
@@ -563,4 +566,21 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "sqlalchemy", specifier = ">=2.1.1" },
     { name = "typer" },
+]
+
+[[package]]
+name = "weave-inference"
+version = "0.1.0"
+source = { editable = "packages/inference" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "weave-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "weave-core", editable = "packages/core" },
 ]

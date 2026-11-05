@@ -1,0 +1,43 @@
+# Inference catalog (spec 02). Credentials are named by env var, never stored here.
+models:
+  lfm2-d1: {capability: system_one}
+  jev-1.14.0: {capability: system_one}
+  nuextract3: {capability: llm}
+  embeddinggemma-2: {capability: embeddings}
+  clairic: {capability: extraction}
+
+providers:
+  openrouter:
+    kind: openrouter
+    base_url: https://openrouter.ai/api/v1
+    credential_env: OPENROUTER_API_KEY
+  typesafe:
+    kind: typesafe
+    base_url: https://api.typesafe.ai
+    credential_env: TYPESAFE_API_KEY
+  cloudflare:
+    kind: cloudflare
+    base_url: https://api.cloudflare.com/client/v4
+    credential_env: CLOUDFLARE_API_TOKEN
+  llamacpp-local:
+    kind: llamacpp
+    base_url: http://host.containers.internal:8080
+    rate: {concurrency: 1}
+  stub:
+    kind: stub
+    base_url: "stub:"
+
+deployments:
+  lfm2-d1@openrouter: {model: lfm2-d1, provider: openrouter}
+  lfm2-d1-q8@local: {model: lfm2-d1, provider: llamacpp-local, quantization: Q8_0, local: true}
+  jev-1.14.0@typesafe: {model: jev-1.14.0, provider: typesafe}
+  nuextract3@openrouter: {model: nuextract3, provider: openrouter}
+  nuextract3@local: {model: nuextract3, provider: llamacpp-local, local: true}
+  embeddinggemma-2@openrouter: {model: embeddinggemma-2, provider: openrouter}
+  clairic@cloudflare: {model: clairic, provider: cloudflare}
+  stub-system-one: {model: lfm2-d1, provider: stub, local: true}
+
+defaults:
+  system_one: lfm2-d1@openrouter
+  llm: nuextract3@openrouter
+  embeddings: embeddinggemma-2@openrouter
