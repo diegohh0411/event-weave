@@ -2,7 +2,7 @@
 name = "weave-inference"
 version = "0.1.0"
 requires-python = ">=3.12,<3.13"
-dependencies = ["weave-core", "pydantic>=2", "pyyaml>=6.0.3"]
+dependencies = ["weave-core", "pydantic>=2", "pyyaml>=6.0.3", "httpx>=0.27"]
 
 [tool.uv.sources]
 weave-core = { workspace = true }

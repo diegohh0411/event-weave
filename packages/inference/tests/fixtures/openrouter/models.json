@@ -1,0 +1,3 @@
+{"data":[
+ {"id":"liquid/lfm2-d1","canonical_slug":"liquid/lfm2-d1","architecture":{"input_modalities":["text"],"output_modalities":["decisions"]}},
+ {"id":"numind/nuextract3","canonical_slug":"numind/nuextract3","architecture":{"input_modalities":["text"],"output_modalities":["text"]}}]}

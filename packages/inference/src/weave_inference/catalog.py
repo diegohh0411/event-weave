@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 from pydantic import ValidationError
 from weave_core.stages import Capability
 
 from .types import Deployment, Model, Provider
+
+if TYPE_CHECKING:
+    from .probe import Readiness
 
 
 _SECRET_FIELDS = {'api_key', 'token', 'secret', 'password', 'api_token'}
@@ -25,7 +29,7 @@ class Catalog:
     providers: dict[str, Provider] = field(default_factory=dict)
     deployments: dict[str, Deployment] = field(default_factory=dict)
     defaults: dict[Capability, str] = field(default_factory=dict)
-    readiness: dict = field(default_factory=dict)
+    readiness: dict[str, Readiness] = field(default_factory=dict)
 
     def capability_of(self, deployment_id: str) -> Capability | None:
         d = self.deployments.get(deployment_id)
