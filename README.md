@@ -14,3 +14,14 @@ Every stage has interchangeable implementations:
 The first goal is to show, on the [MCECR](https://aclanthology.org/2024.findings-naacl.245/) benchmark, that a pipeline built on System One decision models clusters event mentions more accurately than the paper's models, at a measured cost.
 
 Status: design. The MVP specs are in [`docs/superpowers/specs/2026-11-05-mvp/`](docs/superpowers/specs/2026-11-05-mvp/00-overview.md).
+
+## Quick start
+
+```bash
+cp .env.example .env
+podman compose up -d --build
+curl http://127.0.0.1:8000/health   # {"status":"ok","schema":"0001_core"}
+podman compose up -d --scale worker-enrich=3   # scale a stage
+```
+
+The API runs database migrations on start-up; the stage workers wait for it. Model servers (llama.cpp) run on the host and are reached from containers at `http://host.containers.internal:<port>`.
