@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from decimal import Decimal
-
 import httpx
 
 from ..types import (Answer, Choice, Deployment, Noul, Provider, ProviderError, Score, SystemOneRequest,
                      SystemOneResponse, Usage)
-from . import WireClient, base, load, model_name, post, unparseable
+from . import WireClient, base, cost_of, load, model_name, post, unparseable
 
 MAX_SCORE_LEVELS = 10
 
@@ -29,11 +27,10 @@ def request_body(deployment: Deployment, request: SystemOneRequest) -> dict:
 
 def parse_usage(data: dict) -> Usage:
     u = data.get("usage") or {}
-    cost = u.get("cost")
     return Usage(input_tokens=u.get("input_tokens", u.get("prompt_tokens")),
                  output_tokens=u.get("output_tokens", u.get("completion_tokens")),
                  cached_tokens=u.get("cached_tokens"),
-                 reported_cost=Decimal(str(cost)) if cost is not None else None)
+                 reported_cost=cost_of(u))
 
 
 def parse_answers(answers: dict, request: SystemOneRequest | None) -> SystemOneResponse:
@@ -83,7 +80,11 @@ class SystemOneClient(WireClient):
             raise unparseable(response, error) from error
 
     def parse_many(self, deployment: Deployment, responses: list[httpx.Response], request: SystemOneRequest | None = None) -> tuple[SystemOneResponse, Usage]:
-        if request is None or deployment.joint:
+        if deployment.joint:
+            if len(responses) != 1:
+                raise ProviderError(0, "joint deployment expects exactly one response")
+            questions = [request]
+        elif request is None:
             questions = [None] * len(responses)
         else:
             questions = [request.model_copy(update={"questions": [q]}) for q in request.questions]

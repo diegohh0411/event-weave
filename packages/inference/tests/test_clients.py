@@ -138,3 +138,30 @@ def test_requests_expose_limit_attributes():
     assert ChatRequest(messages=[{"role": "user", "content": "ab"}, {"role": "user", "content": "cd"}]).text_for_context == "ab\ncd"
     assert EmbeddingsRequest(texts=["a", "b"]).text_for_context == "a\nb"
     assert ExtractionRequest(text="t", fields={}).text_for_context == "t"
+
+
+def test_joint_parse_many_applies_score_offset():
+    c = SystemOneClient()
+    req = SystemOneRequest(state="s", questions=[Score(id="rating", prompt="r", low=1, high=5)])
+    r = httpx.Response(200, json={"answers": {"rating": {"type": "score", "score": 2.0}}})
+    out, _ = c.parse_many(dep(joint=True), [r], req)
+    assert out.answers[0].value == 3.0
+    with pytest.raises(ProviderError):
+        c.parse_many(dep(joint=True), [r, r], req)
+
+
+def test_over_size_request_refused_by_check_limits():
+    d = dep(limits=Limits(max_request_bytes=50))
+    for req in (SystemOneRequest(state="x" * 100, questions=[Noul(id="q", prompt="p")]),
+                ChatRequest(messages=[{"role": "user", "content": "x" * 100}]),
+                EmbeddingsRequest(texts=["x" * 100]), ExtractionRequest(text="x" * 100, fields={})):
+        with pytest.raises(LimitExceeded):
+            check_limits(d, req)
+    check_limits(d, EmbeddingsRequest(texts=["ok"]))
+
+
+def test_bad_cost_and_bad_rows_are_provider_errors():
+    with pytest.raises(ProviderError):
+        ChatClient().parse(dep(), httpx.Response(200, json={"choices": [{"message": {"content": "x"}}], "usage": {"cost": "abc"}}))
+    with pytest.raises(ProviderError):
+        EmbeddingsClient().parse(dep(), httpx.Response(200, json={"data": [1, 2]}))

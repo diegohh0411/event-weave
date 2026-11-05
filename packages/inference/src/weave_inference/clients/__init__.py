@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import httpx
@@ -45,3 +46,14 @@ def load(response: httpx.Response) -> dict:
     if not isinstance(data, dict):
         raise unparseable(response, TypeError("expected a JSON object"))
     return data
+
+
+def cost_of(usage: dict) -> Decimal | None:
+    """Reported cost as Decimal; a malformed value is a ValueError (callers map it to ProviderError)."""
+    cost = usage.get("cost")
+    if cost is None:
+        return None
+    try:
+        return Decimal(str(cost))
+    except InvalidOperation as error:
+        raise ValueError(f"bad cost {cost!r}") from error

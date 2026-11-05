@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from decimal import Decimal
-
 import httpx
 
 from ..types import ChatRequest, ChatResponse, Deployment, Provider, Usage
-from . import WireClient, base, load, model_name, post, unparseable
+from . import WireClient, base, cost_of, load, model_name, post, unparseable
 
 
 class ChatClient(WireClient):
@@ -26,10 +24,9 @@ class ChatClient(WireClient):
             if not isinstance(text, str):
                 raise TypeError("content is not a string")
             u = data.get("usage") or {}
-            cost = u.get("cost")
             usage = Usage(input_tokens=u.get("prompt_tokens"), output_tokens=u.get("completion_tokens"),
                           cached_tokens=(u.get("prompt_tokens_details") or {}).get("cached_tokens"),
-                          reported_cost=Decimal(str(cost)) if cost is not None else None)
+                          reported_cost=cost_of(u))
             return ChatResponse(text=text), usage
         except (KeyError, IndexError, TypeError, ValueError) as error:
             raise unparseable(response, error) from error

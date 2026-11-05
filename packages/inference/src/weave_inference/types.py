@@ -93,6 +93,11 @@ class Noul(_Strict):
 Question = Choice | Score | Noul
 
 
+def _json_bytes(payload) -> int:
+    import json
+    return len(json.dumps(payload, ensure_ascii=False, default=str).encode())
+
+
 class SystemOneRequest(_Strict):
     state: str | dict
     questions: list[Choice | Score | Noul]
@@ -106,6 +111,10 @@ class SystemOneRequest(_Strict):
         import json
         state = self.state if isinstance(self.state, str) else json.dumps(self.state)
         return state + "\n" + "\n".join(q.prompt for q in self.questions)
+
+    @property
+    def body_bytes(self) -> int:
+        return _json_bytes(self.model_dump())
 
 
 class Answer(_Strict):
@@ -127,6 +136,10 @@ class ChatRequest(_Strict):
     def text_for_context(self) -> str:
         return "\n".join(str(m.get("content", "")) for m in self.messages)
 
+    @property
+    def body_bytes(self) -> int:
+        return _json_bytes(self.model_dump())
+
 
 class ChatResponse(_Strict):
     text: str
@@ -138,6 +151,10 @@ class EmbeddingsRequest(_Strict):
     @property
     def text_for_context(self) -> str:
         return "\n".join(self.texts)
+
+    @property
+    def body_bytes(self) -> int:
+        return _json_bytes(self.model_dump())
 
 
 class EmbeddingsResponse(_Strict):
@@ -158,6 +175,10 @@ class ExtractionRequest(_Strict):
     @property
     def text_for_context(self) -> str:
         return self.text
+
+    @property
+    def body_bytes(self) -> int:
+        return _json_bytes(self.model_dump())
 
 
 class ExtractionResponse(_Strict):
