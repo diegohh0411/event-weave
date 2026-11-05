@@ -61,9 +61,9 @@ def test_estimate_none_without_history_says_why(engine):
     assert est.amount is None and est.reason == "no ledger history for fake-enricher@stub-s1"
 
 
-def seed_ledger(conn, adapter, deployment, costs, status="ok"):
+def seed_ledger(conn, adapter, deployment, costs, status="ok", run_id=None):
     for cost in costs:
-        conn.execute(ledger.insert().values(run_id=None, stage=None, adapter=adapter, deployment=deployment, request_hash=uuid4().hex,
+        conn.execute(ledger.insert().values(run_id=run_id, stage=None, adapter=adapter, deployment=deployment, request_hash=uuid4().hex,
                                             cost=Decimal(cost), estimated=False, latency_ms=1, attempts=1, status=status, created_at=sa.func.now()))
 
 
@@ -84,12 +84,32 @@ def test_estimate_counts_only_uncached_units(engine):
                                                   partition="p", order_key=[i], input_hash=f"in{i}", status=JobStatus.done, available_at=sa.func.now()))
         key = cache_key("in0", espec, enrich.settings, enrich.deployments)
         conn.execute(stage_outputs.insert().values(cache_key=key, stage="enrich", adapter=espec.name, adapter_version="1", output={}, emits=[], created_at=sa.func.now()))
-        seed_ledger(conn, espec.name, "stub-s1", ["0.10", "0.30"])  # avg 0.20
-        seed_ledger(conn, espec.name, "stub-s1", ["99"], status="error")  # ignored
-        seed_ledger(conn, bspec.name, "stub-emb", ["0.01"])
+        # 4 done enrich jobs in the run; one job made two calls: total 0.80 -> 0.20 per job
+        seed_ledger(conn, espec.name, "stub-s1", ["0.10", "0.10", "0.30", "0.30"], run_id=run)
+        seed_ledger(conn, espec.name, "stub-s1", ["99"], status="error", run_id=run)  # ignored
+        seed_ledger(conn, espec.name, "stub-s1", ["50"])  # smoke row, run_id NULL: ignored
+        seed_ledger(conn, bspec.name, "stub-emb", ["0.04"], run_id=run)
     est = LedgerEstimator(engine, registry).estimate(cfg)
     assert est.reason is None
     assert est.amount == Decimal("3") * Decimal("0.20") + Decimal("4") * Decimal("0.01")
+
+
+def test_estimate_none_when_prior_run_has_no_jobs_for_stage(engine):
+    from weave_core.config import validate
+    registry = make_registry()
+    service = RunService(engine, registry, make_catalog(True))
+    cfg = validate(config(), registry, service.catalog)
+    old = service.create(config()).run_id
+    service.start(old)
+    with engine.begin() as conn:
+        for stage, adapter, dep in ((Stage.enrich, "fake-enricher", "stub-s1"), (Stage.embed, "fake-embedder", "stub-emb")):
+            conn.execute(jobs.insert().values(run_id=old, stage=stage, unit_kind=UnitKind.mention, unit_id="m", unit_content_hash="h",
+                                              partition="p", order_key=[0], input_hash="in", status=JobStatus.done, available_at=sa.func.now()))
+            seed_ledger(conn, adapter, dep, ["0.1"], run_id=old)
+    newer = service.create(config()).run_id
+    service.start(newer)  # most recent run with this provider: only the provide job exists
+    est = LedgerEstimator(engine, registry).estimate(cfg)
+    assert est.amount is None and est.reason == "prior run has no enrich jobs"
 
 
 def test_start_stores_readiness_snapshot(engine):
@@ -101,3 +121,18 @@ def test_start_stores_readiness_snapshot(engine):
     with engine.connect() as conn:
         rows = {r.deployment: r for r in conn.execute(sa.select(run_deployments).where(run_deployments.c.run_id == run))}
     assert set(rows) == {"stub-s1", "stub-emb"} and all(r.ready for r in rows.values())
+
+
+def test_readiness_snapshot_records_details_and_not_ready_reason(engine):
+    from functools import partial
+    catalog = make_catalog(ready=False)
+    service = RunService(engine, make_registry(), catalog, on_start=partial(store_readiness, catalog=catalog))
+    cfg = config()
+    catalog.readiness["stub-emb"] = Readiness(True)  # let create() validate, then flip before start
+    run = service.create(cfg).run_id
+    catalog.readiness["stub-emb"] = Readiness(False, reason="model missing")
+    service.start(run)
+    with engine.connect() as conn:
+        rows = {r.deployment: r for r in conn.execute(sa.select(run_deployments).where(run_deployments.c.run_id == run))}
+    assert rows["stub-s1"].ready and rows["stub-s1"].server_version == "v1" and rows["stub-s1"].reported_model_id == "x"
+    assert not rows["stub-emb"].ready and rows["stub-emb"].reason == "model missing"

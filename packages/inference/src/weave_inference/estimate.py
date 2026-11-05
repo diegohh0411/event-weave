@@ -17,9 +17,15 @@ class LedgerEstimator:
     def __init__(self, engine, registry):
         self.engine, self.registry = engine, registry
 
-    def _average(self, conn, adapter: str, deployment: str) -> Decimal | None:
-        total, count = conn.execute(sa.select(sa.func.sum(ledger.c.cost), sa.func.count()).where(
-            ledger.c.adapter == adapter, ledger.c.deployment == deployment, ledger.c.status == 'ok')).one()
+    def _average(self, conn, stage, adapter: str, deployment: str) -> Decimal | None:
+        """Cost per job: ok ledger cost of runs that used (adapter, deployment) / done jobs of the stage in those runs."""
+        match = (ledger.c.adapter == adapter, ledger.c.deployment == deployment, ledger.c.status == 'ok', ledger.c.run_id.is_not(None))
+        total = conn.execute(sa.select(sa.func.sum(ledger.c.cost)).where(*match)).scalar()
+        if total is None:
+            return None
+        run_ids = sa.select(ledger.c.run_id).where(*match)
+        count = conn.execute(sa.select(sa.func.count()).where(
+            jobs.c.stage == stage, jobs.c.status == 'done', jobs.c.run_id.in_(run_ids))).scalar()
         return Decimal(total) / count if count else None
 
     def estimate(self, cfg: RunConfig) -> Estimate:
@@ -37,14 +43,16 @@ class LedgerEstimator:
                 spec = self.registry.get(stage, choice.adapter).spec
                 avgs = []
                 for deployment in sorted(choice.deployments.values()):
-                    avg = self._average(conn, choice.adapter, deployment)
+                    avg = self._average(conn, stage, choice.adapter, deployment)
                     if avg is None:
                         return Estimate(None, f'no ledger history for {choice.adapter}@{deployment}')
                     avgs.append(avg)
                 hashes = conn.scalars(sa.select(jobs.c.input_hash).where(jobs.c.run_id == prior, jobs.c.stage == stage)).all()
-                keys = {h: cache_key(h, spec, choice.settings, choice.deployments) for h in hashes}
-                cached = set(conn.scalars(sa.select(stage_outputs.c.cache_key).where(stage_outputs.c.cache_key.in_(list(keys.values())))))
-                units = sum(1 for k in keys.values() if k not in cached)
+                if not hashes:
+                    return Estimate(None, f'prior run has no {stage} jobs')
+                keys = [cache_key(h, spec, choice.settings, choice.deployments) for h in hashes]
+                cached = set(conn.scalars(sa.select(stage_outputs.c.cache_key).where(stage_outputs.c.cache_key.in_(keys))))
+                units = sum(1 for k in keys if k not in cached)
                 amount += units * sum(avgs)
         return Estimate(amount)
 
