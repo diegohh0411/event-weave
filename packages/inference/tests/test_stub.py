@@ -2,7 +2,7 @@ import math
 
 from weave_core.stages import Capability
 
-from weave_inference.clients.stub import StubClient, set_stub_script
+from weave_inference.clients.stub import StubClient, clear_stub_scripts, set_stub_script
 from weave_inference.types import (Choice, ChatRequest, EmbeddingsRequest, ExtractionRequest, Noul, Score,
                                    SystemOneRequest)
 
@@ -19,7 +19,7 @@ def test_stub_is_deterministic():
     assert a == b and ua.reported_cost == 0
     by = {x.question_id: x for x in a.answers}
     assert by["c"].value in {"a", "b", "c"} and by["c"].probabilities[by["c"].value] == 1.0
-    assert by["s"].value == 5.0 and "n" not in by
+    assert by["s"].value == 5.0 and by["n"].value is None and len(a.answers) == 3
     chat, _ = StubClient().call(Capability.llm, ChatRequest(messages=[{"role": "user", "content": "hi"}]))
     assert chat.text == "stub"
     ex, _ = StubClient().call(Capability.extraction, ExtractionRequest(text="t", fields={"a": 1}))
@@ -31,14 +31,19 @@ def test_stub_script_overrides_default():
     c = C({"c": "b", "s": 7.5})
     r, _ = c.call(Capability.system_one, s1())
     by = {x.question_id: x.value for x in r.answers}
-    assert by == {"c": "b", "s": 7.5}
+    assert by == {"c": "b", "s": 7.5, "n": None}
     req = ChatRequest(messages=[{"role": "user", "content": "hi"}])
     from weave_inference.ledger import request_hash
     h = request_hash(req.model_dump(mode="json"))
     r, _ = C({("llm", h): {"text": "canned"}}).call(Capability.llm, req)
     assert r.text == "canned"
     set_stub_script("p1", {("llm", h): {"text": "reg"}})
-    assert C.for_provider("p1").call(Capability.llm, req)[0].text == "reg"
+    try:
+        assert C.for_provider("p1").call(Capability.llm, req)[0].text == "reg"
+    finally:
+        clear_stub_scripts()
+    assert C.for_provider("p1").call(Capability.llm, req)[0].text == "stub"
+    assert C({f"llm:{h}": {"text": "str-key"}}).call(Capability.llm, req)[0].text == "str-key"
 
 
 def test_stub_script_from_file(tmp_path):

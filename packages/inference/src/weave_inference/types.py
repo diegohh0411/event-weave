@@ -119,7 +119,7 @@ class SystemOneRequest(_Strict):
 
 class Answer(_Strict):
     question_id: str
-    value: str | float
+    value: str | float | None
     probabilities: dict[str, float] | None = None
 
 

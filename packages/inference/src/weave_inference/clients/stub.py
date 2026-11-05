@@ -9,8 +9,8 @@ import yaml
 from weave_core.stages import Capability
 
 from ..ledger import request_hash
-from ..types import (Answer, Choice, ChatRequest, ChatResponse, EmbeddingsRequest, EmbeddingsResponse,
-                     ExtractionRequest, ExtractionResponse, Noul, Score, SystemOneRequest, SystemOneResponse, Usage)
+from ..types import (Answer, Choice, ChatResponse, EmbeddingsResponse,
+                     ExtractionResponse, Score, SystemOneRequest, SystemOneResponse, Usage)
 
 # Keys: (capability, request_hash) -> full response (dict or model), or a question id -> answer value
 # (or full Answer dict) for system_one. Files may spell the tuple key "capability:hash".
@@ -24,6 +24,10 @@ DIM = 8
 
 def set_stub_script(provider_id: str, script: StubScript) -> None:
     _REGISTRY[provider_id] = script
+
+
+def clear_stub_scripts() -> None:
+    _REGISTRY.clear()
 
 
 class StubClient:
@@ -75,7 +79,8 @@ class StubClient:
                                       probabilities={o: 1.0 if o == pick else 0.0 for o in q.options}))
             elif isinstance(q, Score):
                 answers.append(Answer(question_id=q.id, value=(q.low + q.high) / 2))
-            # Noul: no default answer (Answer.value cannot be None)
+            else:  # Noul
+                answers.append(Answer(question_id=q.id, value=None))
         return SystemOneResponse(answers=answers)
 
     def _usage(self, request, response) -> Usage:
