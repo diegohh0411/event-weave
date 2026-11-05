@@ -7,10 +7,11 @@ requires-python = ">=3.12,<3.13"
 members = ["packages/*"]
 
 [dependency-groups]
-dev = ["pytest", "pytest-xdist", "weave-core"]
+dev = ["pytest", "pytest-xdist", "weave-core", "weave-api", "httpx"]
 
 [tool.pytest.ini_options]
 testpaths = ["packages"]
 
 [tool.uv.sources]
 weave-core = { workspace = true }
+weave-api = { workspace = true }

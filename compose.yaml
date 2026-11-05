@@ -1,0 +1,65 @@
+x-worker: &worker
+  build: .
+  image: event-weave:latest
+  restart: unless-stopped
+  environment:
+    WEAVE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-weave}:${POSTGRES_PASSWORD:-weave}@postgres:5432/${POSTGRES_DB:-weave}
+  depends_on:
+    api:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: docker.io/pgvector/pgvector:pg17@sha256:54c85cf1c63374d9af06fcf494cd86e133b4accbded69ac7622d11d6e7daef54
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-weave}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-weave}
+      POSTGRES_DB: ${POSTGRES_DB:-weave}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${WEAVE_PG_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-weave} -d ${POSTGRES_DB:-weave}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build: .
+    image: event-weave:latest
+    restart: unless-stopped
+    environment:
+      WEAVE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-weave}:${POSTGRES_PASSWORD:-weave}@postgres:5432/${POSTGRES_DB:-weave}
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  worker-provide:
+    <<: *worker
+    command: weave worker --stage provide
+  worker-extract:
+    <<: *worker
+    command: weave worker --stage extract
+  worker-tag:
+    <<: *worker
+    command: weave worker --stage tag
+  worker-enrich:
+    <<: *worker
+    command: weave worker --stage enrich
+  worker-embed:
+    <<: *worker
+    command: weave worker --stage embed
+  worker-cluster:
+    <<: *worker
+    command: weave worker --stage cluster
+
+volumes:
+  pgdata:
