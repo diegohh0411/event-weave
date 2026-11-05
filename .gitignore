@@ -1,0 +1,9 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+.nuxt/
+.output/
+.DS_Store
+data/
