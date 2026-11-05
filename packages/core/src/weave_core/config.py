@@ -61,6 +61,10 @@ def validate(cfg: RunConfig, registry: Registry, catalog: DeploymentCatalog) -> 
             problems.append(f'{prefix} invalid settings: {exc}')
         for capability in sorted(spec.capabilities):
             if capability not in choice.deployments:
+                default = getattr(catalog, 'default_for', lambda _c: None)(capability)
+                if default:
+                    choice.deployments[capability] = default
+                    continue
                 problems.append(f"{prefix} adapter '{choice.adapter}' needs a deployment for '{capability}'")
         for capability, deployment in sorted(choice.deployments.items()):
             actual = catalog.capability_of(deployment)

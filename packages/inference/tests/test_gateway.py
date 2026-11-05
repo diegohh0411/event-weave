@@ -152,3 +152,27 @@ def test_not_ready_deployment_is_refused(engine, run_id):
     with pytest.raises(NotReady, match="not ready: unreachable"):
         inf.system_one(REQ_S1)
     assert [r.status for r in rows(engine)] == ["refused"]
+
+
+def _chat_inf(engine, run_id, monkeypatch, handler):
+    monkeypatch.setattr("weave_inference.gateway.time.sleep", lambda s: None)
+    p = Provider(id="or", kind="openai", base_url="http://x/v1", credential_env="X_KEY")
+    monkeypatch.setenv("X_KEY", "k")
+    inf = make(engine, run_id, [Deployment(id="chat", model="m-llm", provider="or")], providers=[p], mapping={Capability.llm: "chat"})
+    Inference.configure(Inference._catalog, engine, httpx.MockTransport(handler))
+    return inf
+
+
+def test_attempts_recorded_from_real_count(engine, run_id, monkeypatch):
+    calls = iter([503, 400])
+    inf = _chat_inf(engine, run_id, monkeypatch, lambda r: httpx.Response(next(calls), text="x"))
+    with pytest.raises(ProviderError):
+        inf.chat(ChatRequest(messages=[{"role": "user", "content": "hi"}]))
+    assert [(r.status, r.attempts) for r in rows(engine)] == [("error", 2)]
+
+
+def test_untyped_parse_failure_is_wrapped_in_provider_error(engine, run_id, monkeypatch):
+    inf = _chat_inf(engine, run_id, monkeypatch, lambda r: httpx.Response(200, json={"unexpected": 1}))
+    with pytest.raises(ProviderError):
+        inf.chat(ChatRequest(messages=[{"role": "user", "content": "hi"}]))
+    assert [(r.status) for r in rows(engine)] == ["error"]

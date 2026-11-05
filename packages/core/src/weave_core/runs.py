@@ -81,9 +81,10 @@ class RunService:
     def start(self, run_id):
         now = datetime.now(timezone.utc)
         with session_scope(self.engine) as session:
-            self._transition(session, run_id, RunState.created, RunState.running, started_at=now)
             config = session.execute(sa.select(runs.c.config).where(runs.c.id == run_id)).scalar_one()
             cfg = RunConfig.model_validate(config)
+            validate(cfg, self.registry, self.catalog)  # a run cannot start with a deployment that is not ready
+            self._transition(session, run_id, RunState.created, RunState.running, started_at=now)
             digest = provide_hash(cfg)
             session.execute(jobs.insert().values(run_id=run_id, stage=Stage.provide, unit_kind=UnitKind.run, unit_id=str(run_id), unit_content_hash=digest, partition='*', order_key=[], input_hash=digest, status=JobStatus.pending, available_at=now))
             if self.on_start is not None:

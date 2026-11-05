@@ -21,7 +21,7 @@ from .http import limiter_for, send_with_retries
 from .ledger import LedgerEntry, cost_of, record, request_hash
 from .limits import check_limits
 from .types import (ChatRequest, ChatResponse, Deployment, EmbeddingsRequest, EmbeddingsResponse,
-                    ExtractionRequest, ExtractionResponse, InferenceError, NotReady, Provider, Result,
+                    ExtractionRequest, ExtractionResponse, InferenceError, NotReady, Provider, ProviderError, Result,
                     SystemOneRequest, SystemOneResponse, Usage)
 
 MAX_ATTEMPTS = 3
@@ -102,9 +102,13 @@ class Inference:
         try:
             value, usage, attempts = self._send(capability, deployment, provider, request, credential)
         except Exception as error:
-            attempts = MAX_ATTEMPTS if getattr(error, "retryable", False) else 1
+            if not isinstance(error, InferenceError):
+                wrapped = ProviderError(0, f"{type(error).__name__}: {error}")
+                wrapped.__cause__ = error
+                error = wrapped
+            attempts = getattr(error, "attempts", 1)
             self._ledger(dep_id, digest, status="error", latency_ms=_ms(start), attempts=attempts, error=str(error))
-            raise
+            raise error
         cost, estimated = cost_of(deployment, usage, usage.reported_cost)
         self._ledger(dep_id, digest, status="ok", usage=usage, cost=cost, estimated=estimated,
                      latency_ms=_ms(start), attempts=attempts)

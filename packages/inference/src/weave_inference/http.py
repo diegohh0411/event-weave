@@ -94,8 +94,11 @@ def send_with_retries(client: httpx.Client, request: httpx.Request, limiter, *, 
             elif code >= 500:
                 last = ProviderError(code, response.text)
             else:
-                raise ProviderError(code, response.text)
+                error = ProviderError(code, response.text)
+                error.attempts = n
+                raise error
         if n < attempts:
             sleep(wait)
     assert last is not None
+    last.attempts = attempts
     raise last

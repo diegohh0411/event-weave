@@ -67,3 +67,11 @@ def test_provider_hash_uses_only_normalized_provider_choice(service, good_config
     assert (rows[0].input_hash == rows[1].input_hash) == equal
     assert rows[1].unit_content_hash == rows[1].input_hash
     assert configs[0].config_hash == config_hash(validate(good_config, service.registry, service.catalog))
+
+def test_start_refuses_deployment_that_went_not_ready(service, good_config):
+    run = service.create(good_config).run_id
+    service.catalog["good-extractor"] = (service.catalog["good-extractor"][0], False)
+    with pytest.raises(ConfigError, match="not ready"):
+        service.start(run)
+    status = service.status(run)
+    assert status.state == RunState.created and status.stages == {}

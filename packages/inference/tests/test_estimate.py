@@ -123,7 +123,10 @@ def test_start_stores_readiness_snapshot(engine):
     assert set(rows) == {"stub-s1", "stub-emb"} and all(r.ready for r in rows.values())
 
 
-def test_readiness_snapshot_records_details_and_not_ready_reason(engine):
+def test_start_refuses_not_ready_and_snapshot_records_not_ready_reason(engine):
+    import pytest
+    from weave_core.config import ConfigError
+    from weave_core.db import session_scope
     from functools import partial
     catalog = make_catalog(ready=False)
     service = RunService(engine, make_registry(), catalog, on_start=partial(store_readiness, catalog=catalog))
@@ -131,7 +134,10 @@ def test_readiness_snapshot_records_details_and_not_ready_reason(engine):
     catalog.readiness["stub-emb"] = Readiness(True)  # let create() validate, then flip before start
     run = service.create(cfg).run_id
     catalog.readiness["stub-emb"] = Readiness(False, reason="model missing")
-    service.start(run)
+    with pytest.raises(ConfigError):
+        service.start(run)
+    with session_scope(engine) as session:
+        store_readiness(session, run, cfg, catalog=catalog)
     with engine.connect() as conn:
         rows = {r.deployment: r for r in conn.execute(sa.select(run_deployments).where(run_deployments.c.run_id == run))}
     assert rows["stub-s1"].ready and rows["stub-s1"].server_version == "v1" and rows["stub-s1"].reported_model_id == "x"
