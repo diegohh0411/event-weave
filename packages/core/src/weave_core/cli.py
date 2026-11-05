@@ -1,7 +1,9 @@
 import os
 import signal
 import threading
+from functools import partial
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import typer
@@ -23,10 +25,43 @@ app.add_typer(db_app, name='db')
 app.add_typer(run_app, name='run')
 
 
-def _service():
+def _inference():
+    try:
+        from weave_inference.catalog import CatalogError, load_catalog
+        from weave_inference.cli import inference_app
+        from weave_inference.estimate import LedgerEstimator, store_readiness
+        from weave_inference.gateway import Inference
+        from weave_inference.probe import probe
+    except ImportError:
+        return None
+    return SimpleNamespace(CatalogError=CatalogError, load_catalog=load_catalog, inference_app=inference_app, LedgerEstimator=LedgerEstimator,
+                           store_readiness=store_readiness, Inference=Inference, probe=probe)
+
+
+_inf = _inference()
+if _inf is not None:
+    app.add_typer(_inf.inference_app, name='inference')
+
+
+def _service(probe: bool = True):
     settings = Settings.from_env()
     registry = Registry()
     registry.load_entry_points()
+    inf = _inference()
+    inference_file = os.environ.get('WEAVE_INFERENCE_FILE')
+    if inf is not None and inference_file:
+        try:
+            catalog = inf.load_catalog(Path(inference_file))
+        except inf.CatalogError as exc:
+            for problem in exc.problems:
+                typer.echo(problem, err=True)
+            raise typer.Exit(2)
+        if probe:
+            inf.probe(catalog)
+        engine = make_engine(settings.database_url)
+        inf.Inference.configure(catalog, engine)
+        return RunService(engine, registry, catalog, inf.LedgerEstimator(engine, registry),
+                          on_start=partial(inf.store_readiness, catalog=catalog))
     path = os.environ.get('WEAVE_DEPLOYMENTS_FILE')
     data = yaml.safe_load(Path(path).read_text()) if path else {}
     catalog = StaticCatalog({key: (Capability(value[0]), value[1]) for key, value in (data or {}).items()})
@@ -51,11 +86,12 @@ def create(config: Path):
         service.engine.dispose()
     typer.echo(f'run {created.run_id}')
     typer.echo(f'hash {created.config_hash}')
-    typer.echo('estimate: none yet' if created.estimate is None else f'estimate ${created.estimate}')
+    est = created.estimate
+    typer.echo(f'estimate: none yet ({est.reason})' if est.amount is None else f'estimate ~${est.amount:.4f} (from ledger averages)')
 
 
 def _transition(action: str, run_id: UUID):
-    service = _service()
+    service = _service(probe=action == "start")
     try:
         getattr(service, action)(run_id)
     except RunStateError as exc:
@@ -82,7 +118,7 @@ def resume(run_id: UUID):
 
 @run_app.command('status')
 def status(run_id: UUID):
-    service = _service()
+    service = _service(probe=False)
     try:
         result = service.status(run_id)
     finally:

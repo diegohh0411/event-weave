@@ -15,7 +15,7 @@ def test_create_stores_hash_and_estimate(service, good_config):
     created = service.create(good_config)
     assert service.status(created.run_id).state == RunState.created
     assert created.config_hash == config_hash(validate(good_config, service.registry, service.catalog))
-    assert created.estimate is None
+    assert created.estimate.amount is None
 
 def test_create_refuses_invalid_config(service, good_config):
     del good_config.stages[Stage.cluster]
