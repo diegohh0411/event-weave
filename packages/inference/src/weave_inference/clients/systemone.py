@@ -4,7 +4,7 @@ import httpx
 
 from ..types import (Answer, Choice, Deployment, Noul, Provider, ProviderError, Score, SystemOneRequest,
                      SystemOneResponse, Usage)
-from . import WireClient, base, cost_of, load, model_name, post, unparseable
+from . import WireClient, base, parse_cost, load, model_name, post, unparseable
 
 MAX_SCORE_LEVELS = 10
 
@@ -30,7 +30,7 @@ def parse_usage(data: dict) -> Usage:
     return Usage(input_tokens=u.get("input_tokens", u.get("prompt_tokens")),
                  output_tokens=u.get("output_tokens", u.get("completion_tokens")),
                  cached_tokens=u.get("cached_tokens"),
-                 reported_cost=cost_of(u))
+                 reported_cost=parse_cost(u))
 
 
 def parse_answers(answers: dict, request: SystemOneRequest | None) -> SystemOneResponse:

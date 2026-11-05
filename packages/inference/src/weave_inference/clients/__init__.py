@@ -48,7 +48,7 @@ def load(response: httpx.Response) -> dict:
     return data
 
 
-def cost_of(usage: dict) -> Decimal | None:
+def parse_cost(usage: dict) -> Decimal | None:
     """Reported cost as Decimal; a malformed value is a ValueError (callers map it to ProviderError)."""
     cost = usage.get("cost")
     if cost is None:

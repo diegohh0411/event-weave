@@ -3,7 +3,7 @@ from __future__ import annotations
 import httpx
 
 from ..types import ChatRequest, ChatResponse, Deployment, Provider, Usage
-from . import WireClient, base, cost_of, load, model_name, post, unparseable
+from . import WireClient, base, parse_cost, load, model_name, post, unparseable
 
 
 class ChatClient(WireClient):
@@ -26,7 +26,7 @@ class ChatClient(WireClient):
             u = data.get("usage") or {}
             usage = Usage(input_tokens=u.get("prompt_tokens"), output_tokens=u.get("completion_tokens"),
                           cached_tokens=(u.get("prompt_tokens_details") or {}).get("cached_tokens"),
-                          reported_cost=cost_of(u))
+                          reported_cost=parse_cost(u))
             return ChatResponse(text=text), usage
         except (KeyError, IndexError, TypeError, ValueError) as error:
             raise unparseable(response, error) from error
