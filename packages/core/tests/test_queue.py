@@ -29,6 +29,12 @@ def finish(queue, job, result, key="k1", spec=None):
     return queue.complete(job, result, key, spec=spec)
 
 
+def db_clock(service):
+    # The queue stamps available_at from Postgres now(), so bound it with the DB clock, not the host's.
+    with service.engine.connect() as conn:
+        return conn.scalar(sa.text("select clock_timestamp()"))
+
+
 def record():
     return DocumentRecord("fake", "d1", "en", "title", "", "", "", None, "text", [], [], "hash")
 
@@ -41,16 +47,17 @@ def test_claim_skips_locked_and_cancelled(queue, started_run, service):
     assert queue.claim(Stage.provide, 10, "w2", now=later(minutes=1)) == []
 
 
-def test_retry_then_fail(queue, started_run, job_row):
+def test_retry_then_fail(queue, started_run, job_row, service):
     from weave_core.queue import MAX_ATTEMPTS
     for attempt in range(MAX_ATTEMPTS):
         [job] = queue.claim(Stage.provide, 1, "w", now=later(minutes=attempt * 5))
-        before = later()
+        before = db_clock(service)
         queue.fail(job, AdapterFailure("flaky"))
+        after = db_clock(service)
         row = job_row(started_run, Stage.provide)
         assert row.attempts == attempt + 1
         if attempt < 2:
-            assert before + timedelta(seconds=2 * 2**attempt) <= row.available_at <= later(seconds=2 * 2**attempt)
+            assert before + timedelta(seconds=2 * 2**attempt) <= row.available_at <= after + timedelta(seconds=2 * 2**attempt)
             assert queue.claim(Stage.provide, 1, "early", now=before) == []
     assert row.status == JobStatus.failed
     assert row.error == "flaky"
