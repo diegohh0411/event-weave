@@ -1,5 +1,7 @@
 from hashlib import sha256
 
+import sqlalchemy as sa
+
 from pydantic import BaseModel, Field
 from weave_core.adapters import AdapterSpec, AdapterFailure, DocumentRecord, StageResult, UnitRef
 from weave_core.stages import Stage, UnitKind, Capability
@@ -52,6 +54,18 @@ class Fake:
         return StageResult({"seen": unit.id})
 
 
+class FakeCluster(Fake):
+    def process(self, unit, upstream, partition, session):
+        type(self).calls += 1
+        cluster = hash(unit.id) % 3
+        session.execute(sa.text(
+            "INSERT INTO fake_cluster_log (run_id, partition, unit_id, cluster) "
+            "VALUES (:run, :partition, :unit, :cluster)"
+        ), {"run": self.ctx.run_id, "partition": partition,
+            "unit": unit.id, "cluster": cluster})
+        return StageResult({"cluster": cluster})
+
+
 MATRIX = [
     (Stage.provide, "fake-provider", UnitKind.run, ProviderSettings),
     (Stage.extract, "fake-extractor", UnitKind.document, Settings),
@@ -63,7 +77,7 @@ MATRIX = [
 SPECS = []
 for stage, name, kind, settings in MATRIX:
     capabilities = frozenset({Capability.extraction}) if stage == Stage.enrich else frozenset()
-    SPECS.append(type(name.replace("-", "_").title(), (Fake,), {
+    SPECS.append(type(name.replace("-", "_").title(), (FakeCluster if stage == Stage.cluster else Fake,), {
         "calls": 0,
         "spec": AdapterSpec(name, "1", stage, kind, settings, capabilities),
     }))

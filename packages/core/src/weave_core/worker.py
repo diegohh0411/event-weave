@@ -18,6 +18,19 @@ from .stages import ORDERED_STAGES, Stage
 logger = logging.getLogger(__name__)
 
 
+def build_adapter(session, run_id, stage, registry):
+    """Build an adapter and its choice from the run's frozen configuration."""
+    cfg = RunConfig.model_validate(session.scalar(
+        sa.select(runs.c.config).where(runs.c.id == run_id)))
+    choice = cfg.stages[stage]
+    cls = registry.get(stage, choice.adapter)
+    if cls.spec.max_concurrency < 1:
+        raise ValueError("max_concurrency must be positive")
+    adapter = cls(cls.spec.settings_model.model_validate(choice.settings),
+                  AdapterContext(run_id, cfg.seed, choice.deployments))
+    return adapter, choice
+
+
 def run_worker(engine: sa.Engine, registry: Registry, stage: Stage, worker_id: str, *,
                threads: int = 8, poll_interval: float = 1.0,
                stop: threading.Event, once: bool = False) -> None:
@@ -95,16 +108,9 @@ def run_worker(engine: sa.Engine, registry: Registry, stage: Stage, worker_id: s
                     try:
                         if job.run_id not in adapters:
                             with session_scope(engine) as session:
-                                cfg = RunConfig.model_validate(session.scalar(
-                                    sa.select(runs.c.config).where(runs.c.id == job.run_id)))
-                            choice = cfg.stages[stage]
-                            cls = registry.get(stage, choice.adapter)
-                            if cls.spec.max_concurrency < 1:
-                                raise ValueError("max_concurrency must be positive")
-                            adapter = cls(cls.spec.settings_model.model_validate(choice.settings),
-                                          AdapterContext(job.run_id, cfg.seed, choice.deployments))
+                                adapter, choice = build_adapter(session, job.run_id, stage, registry)
                             adapters[job.run_id] = (
-                                adapter, choice, threading.Semaphore(cls.spec.max_concurrency))
+                                adapter, choice, threading.Semaphore(adapter.spec.max_concurrency))
                         futures.append(pool.submit(execute, job, adapters[job.run_id]))
                     except Exception as exc:
                         queue.fail(job, AdapterFailure(f"{type(exc).__name__}: {exc}"))

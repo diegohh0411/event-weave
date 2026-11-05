@@ -72,52 +72,72 @@ class Queue:
         if spec.stage != job.stage:
             raise ValueError(f"spec stage {spec.stage} does not match job stage {job.stage}")
         with session_scope(self.engine) as session:
-            # Serialize terminal transitions before locking the job. Otherwise two
-            # final jobs can each see the other as active and neither finish the run.
-            config = session.execute(sa.select(runs.c.config).where(runs.c.id == job.run_id).with_for_update()).scalar_one()
-            owned = session.execute(sa.select(jobs.c.id).where(_owns(job)).with_for_update()).first()
-            if owned is None:
-                return False
-            cfg = RunConfig.model_validate(config)
-            if spec.name != cfg.stages[job.stage].adapter:
-                raise ValueError(f"spec adapter {spec.name} does not match configured adapter {cfg.stages[job.stage].adapter}")
-            for document in result.documents:
-                session.execute(insert(documents).values(id=document.id, **asdict(document)).on_conflict_do_nothing())
-            if cache_key is not None:
-                session.execute(insert(stage_outputs).values(
-                    cache_key=cache_key, stage=job.stage, adapter=spec.name, adapter_version=spec.version,
-                    output=result.output, emits=None if result.emits is None else [asdict(u) for u in result.emits],
-                    created_at=sa.func.now(),
-                ).on_conflict_do_nothing(index_elements=[stage_outputs.c.cache_key]))
-            session.execute(jobs.update().where(_owns(job)).values(status=JobStatus.done, cache_key=cache_key))
-            following = next_stage(cfg, job.stage)
-            if following is not None:
-                for unit in child_units(job, result):
-                    partition = child_partition(cfg.track, job.partition, unit)
-                    session.execute(insert(jobs).values(
-                        run_id=job.run_id, stage=following, unit_kind=unit.kind, unit_id=unit.id,
-                        unit_content_hash=unit.content_hash, parent_job_id=job.id, partition=partition,
-                        order_key=list(unit.order_key),
-                        input_hash=sha256((unit.content_hash + ":" + (cache_key or "")).encode()).hexdigest(),
-                        status=JobStatus.pending, available_at=sa.func.now(),
-                    ).on_conflict_do_nothing(index_elements=[jobs.c.run_id, jobs.c.stage, jobs.c.unit_id]))
-            mark_done_if_finished(session, job.run_id)
-            return True
+            return self.complete_in_session(session, job, result, cache_key, spec=spec)
+
+    def complete_in_session(self, session, job: ClaimedJob, result: StageResult,
+                            cache_key: str | None, *, spec: AdapterSpec) -> bool:
+        """Complete within the caller's transaction; never commit this session."""
+        if spec.stage != job.stage:
+            raise ValueError(f"spec stage {spec.stage} does not match job stage {job.stage}")
+        # All finalizers lock job BEFORE run, including writers that already
+        # hold their job during processing. Never hold the run while waiting
+        # for a job: that would invert the writer's order and risk a deadlock.
+        owned = session.execute(sa.select(jobs.c.id).where(_owns(job)).with_for_update()).first()
+        if owned is None:
+            return False
+        # Serialize terminal transitions through commit. The active-job check
+        # below uses a fresh READ COMMITTED snapshot after any run-lock wait,
+        # so concurrent last jobs cannot both leave the run unfinished.
+        # NO KEY UPDATE also permits FK KEY SHARE locks held by concurrent
+        # adapter writes/claims. FOR UPDATE would deadlock on their upgrades.
+        config = session.execute(sa.select(runs.c.config).where(runs.c.id == job.run_id)
+                                 .with_for_update(key_share=True)).scalar_one()
+        cfg = RunConfig.model_validate(config)
+        if spec.name != cfg.stages[job.stage].adapter:
+            raise ValueError(f"spec adapter {spec.name} does not match configured adapter {cfg.stages[job.stage].adapter}")
+        for document in result.documents:
+            session.execute(insert(documents).values(id=document.id, **asdict(document)).on_conflict_do_nothing())
+        if cache_key is not None:
+            session.execute(insert(stage_outputs).values(
+                cache_key=cache_key, stage=job.stage, adapter=spec.name, adapter_version=spec.version,
+                output=result.output, emits=None if result.emits is None else [asdict(u) for u in result.emits],
+                created_at=sa.func.now(),
+            ).on_conflict_do_nothing(index_elements=[stage_outputs.c.cache_key]))
+        session.execute(jobs.update().where(_owns(job)).values(status=JobStatus.done, cache_key=cache_key))
+        following = next_stage(cfg, job.stage)
+        if following is not None:
+            for unit in child_units(job, result):
+                partition = child_partition(cfg.track, job.partition, unit)
+                session.execute(insert(jobs).values(
+                    run_id=job.run_id, stage=following, unit_kind=unit.kind, unit_id=unit.id,
+                    unit_content_hash=unit.content_hash, parent_job_id=job.id, partition=partition,
+                    order_key=list(unit.order_key),
+                    input_hash=sha256((unit.content_hash + ":" + (cache_key or "")).encode()).hexdigest(),
+                    status=JobStatus.pending, available_at=sa.func.now(),
+                ).on_conflict_do_nothing(index_elements=[jobs.c.run_id, jobs.c.stage, jobs.c.unit_id]))
+        mark_done_if_finished(session, job.run_id)
+        return True
 
     def fail(self, job: ClaimedJob, failure: AdapterFailure) -> None:
         with session_scope(self.engine) as session:
-            session.execute(sa.select(runs.c.id).where(runs.c.id == job.run_id).with_for_update()).first()
-            row = session.execute(sa.select(jobs.c.attempts).where(_owns(job)).with_for_update()).first()
-            if row is None:
-                return
-            attempts = row.attempts + 1
-            retry = failure.retryable and attempts < MAX_ATTEMPTS
-            values = dict(attempts=attempts, status=JobStatus.pending if retry else JobStatus.failed,
-                          error=failure.reason, claimed_by=None, claim_token=None, heartbeat_at=None)
-            if retry:
-                values['available_at'] = sa.func.now() + BACKOFF_BASE * 2**(attempts - 1)
-            session.execute(jobs.update().where(_owns(job)).values(**values))
-            mark_done_if_finished(session, job.run_id)
+            self.fail_in_session(session, job, failure)
+
+    def fail_in_session(self, session, job: ClaimedJob, failure: AdapterFailure) -> None:
+        """Record failure within the caller's transaction, job lock before run."""
+        row = session.execute(sa.select(jobs.c.attempts).where(_owns(job)).with_for_update()).first()
+        if row is None:
+            return
+        # Match completion's NO KEY UPDATE lock (compatible with run FKs).
+        session.execute(sa.select(runs.c.id).where(runs.c.id == job.run_id)
+                        .with_for_update(key_share=True)).first()
+        attempts = row.attempts + 1
+        retry = failure.retryable and attempts < MAX_ATTEMPTS
+        values = dict(attempts=attempts, status=JobStatus.pending if retry else JobStatus.failed,
+                      error=failure.reason, claimed_by=None, claim_token=None, heartbeat_at=None)
+        if retry:
+            values['available_at'] = sa.func.now() + BACKOFF_BASE * 2**(attempts - 1)
+        session.execute(jobs.update().where(_owns(job)).values(**values))
+        mark_done_if_finished(session, job.run_id)
 
     def heartbeat(self, worker_id: str, now: datetime | None = None) -> None:
         with session_scope(self.engine) as session:
@@ -134,17 +154,20 @@ class Queue:
             return result.rowcount
 
     def upstream(self, job: ClaimedJob) -> dict[Stage, dict]:
+        with session_scope(self.engine) as session:
+            return self.upstream_in_session(session, job)
+
+    def upstream_in_session(self, session, job: ClaimedJob) -> dict[Stage, dict]:
         outputs = {}
         parent_id = job.parent_job_id
-        with session_scope(self.engine) as session:
-            while parent_id is not None:
-                row = session.execute(sa.select(jobs.c.stage, jobs.c.cache_key, jobs.c.parent_job_id)
-                                      .where(jobs.c.id == parent_id, jobs.c.run_id == job.run_id)).first()
-                if row is None:
-                    break
-                if row.cache_key is not None:
-                    output = session.execute(sa.select(stage_outputs.c.output).where(stage_outputs.c.cache_key == row.cache_key)).first()
-                    if output is not None:
-                        outputs[Stage(row.stage)] = output.output
-                parent_id = row.parent_job_id
+        while parent_id is not None:
+            row = session.execute(sa.select(jobs.c.stage, jobs.c.cache_key, jobs.c.parent_job_id)
+                                  .where(jobs.c.id == parent_id, jobs.c.run_id == job.run_id)).first()
+            if row is None:
+                break
+            if row.cache_key is not None:
+                output = session.execute(sa.select(stage_outputs.c.output).where(stage_outputs.c.cache_key == row.cache_key)).first()
+                if output is not None:
+                    outputs[Stage(row.stage)] = output.output
+            parent_id = row.parent_job_id
         return outputs

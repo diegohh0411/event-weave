@@ -71,3 +71,16 @@ def count_rows(service):
         with service.engine.connect() as conn:
             return conn.scalar(sa.select(sa.func.count()).select_from(metadata.tables[table]))
     return count
+
+
+@pytest.fixture
+def force_claim(service):
+    from weave_core.stages import JobStatus
+
+    def claim(run, stage, unit_id):
+        with service.engine.begin() as conn:
+            conn.execute(jobs.update().where(
+                jobs.c.run_id == run, jobs.c.stage == stage, jobs.c.unit_id == unit_id
+            ).values(status=JobStatus.claimed, claimed_by="other-worker",
+                     claim_token=uuid.uuid4(), heartbeat_at=datetime.now(timezone.utc)))
+    return claim
