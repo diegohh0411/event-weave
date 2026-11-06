@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from ..types import Deployment, Provider, ProviderError, Usage
+from ..types import Deployment, Provider, ProviderError, Usage, remote_model_id
 
 
 class WireClient:
@@ -24,7 +24,7 @@ def base(provider: Provider) -> str:
 
 
 def model_name(deployment: Deployment) -> str:
-    return deployment.settings.get("model_name", deployment.model)
+    return remote_model_id(deployment)
 
 
 def post(url: str, body: dict, credential: str | None, headers: dict | None = None) -> httpx.Request:

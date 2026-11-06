@@ -25,3 +25,7 @@ ASSUMED (vendor docs unreachable or schema-less; minimal fixtures):
 - `cloudflare/systemone_response.json`, `cloudflare/extraction_response.json`: `/ai/run/<model>` envelope `{success, result}`;
   Clef/Clairic body and result shapes (Cloudflare docs show only `response` for text-generation JSON mode).
 - Score questions: TypeSafe criteria is an ordered list of 1..10 levels; we map Score(low, high) to integer levels low..high and add `low` back to the returned 0-based score.
+
+## PR review fixes
+ASSUMED: `cloudflare/models.json` lists the Clef model as `@cf/acme/clef` with `task.name` "System One"; the probe maps any task
+whose normalised name contains `systemone` (or `decision`) to the system_one capability. Cloudflare docs give no task name for it.

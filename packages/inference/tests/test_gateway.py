@@ -13,7 +13,8 @@ from weave_inference.clients.stub import clear_stub_scripts
 from weave_inference.gateway import Inference
 from weave_inference.probe import Readiness
 from weave_inference.types import (ChatRequest, Choice, Deployment, EmbeddingsRequest, LimitExceeded, Limits, Model,
-                                   NotReady, Price, Provider, ProviderError, SystemOneRequest)
+                                   NotReady, Noul, Price, Provider, ProviderError, RateLimit,
+                                   SystemOneRequest)
 
 REQ_S1 = SystemOneRequest(state="x", questions=[Choice(id="c", prompt="p", options=["a", "b"])])
 REQ_EMB = EmbeddingsRequest(texts=["hi"])
@@ -176,3 +177,38 @@ def test_untyped_parse_failure_is_wrapped_in_provider_error(engine, run_id, monk
     with pytest.raises(ProviderError):
         inf.chat(ChatRequest(messages=[{"role": "user", "content": "hi"}]))
     assert [(r.status) for r in rows(engine)] == ["error"]
+
+
+def _s1_inf(engine, run_id, monkeypatch, handler, *, provider=None, dep_kw=None):
+    monkeypatch.setattr("weave_inference.gateway.time.sleep", lambda s: None)
+    monkeypatch.setenv("X_KEY", "k")
+    p = provider or Provider(id="ts", kind="typesafe", base_url="http://x", credential_env="X_KEY")
+    d = Deployment(id="s1", model="m-s1", provider=p.id, **(dep_kw or {}))
+    inf = make(engine, run_id, [d], providers=[p], mapping={Capability.system_one: "s1"})
+    Inference.configure(Inference._catalog, engine, httpx.MockTransport(handler))
+    return inf
+
+
+def test_partial_failure_keeps_accumulated_usage_and_cost(engine, run_id, monkeypatch):
+    calls = iter([
+        httpx.Response(200, json={"answers": {"a": {"type": "noul", "noul": 0.5}},
+                                  "usage": {"input_tokens": 7, "output_tokens": 2, "cost": 0.25}}),
+        httpx.Response(400, text="bad"),
+    ])
+    inf = _s1_inf(engine, run_id, monkeypatch, lambda r: next(calls))
+    req = SystemOneRequest(state="x", questions=[Noul(id="a", prompt="p"), Noul(id="b", prompt="q")])
+    with pytest.raises(ProviderError):
+        inf.system_one(req)
+    with engine.connect() as conn:
+        (row,) = conn.execute(sa.select(ledger.c.status, ledger.c.cost, ledger.c.input_tokens, ledger.c.output_tokens))
+    assert (row.status, row.cost, row.input_tokens, row.output_tokens) == ("error", Decimal("0.25"), 7, 2)
+
+
+def test_provider_rate_is_inherited_when_deployment_has_none(engine, run_id, monkeypatch):
+    from weave_inference import http
+    p = Provider(id="ts", kind="typesafe", base_url="http://x", credential_env="X_KEY", rate=RateLimit(concurrency=7))
+    body = {"answers": {"c": {"type": "choice", "choice": "a"}}}
+    inf = _s1_inf(engine, run_id, monkeypatch, lambda r: httpx.Response(200, json=body), provider=p)
+    http._limiters.pop("s1", None)
+    inf.system_one(REQ_S1)
+    assert http._limiters["s1"]._sem._initial_value == 7

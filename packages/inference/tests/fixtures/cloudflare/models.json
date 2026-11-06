@@ -1,4 +1,5 @@
 {"success":true,"errors":[],"messages":[],"result":[
  {"id":"1","name":"@cf/acme/clairic","task":{"name":"Token Classification"}},
  {"id":"2","name":"@cf/google/embeddinggemma-2","task":{"name":"Text Embeddings"}},
+ {"id":"4","name":"@cf/acme/clef","task":{"name":"System One"}},
  {"id":"3","name":"@cf/meta/llama-3.1-8b-instruct","task":{"name":"Text Generation"}}]}

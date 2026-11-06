@@ -56,6 +56,12 @@ class Deployment(_Strict):
     local: bool = False
 
 
+def remote_model_id(deployment: 'Deployment') -> str:
+    """The model id the provider knows: used by both the readiness probe and the wire clients."""
+    s = deployment.settings
+    return s.get('remote_model') or s.get('model_name') or deployment.model
+
+
 class Usage(_Strict):
     input_tokens: int | None = None
     output_tokens: int | None = None
@@ -110,7 +116,12 @@ class SystemOneRequest(_Strict):
     def text_for_context(self) -> str:
         import json
         state = self.state if isinstance(self.state, str) else json.dumps(self.state)
-        return state + "\n" + "\n".join(q.prompt for q in self.questions)
+        parts = [state]
+        for q in self.questions:
+            parts.append(q.prompt)
+            if isinstance(q, Choice):
+                parts.extend(q.options)
+        return "\n".join(parts)
 
     @property
     def body_bytes(self) -> int:
@@ -134,7 +145,9 @@ class ChatRequest(_Strict):
 
     @property
     def text_for_context(self) -> str:
-        return "\n".join(str(m.get("content", "")) for m in self.messages)
+        import json
+        return "\n".join([str(m.get("content", "")) for m in self.messages]
+                         + ([json.dumps(self.template_args, ensure_ascii=False, default=str)] if self.template_args else []))
 
     @property
     def body_bytes(self) -> int:
@@ -174,7 +187,8 @@ class ExtractionRequest(_Strict):
 
     @property
     def text_for_context(self) -> str:
-        return self.text
+        import json
+        return self.text + ("\n" + json.dumps(self.fields, ensure_ascii=False, default=str) if self.fields else "")
 
     @property
     def body_bytes(self) -> int:

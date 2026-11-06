@@ -165,3 +165,18 @@ def test_bad_cost_and_bad_rows_are_provider_errors():
         ChatClient().parse(dep(), httpx.Response(200, json={"choices": [{"message": {"content": "x"}}], "usage": {"cost": "abc"}}))
     with pytest.raises(ProviderError):
         EmbeddingsClient().parse(dep(), httpx.Response(200, json={"data": [1, 2]}))
+
+
+def test_remote_model_id_is_shared_by_probe_and_clients():
+    from weave_core.stages import Capability
+    from weave_inference.catalog import Catalog
+    from weave_inference.clients.chat import ChatClient
+    from weave_inference.probe import probe
+    from weave_inference.types import ChatRequest, Deployment, Model, Provider
+    prov = Provider(id="o", kind="openai", base_url="http://x/v1")
+    dep = Deployment(id="d", model="m-llm", provider="o", settings={"remote_model": "vendor/real-name"})
+    req = ChatClient().build(dep, prov, ChatRequest(messages=[]), None)
+    assert json.loads(req.content)["model"] == "vendor/real-name"
+    cat = Catalog({"m-llm": Model(id="m-llm", capability=Capability.llm)}, {"o": prov}, {"d": dep}, {})
+    t = httpx.MockTransport(lambda r: httpx.Response(200, json={"data": [{"id": "vendor/real-name"}]}))
+    assert probe(cat, env={}, transport=t)["d"].reported_model_id == "vendor/real-name"

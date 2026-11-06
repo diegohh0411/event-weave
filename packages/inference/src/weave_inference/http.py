@@ -10,7 +10,7 @@ from email.utils import parsedate_to_datetime
 import httpx
 
 from .ledger import request_hash
-from .types import Deployment, ProviderError, RateLimit, RateLimited
+from .types import Deployment, Provider, ProviderError, RateLimit, RateLimited
 
 MAX_RETRY_AFTER = 300.0
 
@@ -44,10 +44,10 @@ _limiters: dict[str, RateLimiter] = {}
 _limiters_lock = threading.Lock()
 
 
-def limiter_for(deployment: Deployment) -> RateLimiter:
+def limiter_for(deployment: Deployment, provider: Provider | None = None) -> RateLimiter:
     with _limiters_lock:
         if deployment.id not in _limiters:
-            _limiters[deployment.id] = RateLimiter(deployment.rate or RateLimit())
+            _limiters[deployment.id] = RateLimiter(deployment.rate or (provider.rate if provider else None) or RateLimit())
         return _limiters[deployment.id]
 
 

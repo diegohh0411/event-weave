@@ -16,7 +16,7 @@ from .clients.cloudflare import CloudflareClient
 from .clients.embeddings import EmbeddingsClient
 from .clients.openrouter import OpenRouterDecisionsClient
 from .clients.stub import StubClient
-from .clients.systemone import SystemOneClient
+from .clients.systemone import SystemOneClient, merge
 from .http import limiter_for, send_with_retries
 from .ledger import LedgerEntry, cost_of, record, request_hash
 from .limits import check_limits
@@ -107,7 +107,10 @@ class Inference:
                 wrapped.__cause__ = error
                 error = wrapped
             attempts = getattr(error, "attempts", 1)
-            self._ledger(dep_id, digest, status="error", latency_ms=_ms(start), attempts=attempts, error=str(error))
+            partial = getattr(error.__cause__, "partial_usage", None) or getattr(error, "partial_usage", None)
+            cost, estimated = cost_of(deployment, partial, partial.reported_cost) if partial else (0, False)
+            self._ledger(dep_id, digest, status="error", usage=partial, cost=cost, estimated=estimated,
+                         latency_ms=_ms(start), attempts=attempts, error=str(error))
             raise error
         cost, estimated = cost_of(deployment, usage, usage.reported_cost)
         self._ledger(dep_id, digest, status="ok", usage=usage, cost=cost, estimated=estimated,
@@ -122,18 +125,28 @@ class Inference:
         if wire_cls is None:
             raise NotReady(f"{provider.kind} does not support {capability.value}")
         wire = wire_cls()
-        limiter = limiter_for(deployment)
+        limiter = limiter_for(deployment, provider)
         requests = (wire.build_many(deployment, provider, request, credential)
                     if capability == Capability.system_one and hasattr(wire, "build_many")
                     else [wire.build(deployment, provider, request, credential)])
-        with httpx.Client(transport=self._transport) as client:
-            sent = [send_with_retries(client, r, limiter, attempts=MAX_ATTEMPTS, sleep=lambda s: time.sleep(s)) for r in requests]
-        responses, attempts = [s[0] for s in sent], max(s[1] for s in sent)
-        if hasattr(wire, "parse_many") and capability == Capability.system_one:
-            value, usage = wire.parse_many(deployment, responses, request)
-        else:
-            value, usage = wire.parse(deployment, responses[0], request)
-        return value, usage, attempts
+        many = hasattr(wire, "parse_many") and capability == Capability.system_one
+        # one sub-request per HTTP request, so each response is parsed (usage and cost kept) as it arrives
+        subs = ([request] if deployment.joint else [request.model_copy(update={"questions": [q]}) for q in request.questions]
+                ) if many else [request]
+        parts, attempts = [], 1
+        try:
+            with httpx.Client(transport=self._transport) as client:
+                for r, sub in zip(requests, subs):
+                    response, n = send_with_retries(client, r, limiter, attempts=MAX_ATTEMPTS, sleep=lambda s: time.sleep(s))
+                    attempts = max(attempts, n)
+                    parts.append(wire.parse_many(deployment, [response], sub) if many else wire.parse(deployment, response, sub))
+        except Exception as error:
+            if parts:
+                error.partial_usage = merge(parts)[1] if many else parts[0][1]
+            raise
+        if many:
+            return (*merge(parts), attempts)
+        return (*parts[0], attempts)
 
 
 def _ms(start: float) -> int:

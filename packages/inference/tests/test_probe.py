@@ -181,3 +181,14 @@ def test_blocking_provider_bounded_by_wall_clock_timeout():
     assert elapsed < 1.0
     assert r["lfm2-d1-q8@local"].render() == "not ready: unreachable"
     assert r["jev-1.14.0@typesafe"].render() == "ready"
+
+
+def test_cloudflare_system_one_deployment_is_ready():
+    from weave_inference.catalog import Catalog
+    from weave_inference.types import Deployment, Model
+    cat = load_catalog(REPO / "inference.yaml")
+    clef = Deployment(id="clef@cloudflare", model="clef", provider="cloudflare")
+    cat = Catalog({"clef": Model(id="clef", capability=Capability.system_one)}, cat.providers, {clef.id: clef}, {})
+    t = serve({("api.cloudflare.com", "/client/v4/accounts/acc/ai/models/search"): fixture("cloudflare")})
+    r = probe(cat, env={"CLOUDFLARE_API_TOKEN": "t", "CLOUDFLARE_ACCOUNT_ID": "acc"}, transport=t)
+    assert r["clef@cloudflare"].render() == "ready"

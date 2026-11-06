@@ -9,7 +9,7 @@ import httpx
 from weave_core.stages import Capability
 
 from .catalog import Catalog
-from .types import Deployment, Provider
+from .types import Deployment, Provider, remote_model_id
 
 
 @dataclass(frozen=True)
@@ -83,6 +83,8 @@ def _cloudflare_caps(task: str) -> frozenset[Capability]:
     t = task.lower()
     if 'embed' in t:
         return frozenset({Capability.embeddings})
+    if any(k in t.replace(' ', '').replace('-', '').replace('_', '') for k in ('systemone', 'decision')):
+        return frozenset({Capability.system_one})
     if 'generation' in t:
         return frozenset({Capability.llm})
     return frozenset({Capability.extraction})
@@ -124,7 +126,7 @@ def _probe_provider(catalog: Catalog, p: Provider, deployments: list[Deployment]
         return {d.id: _not_ready('unreachable') for d in deployments}
     out = {}
     for d in deployments:
-        wanted = d.settings.get('remote_model') or d.model
+        wanted = remote_model_id(d)
         hit = next((k for k in listing if _matches(k, wanted)), None)
         if hit is None:
             out[d.id] = _not_ready('model missing')

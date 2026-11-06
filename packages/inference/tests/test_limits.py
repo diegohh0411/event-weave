@@ -54,3 +54,15 @@ def test_within_limits_and_no_limits_pass():
 def test_error_hierarchy():
     assert issubclass(InferenceError, AdapterFailure)
     assert NotReady("x").retryable is False
+
+
+def test_context_estimate_includes_options_template_args_and_fields():
+    from weave_inference.types import ChatRequest, Choice, ExtractionRequest, SystemOneRequest
+    d = dep(context_tokens=50)
+    big = "x" * 400
+    for req in (SystemOneRequest(state="s", questions=[Choice(id="c", prompt="p", options=[big, "b"])]),
+                ChatRequest(messages=[{"role": "user", "content": "hi"}], template_args={"template": big}),
+                ExtractionRequest(text="t", fields={"name": big})):
+        with pytest.raises(LimitExceeded) as e:
+            check_limits(d, req)
+        assert e.value.limit == "context_tokens"
