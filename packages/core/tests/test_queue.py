@@ -301,3 +301,30 @@ def test_upstream_excludes_other_runs_and_sibling_partitions(queue, started_run,
     [foreign] = queue.claim(Stage.provide, 1, "w")
     finish(queue, foreign, StageResult({"foreign": True}, [doc_unit("d2", 0, "t2")]), "foreign")
     assert queue.upstream(child) == {Stage.provide: {"own": True}}
+
+
+def test_completed_provide_job_writes_order_key_and_gold_rows(queue, started_run, service):
+    [job] = queue.claim(Stage.provide, 1, "w")
+    doc = replace(record(), order_key=(7,))
+    rows = {"gold_documents": [{"document_id": "fake:d1", "language": "en", "topic": "t1", "split": None, "doc_index": 0}],
+            "gold_mentions": [{"document_id": "fake:d1", "mention_id": "m1", "start": 0, "end": 4, "text": "text"}]}
+    assert finish(queue, job, StageResult({}, [doc_unit("d1", 0, "t1")], [doc], rows))
+    with service.engine.connect() as conn:
+        assert conn.scalar(sa.text("select order_key from documents")) == [7]
+        assert conn.scalar(sa.text("select topic from gold_documents")) == "t1"
+        assert conn.scalar(sa.text("select count(*) from gold_mentions")) == 1
+
+
+def test_gold_rows_conflict_does_nothing(queue, started_run, service, count_rows):
+    [job] = queue.claim(Stage.provide, 1, "w")
+    row = {"document_id": "fake:d1", "language": "en", "topic": "t1", "split": None, "doc_index": 0}
+    assert finish(queue, job, StageResult({}, [doc_unit("d1", 0, "t1")], [record()], {"gold_documents": [row, row]}))
+    assert count_rows("gold_documents") == 1
+
+
+def test_rows_for_non_gold_table_are_refused(queue, started_run, count_rows, job_row):
+    [job] = queue.claim(Stage.provide, 1, "w")
+    with pytest.raises(ValueError, match="gold_"):
+        finish(queue, job, StageResult({}, [doc_unit("d1", 0, "t1")], [record()], {"mentions": [{}]}))
+    assert count_rows("documents") == 0
+    assert job_row(started_run, Stage.provide).status == JobStatus.claimed

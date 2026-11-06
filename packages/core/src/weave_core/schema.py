@@ -12,7 +12,9 @@ documents = sa.Table("documents", metadata,
     sa.Column("id", T, primary_key=True), *[sa.Column(n, T, nullable=False) for n in ("provider", "external_id", "language", "title", "byline", "outlet", "url")],
     sa.Column("published_at", TZ), sa.Column("text", T, nullable=False),
     sa.Column("token_offsets", JSONB, nullable=False), sa.Column("sentence_offsets", JSONB, nullable=False),
-    sa.Column("content_hash", T, nullable=False), sa.UniqueConstraint("provider", "external_id"))
+    sa.Column("content_hash", T, nullable=False),
+    sa.Column("order_key", ARRAY(sa.BigInteger), nullable=False, server_default="{}"),
+    sa.UniqueConstraint("provider", "external_id"))
 jobs = sa.Table("jobs", metadata,
     sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
     sa.Column("run_id", UUID(as_uuid=True), sa.ForeignKey("runs.id"), nullable=False),
@@ -45,3 +47,25 @@ run_deployments = sa.Table("run_deployments", metadata,
     sa.Column("deployment", T, primary_key=True), sa.Column("ready", sa.Boolean, nullable=False),
     sa.Column("reason", T), sa.Column("server_version", T), sa.Column("reported_model_id", T),
     sa.Column("probed_at", TZ, nullable=False))
+
+gold_documents = sa.Table("gold_documents", metadata,
+    sa.Column("document_id", T, sa.ForeignKey("documents.id"), primary_key=True),
+    sa.Column("language", T, nullable=False), sa.Column("topic", T, nullable=False),
+    sa.Column("split", T), sa.Column("doc_index", sa.Integer, nullable=False))
+gold_mentions = sa.Table("gold_mentions", metadata,
+    sa.Column("document_id", T, sa.ForeignKey("documents.id"), primary_key=True),
+    sa.Column("mention_id", T, primary_key=True), sa.Column("start", sa.Integer, nullable=False),
+    sa.Column("end", sa.Integer, nullable=False), sa.Column("text", T, nullable=False))
+gold_pairs = sa.Table("gold_pairs", metadata,
+    sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
+    *[sa.Column(n, T, nullable=False) for n in ("language", "kind", "split", "topic", "source_document_id",
+                                                 "source_mention_id", "target_document_id", "target_mention_id")],
+    sa.Column("label", sa.SmallInteger, nullable=False),
+    sa.CheckConstraint("kind in ('within', 'cross')", name="ck_gold_pairs_kind"),
+    sa.UniqueConstraint("kind", "source_document_id", "source_mention_id", "target_document_id", "target_mention_id"))
+crawled_pages = sa.Table("crawled_pages", metadata,
+    sa.Column("canonical_url", T, primary_key=True), sa.Column("url", T, nullable=False),
+    sa.Column("outlet", T, nullable=False), sa.Column("fetched_at", TZ, nullable=False),
+    sa.Column("status", T, nullable=False), sa.Column("reason", T), sa.Column("raw_html_gz", sa.LargeBinary),
+    sa.Column("document_id", T, sa.ForeignKey("documents.id")),
+    sa.CheckConstraint("status in ('stored', 'rejected')", name="ck_crawled_pages_status"))

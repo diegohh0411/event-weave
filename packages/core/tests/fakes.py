@@ -37,7 +37,7 @@ class Fake:
                 digest = sha256(external.encode()).hexdigest()
                 documents.append(DocumentRecord(
                     "fake", external, "en", external, "", "", "", None,
-                    external, [], [], digest))
+                    external, [], [], digest, (i,)))
                 emits.append(UnitRef(UnitKind.document, f"fake:{external}", digest,
                                      (i,), None if self.settings.no_topic else f"t{i % 2}"))
             if self.settings.duplicate_first and emits:

@@ -43,6 +43,7 @@ class DocumentRecord:
     token_offsets: list
     sentence_offsets: list
     content_hash: str
+    order_key: tuple[int, ...] = ()
 
     @property
     def id(self) -> str:
@@ -54,6 +55,7 @@ class StageResult:
     output: dict
     emits: list[UnitRef] | None = None
     documents: list[DocumentRecord] = field(default_factory=list)
+    rows: dict[str, list[dict]] = field(default_factory=dict)
 
 
 class AdapterFailure(Exception):

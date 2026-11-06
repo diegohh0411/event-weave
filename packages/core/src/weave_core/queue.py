@@ -11,7 +11,7 @@ from .config import RunConfig
 from .db import session_scope
 from .pipeline import child_partition, child_units, next_stage
 from .runs import mark_done_if_finished
-from .schema import documents, jobs, runs, stage_outputs
+from .schema import documents, jobs, metadata, runs, stage_outputs
 from .stages import JobStatus, RunState, Stage, UnitKind
 
 MAX_ATTEMPTS = 3
@@ -95,8 +95,15 @@ class Queue:
         cfg = RunConfig.model_validate(config)
         if spec.name != cfg.stages[job.stage].adapter:
             raise ValueError(f"spec adapter {spec.name} does not match configured adapter {cfg.stages[job.stage].adapter}")
+        for name in result.rows:
+            if not name.startswith("gold_") or name not in metadata.tables:
+                raise ValueError(f"stage rows may only target gold_ tables, got {name!r}")
         for document in result.documents:
-            session.execute(insert(documents).values(id=document.id, **asdict(document)).on_conflict_do_nothing())
+            values = asdict(document) | {"order_key": list(document.order_key)}
+            session.execute(insert(documents).values(id=document.id, **values).on_conflict_do_nothing())
+        for name, rows in result.rows.items():
+            if rows:
+                session.execute(insert(metadata.tables[name]).values(rows).on_conflict_do_nothing())
         if cache_key is not None:
             session.execute(insert(stage_outputs).values(
                 cache_key=cache_key, stage=job.stage, adapter=spec.name, adapter_version=spec.version,
