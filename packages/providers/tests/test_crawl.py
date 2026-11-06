@@ -25,6 +25,12 @@ def sitemap(*entries):
             f"{rows}</urlset>")
 
 
+def sitemap_undated(*paths):
+    rows = "".join(f"<url><loc>{BASE}{p}</loc></url>" for p in paths)
+    return ('<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            f"{rows}</urlset>")
+
+
 ENTRIES = [("/a/reuters", "2026-11-03T10:00:00Z"), ("/a/elpais", "2026-11-04T10:00:00Z"),
            ("/a/reuters-copy", "2026-11-04T11:00:00Z"), ("/a/paywalled", "2026-11-03T08:00:00Z"),
            ("/a/empty", "2026-11-02T08:00:00Z"), ("/private/secret", "2026-11-02T09:00:00Z")]
@@ -164,3 +170,48 @@ def test_cli_crawl_prints_report(tmp_path, monkeypatch, database_url):
     assert result.exit_code == 0, result.output
     assert "discovered=6 fetched=5 stored=2 duplicates=1" in result.output
     assert "rejected paywalled: 1" in result.output
+
+
+def replay_urls(engine, monkeypatch):
+    from uuid import uuid4
+    from weave_core.adapters import AdapterContext, UnitRef
+    from weave_core.stages import UnitKind
+    from weave_providers.replay import ReplayProvider, ReplaySettings
+
+    monkeypatch.setenv("WEAVE_DATABASE_URL", engine.url.render_as_string(hide_password=False))
+    emitted = ReplayProvider(ReplaySettings(), AdapterContext(uuid4(), 1, {})).process(
+        UnitRef(UnitKind.run, "r", "h"), {}).emits
+    urls = dict(rows(engine, "select id, url from documents"))
+    return [urls[u.id] for u in emitted]
+
+
+def test_undated_page_gets_max_order_key_and_sorts_last(engine, monkeypatch):
+    r = routes()
+    # undated sitemap (no dates at all) holds the page without a date of its own
+    r[f"{BASE}/sitemap.xml"] = Fetched("x", 200, sitemap_undated("/a/nodate", "/a/elpais"), None)
+    r[f"{BASE}/a/nodate"] = Fetched("x", 200, (FIX / "pages" / "no_date.html").read_text(encoding="utf-8"), None)
+    crawl(engine, OUTLETS, polite(r)[0], NOW)
+    keys = dict(rows(engine, "select url, order_key from documents"))
+    assert keys[f"{BASE}/a/nodate"] == [2**62]
+    assert keys[f"{BASE}/a/elpais"] != [2**62]
+    assert replay_urls(engine, monkeypatch) == [f"{BASE}/a/elpais", f"{BASE}/a/nodate"]
+
+
+def test_equal_timestamps_replay_in_url_order(engine, monkeypatch):
+    base = (FIX / "reuters" / "article.html").read_text(encoding="utf-8")
+    r = routes()
+    r[f"{BASE}/sitemap.xml"] = Fetched("x", 200, sitemap(("/a/zeta", "2026-11-03T10:00:00Z"),
+                                                       ("/a/alpha", "2026-11-03T10:00:00Z")), None)
+    r[f"{BASE}/a/zeta"] = Fetched("x", 200, base.replace("replace roughly forty", "replace roughly fifty"), None)
+    r[f"{BASE}/a/alpha"] = Fetched("x", 200, base, None)
+    crawl(engine, OUTLETS, polite(r)[0], NOW)
+    keys = {tuple(k) for _, k in rows(engine, "select url, order_key from documents")}
+    assert len(keys) == 1  # same page timestamp
+    assert replay_urls(engine, monkeypatch) == [f"{BASE}/a/alpha", f"{BASE}/a/zeta"]
+
+
+def test_empty_200_response_is_a_fetch_error(engine):
+    r = routes([("/a/blank", "2026-11-03T10:00:00Z")])
+    r[f"{BASE}/a/blank"] = Fetched("x", 200, None, None)
+    crawl(engine, OUTLETS, polite(r)[0], NOW)
+    assert rows(engine, "select reason from crawled_pages") == [("fetch error: empty response",)]
