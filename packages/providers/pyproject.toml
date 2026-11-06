@@ -2,7 +2,10 @@
 name = "weave-providers"
 version = "0.1.0"
 requires-python = ">=3.12,<3.13"
-dependencies = ["weave-core"]
+dependencies = ["weave-core", "pyyaml>=6.0.3"]
+
+[project.optional-dependencies]
+crawl = ["feedparser>=6"]
 
 [tool.uv.sources]
 weave-core = { workspace = true }
