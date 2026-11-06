@@ -1,9 +1,14 @@
 x-worker: &worker
-  build: .
+  build:
+    context: .
+    target: app
   image: event-weave:latest
   restart: unless-stopped
   environment:
     WEAVE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-weave}:${POSTGRES_PASSWORD:-weave}@postgres:5432/${POSTGRES_DB:-weave}
+    WEAVE_MCECR_PATH: /data/mcecr
+  volumes:
+    - ${WEAVE_MCECR_PATH:-./.mcecr-unset}:/data/mcecr:ro
   depends_on:
     api:
       condition: service_healthy
@@ -26,7 +31,9 @@ services:
       retries: 30
 
   api:
-    build: .
+    build:
+      context: .
+      target: app
     image: event-weave:latest
     restart: unless-stopped
     environment:
@@ -60,6 +67,21 @@ services:
   worker-cluster:
     <<: *worker
     command: weave worker --stage cluster
+
+  # Long-lived container for on-demand crawls: `podman compose up -d crawler`, then
+  # `podman compose exec crawler weave crawl /app/outlets.yaml`.
+  crawler:
+    build:
+      context: .
+      target: crawler
+    image: event-weave-crawler:latest
+    command: sleep infinity
+    restart: unless-stopped
+    environment:
+      WEAVE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-weave}:${POSTGRES_PASSWORD:-weave}@postgres:5432/${POSTGRES_DB:-weave}
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   pgdata:
