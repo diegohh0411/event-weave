@@ -46,7 +46,7 @@ def _owns(job):
                    jobs.c.status == JobStatus.claimed, jobs.c.claim_token == job.claim_token)
 
 
-STAGE_ROW_TABLES = frozenset({"mentions", "mention_tags"})
+STAGE_ROW_TABLES = frozenset({"mentions", "mention_tags", "enrichments"})
 
 
 class Queue:
@@ -100,7 +100,7 @@ class Queue:
             raise ValueError(f"spec adapter {spec.name} does not match configured adapter {cfg.stages[job.stage].adapter}")
         for name in result.rows:
             if not (name.startswith("gold_") or name in STAGE_ROW_TABLES) or name not in metadata.tables:
-                raise ValueError(f"stage rows may only target gold_ tables, got {name!r}")
+                raise ValueError(f"stage rows may only target gold_ tables or {sorted(STAGE_ROW_TABLES)}, got {name!r}")
         for document in result.documents:
             values = asdict(document) | {"order_key": list(document.order_key)}
             session.execute(insert(documents).values(id=document.id, **values).on_conflict_do_nothing())

@@ -21,8 +21,9 @@ class RateLimit(_Strict):
 
 class Limits(_Strict):
     context_tokens: int | None = None
-    max_choice_options: int | None = None
+    max_choice_options: int | None = Field(default=None, ge=1)
     max_request_bytes: int | None = None
+    max_fields: int | None = Field(default=None, ge=1)
 
 
 class Price(_Strict):

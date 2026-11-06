@@ -76,6 +76,11 @@ mentions = sa.Table("mentions", metadata,
     *[sa.Column(n, sa.Integer, nullable=False) for n in ("start", "end", "tok_start", "tok_end", "sentence")],
     *[sa.Column(n, T, nullable=False) for n in ("text", "extractor", "extractor_version")],
     sa.Column("deployment", T), sa.Column("probability", sa.Float))
+enrichments = sa.Table("enrichments", metadata,
+    sa.Column("id", T, primary_key=True),
+    sa.Column("mention_id", T, sa.ForeignKey("mentions.id"), nullable=False, index=True),
+    sa.Column("enricher", T), sa.Column("enricher_version", T), sa.Column("deployment", T),
+    *[sa.Column(n, JSONB) for n in ("action", "participants", "location", "time", "discarded")])
 mention_tags = sa.Table("mention_tags", metadata,
     sa.Column("mention_id", T, sa.ForeignKey("mentions.id"), primary_key=True),
     sa.Column("tagger", T, primary_key=True), sa.Column("tagger_version", T, primary_key=True),

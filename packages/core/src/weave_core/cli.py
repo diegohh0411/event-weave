@@ -69,6 +69,19 @@ if _extractors_app is not None:
     app.add_typer(_extractors_app, name='extractors')
 
 
+def _enrichers():
+    try:
+        from weave_enrichers.cli import app as enrichers_app
+    except ImportError:  # weave-enrichers is not installed
+        return None
+    return enrichers_app
+
+
+_enrichers_app = _enrichers()
+if _enrichers_app is not None:
+    app.add_typer(_enrichers_app, name='enrichers')
+
+
 def _service(probe: bool = True):
     settings = Settings.from_env()
     registry = Registry()

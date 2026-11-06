@@ -18,6 +18,10 @@ def check_limits(deployment: Deployment, request: object) -> None:
             tokens = len((getattr(request, "text_for_context", "") or "").encode()) // 4
         if tokens > limits.context_tokens:
             raise LimitExceeded("context_tokens", tokens, limits.context_tokens, estimated=estimated)
+    if limits.max_fields is not None:
+        fields = getattr(request, "fields", None)
+        if fields is not None and len(fields) > limits.max_fields:
+            raise LimitExceeded("fields", len(fields), limits.max_fields)
     body = getattr(request, "body_bytes", None)
     if limits.max_request_bytes is not None and body is not None and body > limits.max_request_bytes:
         raise LimitExceeded("request_bytes", body, limits.max_request_bytes)
