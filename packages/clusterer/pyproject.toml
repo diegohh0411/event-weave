@@ -17,3 +17,4 @@ packages = ["src/weave_clusterer"]
 
 [project.entry-points."weave.adapters"]
 embedding-gemma = "weave_clusterer.embed:EmbeddingGemmaEmbedder"
+threshold = "weave_clusterer.threshold:ThresholdClusterer"
