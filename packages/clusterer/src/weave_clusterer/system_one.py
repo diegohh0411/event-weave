@@ -67,15 +67,15 @@ class SystemOneClusterer(ClustererBase):
         suffix = "+trimmed" if trimmed else ""
         labels = {c.cluster_id: f"c{i}" for i, c in enumerate(kept, start=1)}
         noul_answer = answers.get("same")
-        noul, invalid_noul = 0.0, False
+        noul, invalid_noul = 0.0, True  # a missing or null answer is invalid, not 0
         if noul_answer is not None and noul_answer.value is not None:
             try:
                 noul = float(noul_answer.value)
-                invalid_noul = not math.isfinite(noul)
+                invalid_noul = not (math.isfinite(noul) and 0.0 <= noul <= 1.0)
             except (TypeError, ValueError):
-                invalid_noul = True
-            if invalid_noul:
-                noul = 0.0
+                pass
+        if invalid_noul:
+            noul = 0.0
         which = answers.get("which")
         probabilities = which.probabilities if which is not None else None
 

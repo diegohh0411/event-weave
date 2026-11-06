@@ -4,7 +4,7 @@ Embeds enriched mentions (`embedding-gemma`) and clusters them in order (`thresh
 
     weave clusterer report <run> [--k N]
 
-prints a run summary (mentions, clustered, failed, clusters, singletons, decision calls, reasons) and retrieval
+prints a run summary (mentions, clustered, failed, clusters, singletons, model calls the cluster stage made, reasons) and retrieval
 recall@K per language. Recall reads gold, so it is evaluation-only. `--k` below the recorded K re-slices the stored
 candidates, so sweeping K needs no re-run.
 

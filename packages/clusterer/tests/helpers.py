@@ -42,17 +42,17 @@ def add_member(c, run_id, partition, cluster_id, mention_id, vectors, order=(1,)
             id=f"v-{mention_id}-{f}-{str(run_id)[:4]}-{deployment}-{len(vec)}", mention_id=mention_id,
             enrichment_id="e-" + mention_id + str(run_id)[:4], field=f, kind="document", deployment=deployment,
             dimension=len(vec), vector=vec))
-    if True:  # every seeded mention has a run-scoped enrich output naming its enrichment
-        key = f"k-{mention_id}-{run_id}"
-        c.execute(sa.insert(stage_outputs).values(cache_key=key, stage="enrich", adapter="a", adapter_version="1",
-                                                  output={"enrichment": enrichment or {},
-                                                          "enrichment_id": "e-" + mention_id + str(run_id)[:4]},
-                                                  emits=[],
-                                                  created_at=datetime.now(timezone.utc)))
-        c.execute(sa.insert(jobs).values(run_id=run_id, stage="enrich", unit_kind="mention", unit_id=mention_id,
-                                         unit_content_hash="h", partition=partition, order_key=list(order),
-                                         input_hash="i", status="done", attempts=1,
-                                         available_at=datetime.now(timezone.utc), cache_key=key))
+    # every seeded mention has a run-scoped enrich output naming its enrichment
+    key = f"k-{mention_id}-{run_id}"
+    c.execute(sa.insert(stage_outputs).values(cache_key=key, stage="enrich", adapter="a", adapter_version="1",
+                                              output={"enrichment": enrichment or {},
+                                                      "enrichment_id": "e-" + mention_id + str(run_id)[:4]},
+                                              emits=[],
+                                              created_at=datetime.now(timezone.utc)))
+    c.execute(sa.insert(jobs).values(run_id=run_id, stage="enrich", unit_kind="mention", unit_id=mention_id,
+                                     unit_content_hash="h", partition=partition, order_key=list(order),
+                                     input_hash="i", status="done", attempts=1,
+                                     available_at=datetime.now(timezone.utc), cache_key=key))
 
 
 def q(**fields):

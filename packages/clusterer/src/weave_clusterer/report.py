@@ -5,7 +5,7 @@ from uuid import UUID
 
 import sqlalchemy as sa
 from weave_core.schema import (cluster_decisions, cluster_members, clusters, documents, gold_mentions, gold_pairs, jobs,
-                               mentions)
+                               ledger, mentions)
 from weave_core.stages import JobStatus, Stage
 
 
@@ -16,7 +16,7 @@ class Summary:
     failed: int
     clusters: int
     singletons: int
-    decision_calls: int  # decisions that went through a model deployment
+    decision_calls: int  # model calls the cluster stage made (ledger rows; cache hits are not calls)
     outcomes: dict[str, int] = field(default_factory=dict)  # reason -> decisions
 
 
@@ -35,12 +35,14 @@ def summary(engine, run_id: UUID) -> Summary:
             j.run_id == run_id, j.stage == Stage.cluster).group_by(j.status)).all())
         sizes = [n for (n,) in conn.execute(sa.select(sa.func.count()).where(cluster_members.c.run_id == run_id)
                                             .group_by(cluster_members.c.cluster_id))]
-        decided = conn.execute(sa.select(cluster_decisions.c.reason, cluster_decisions.c.deployment)
+        decided = conn.execute(sa.select(cluster_decisions.c.reason)
                                .where(cluster_decisions.c.run_id == run_id)).all()
-    outcomes = Counter(reason or "(none)" for reason, _ in decided)
+        calls = conn.scalar(sa.select(sa.func.count()).select_from(ledger)
+                            .where(ledger.c.run_id == run_id, ledger.c.stage == Stage.cluster))
+    outcomes = Counter(reason or "(none)" for (reason,) in decided)
     return Summary(mentions=sum(by_status.values()), clustered=sum(sizes), failed=by_status.get(JobStatus.failed, 0),
                    clusters=len(sizes), singletons=sum(1 for n in sizes if n == 1),
-                   decision_calls=sum(1 for _, deployment in decided if deployment), outcomes=dict(sorted(outcomes.items())))
+                   decision_calls=calls, outcomes=dict(sorted(outcomes.items())))
 
 
 def _gold_components(conn) -> dict[tuple, int]:

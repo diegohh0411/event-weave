@@ -296,6 +296,20 @@ def test_non_numeric_noul_is_invalid_not_a_crash(db, s1):
     assert got["m3"] not in {got["m1"], got["m2"]}
 
 
+@pytest.mark.parametrize("script", [
+    {"question_id": "other", "value": 0.95},  # no answer to "same" at all
+    None, 2.0, -0.1])
+def test_missing_null_or_out_of_range_noul_is_invalid(db, s1, script):
+    run = new_run(db, n=2, settings={**SETTINGS, "threshold": 0.0})  # threshold 0 must not join without a valid answer
+    build_clusters(db, run, 2)
+    set_stub_script("stub", {"same": script, "which": "c1"})
+    add_mention(db, run, "m3", 3, 0.5)
+    drain(db, SystemOneClusterer)
+    got, d = membership(db, run), decisions(db, run)["m3"]
+    assert (d.outcome, d.reason) == ("new", "invalid_noul")
+    assert got["m3"] not in {got["m1"], got["m2"]}
+
+
 def test_shown_card_hash_is_that_of_the_shrunk_card(db, s1):
     run = new_run(db, n=5)
     drain(db, SystemOneClusterer)
