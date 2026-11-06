@@ -62,7 +62,7 @@ def test_provider_hash_uses_only_normalized_provider_choice(service, good_config
         rows = [conn.execute(sa.select(jobs).where(jobs.c.run_id == run)).one() for run in ids]
         configs = [conn.execute(sa.select(runs).where(runs.c.id == run)).one() for run in ids]
     assert configs[0].config_hash != configs[1].config_hash
-    expected = hashlib.sha256(b'{"adapter":"fake-provider","deployments":{},"settings":{"docs":3,"duplicate_first":false,"no_topic":false,"window":1}}').hexdigest()
+    expected = hashlib.sha256(b'{"adapter":"fake-provider","deployments":{},"settings":{"docs":3,"duplicate_first":false,"no_topic":false,"window":1},"version":"1"}').hexdigest()
     assert rows[0].unit_content_hash == rows[0].input_hash == expected
     assert (rows[0].input_hash == rows[1].input_hash) == equal
     assert rows[1].unit_content_hash == rows[1].input_hash
@@ -75,3 +75,30 @@ def test_start_refuses_deployment_that_went_not_ready(service, good_config):
         service.start(run)
     status = service.status(run)
     assert status.state == RunState.created and status.stages == {}
+
+
+def _set_version(service, run, stage, version):
+    import sqlalchemy as sa
+    from weave_core.schema import runs
+    with service.engine.begin() as c:
+        cfg = c.scalar(sa.select(runs.c.config).where(runs.c.id == run))
+        cfg["stages"][stage]["version"] = version
+        c.execute(runs.update().where(runs.c.id == run).values(config=cfg))
+
+
+def test_create_pins_adapter_versions(service, good_config):
+    import sqlalchemy as sa
+    from weave_core.schema import runs
+    run = service.create(good_config).run_id
+    with service.engine.connect() as c:
+        cfg = c.scalar(sa.select(runs.c.config).where(runs.c.id == run))
+    assert {stage: choice["version"] for stage, choice in cfg["stages"].items()} == {
+        stage: "1" for stage in cfg["stages"]}
+
+
+def test_start_refuses_run_pinned_to_other_version(service, good_config):
+    from weave_core.config import ConfigError
+    run = service.create(good_config).run_id
+    _set_version(service, run, "extract", "0")
+    with pytest.raises(ConfigError, match="pinned to version '0'"):
+        service.start(run)

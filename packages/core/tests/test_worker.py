@@ -143,3 +143,17 @@ def test_non_cacheable_adapter_is_rerun_and_leaves_no_stage_output(engine, servi
     with engine.connect() as c:
         assert c.scalar(sa.select(sa.func.count()).select_from(stage_outputs)
                         .where(stage_outputs.c.stage == Stage.provide)) == 0
+
+
+def test_worker_refuses_job_when_installed_version_differs(engine, registry, service, good_config):
+    import sqlalchemy as sa
+    from weave_core.schema import jobs, runs
+    run = start(service, good_config)
+    with engine.begin() as c:  # code changed under a running run
+        cfg = c.scalar(sa.select(runs.c.config).where(runs.c.id == run))
+        cfg["stages"]["provide"]["version"] = "0"
+        c.execute(runs.update().where(runs.c.id == run).values(config=cfg))
+    run_worker(engine, registry, Stage.provide, "w", stop=threading.Event(), once=True)
+    with engine.connect() as c:
+        row = c.execute(sa.select(jobs.c.status, jobs.c.attempts, jobs.c.error).where(jobs.c.run_id == run)).one()
+    assert row.status == JobStatus.failed and "pinned to version '0'" in row.error
