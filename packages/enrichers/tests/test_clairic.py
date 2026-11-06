@@ -151,3 +151,26 @@ def test_contract(clairic):
     clear_cache()
     set_stub_script("stub", {})
     run_contract(lambda d: C(d), [], empty_cases=[(doc, m)])
+
+
+def test_different_documents_run_concurrently(clairic):
+    import threading
+    doc_a, doc_b = make_doc(TEXT, doc_id="fake:a"), make_doc(TEXT, doc_id="fake:b")
+    m = make_mention(doc_a, 7, 15)
+    barrier, errors = threading.Barrier(2, timeout=5), []
+
+    class Slow(C):
+        def run_batch(self, doc, mentions):
+            barrier.wait()  # both documents must be inside run_batch at once
+            return super().run_batch(doc, mentions)
+
+    def go(doc):
+        try:
+            Slow(doc).enrich_document(doc, [m])
+        except Exception as error:  # noqa: BLE001
+            errors.append(error)
+
+    threads = [threading.Thread(target=go, args=(d,)) for d in (doc_a, doc_b)]
+    [t.start() for t in threads]
+    [t.join(10) for t in threads]
+    assert errors == []

@@ -30,12 +30,14 @@ class ClairicSettings(BaseModel):
 
 _CACHE: "OrderedDict[tuple, dict[str, tuple[Enrichment, dict[str, int]]]]" = OrderedDict()
 _LOCK = threading.RLock()
+_KEY_LOCKS: dict[tuple, threading.Lock] = {}
 _LOCAL = threading.local()
 
 
 def clear_cache() -> None:
     with _LOCK:
         _CACHE.clear()
+        _KEY_LOCKS.clear()
 
 
 def _unmark(pos: int, open_at: int, close_at: int) -> int:
@@ -119,16 +121,23 @@ class ClairicEnricher(EnricherBase):
     def enrich_document(self, doc: Doc, mentions: list[dict]) -> dict[str, tuple[Enrichment, dict[str, int]]]:
         """Enrichments of the given mentions of one document, batched by the deployment's field limit and cached."""
         key = (doc.id, self.deployment(), self.settings.model_dump_json())
-        with _LOCK:
-            cached = _CACHE.setdefault(key, {})
-            _CACHE.move_to_end(key)
-            while len(_CACHE) > CACHE_SIZE:
-                _CACHE.popitem(last=False)
-            todo = [m for m in mentions if (m.get("id") or mention_id(m)) not in cached]
+        ids = [m.get("id") or mention_id(m) for m in mentions]
+        with _LOCK:  # bookkeeping only: never held across inference
+            key_lock = _KEY_LOCKS.setdefault(key, threading.Lock())
+        with key_lock:  # jobs on the same document wait for one another; other documents run concurrently
+            with _LOCK:
+                cached = dict(_CACHE.get(key, {}))
+            todo = [m for m, i in zip(mentions, ids) if i not in cached]
             size = self.per_request() or max(len(todo), 1)
             for i in range(0, len(todo), size):
                 cached.update(self.run_batch(doc, todo[i:i + size]))
-            return {mid: cached[mid] for mid in (m.get("id") or mention_id(m) for m in mentions)}
+                with _LOCK:  # store after each batch; a failure leaves earlier batches and no empty entry
+                    _CACHE[key] = dict(cached)
+                    _CACHE.move_to_end(key)
+                    while len(_CACHE) > CACHE_SIZE:
+                        old, _ = _CACHE.popitem(last=False)
+                        _KEY_LOCKS.pop(old, None)
+            return {i: (cached[i][0].model_copy(deep=True), dict(cached[i][1])) for i in ids}
 
     # -- stage ---------------------------------------------------------------
     def process(self, unit: UnitRef, upstream):
