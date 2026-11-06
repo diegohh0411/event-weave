@@ -44,7 +44,7 @@ def interleave(
 class McecrProvider:
     spec = AdapterSpec(
         name="mcecr", version="1", stage=Stage.provide, input_kind=UnitKind.run,
-        settings_model=McecrSettings,
+        settings_model=McecrSettings, cacheable=False,  # order depends on run seed and dataset files
     )
 
     def __init__(self, settings: McecrSettings, ctx: AdapterContext):
