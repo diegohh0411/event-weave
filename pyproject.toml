@@ -15,6 +15,7 @@ dev = [
     "weave-inference",
     "weave-providers",
     "httpx",
+    "defusedxml",
     "feedparser>=6",
     "crawl4ai==0.9.5",
 ]

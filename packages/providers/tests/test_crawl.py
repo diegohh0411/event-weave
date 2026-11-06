@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 from weave_core.db import make_engine
 from weave_core.schema import crawled_pages, documents
 from weave_providers.crawl.fetch import Fetched, FixtureFetcher, PoliteFetcher
+import logging
 from weave_providers.crawl.outlets import Outlet
 from weave_providers.crawl.store import crawl
 
@@ -164,7 +165,15 @@ def test_cli_crawl_prints_report(tmp_path, monkeypatch, database_url):
         def __exit__(self, *exc):
             pass
 
+    class FakeHttp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            pass
+
     monkeypatch.setattr(cli, "Crawl4aiFetcher", FakeBrowser)
+    monkeypatch.setattr(cli, "HttpFetcher", FakeHttp)
     monkeypatch.setattr(cli, "datetime", type("D", (), {"now": staticmethod(lambda tz=None: NOW)}))
     result = CliRunner().invoke(app, ["crawl", str(outlets), "--days", "7"])
     assert result.exit_code == 0, result.output
@@ -231,3 +240,46 @@ def test_weave_crawl_explains_missing_extra(monkeypatch):
     result = CliRunner().invoke(cli_module.app, ["crawl", "outlets.yaml"])
     assert result.exit_code == 1, result.output
     assert "install weave-providers[crawl]" in result.output
+
+
+def test_meta_urls_go_to_meta_fetcher_and_articles_to_article_fetcher(engine):
+    # a browser would hand back robots.txt wrapped in <pre>; it must never be what the parser sees
+    wrapped = "<html><body><pre>User-agent: *\nDisallow: /private/</pre></body></html>"
+    r = routes()
+    meta_routes = {u: r.pop(u) for u in (f"{BASE}/robots.txt", f"{BASE}/sitemap.xml")}
+    browser_routes = dict(r)
+    browser_routes[f"{BASE}/robots.txt"] = Fetched("x", 200, wrapped, None)  # traps a wrong path
+    browser, meta = FixtureFetcher(browser_routes), FixtureFetcher(meta_routes)
+    report = crawl(engine, OUTLETS, PoliteFetcher(browser, meta=meta, min_interval=0,
+                   clock=lambda: 0.0, sleep=lambda s: None), NOW)
+    assert meta.calls == [f"{BASE}/robots.txt", f"{BASE}/sitemap.xml"]
+    assert all("/a/" in u for u in browser.calls) and f"{BASE}/robots.txt" not in browser.calls
+    assert f"{BASE}/private/secret" not in browser.calls
+    assert report.stored == 2
+
+
+def test_crawl_builds_polite_fetcher_with_meta(engine):
+    r = routes()
+    meta = FixtureFetcher({u: r.pop(u) for u in (f"{BASE}/robots.txt", f"{BASE}/sitemap.xml")})
+    article = FixtureFetcher(r)
+    report = crawl(engine, OUTLETS, article, NOW, meta_fetcher=meta)
+    assert report.stored == 2 and f"{BASE}/robots.txt" not in article.calls
+
+
+def test_discovery_errors_counted_and_logged(engine, caplog):
+    r = routes()
+    r[f"{BASE}/sitemap.xml"] = Fetched("x", 503, None, None)
+    outlets = [Outlet("example-news", "example-news.test", "en", sitemaps=[f"{BASE}/sitemap.xml"],
+                      feeds=[f"{BASE}/feed.rss"])]
+    r[f"{BASE}/feed.rss"] = Fetched("x", 0, None, "timeout")
+    with caplog.at_level(logging.WARNING):
+        report = crawl(engine, outlets, polite(r)[0], NOW)
+    assert report.discovery_errors == {"example-news": 2}
+    assert f"{BASE}/sitemap.xml" in caplog.text and "HTTP 503" in caplog.text and "timeout" in caplog.text
+
+
+def test_malformed_sitemap_counted_as_discovery_error(engine):
+    r = routes()
+    r[f"{BASE}/sitemap.xml"] = Fetched("x", 200, "<urlset><url>", None)
+    report = crawl(engine, OUTLETS, polite(r)[0], NOW)
+    assert report.discovery_errors == {"example-news": 1} and report.discovered == 0

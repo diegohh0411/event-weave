@@ -7,6 +7,8 @@ from typing import Any, Callable, Protocol
 from urllib.parse import urlsplit
 from urllib.robotparser import RobotFileParser
 
+import httpx
+
 USER_AGENT = "EventWeaveBot/0.1 (+https://github.com/diegohh0411/event-weave)"
 _PRODUCT_TOKEN = USER_AGENT.split("/")[0]
 
@@ -17,6 +19,7 @@ class Fetched:
     status: int
     html: str | None
     error: str | None
+    final_url: str | None = None  # where redirects ended up, when known
 
 
 class Fetcher(Protocol):
@@ -38,6 +41,30 @@ class FixtureFetcher:
         if isinstance(route, Path):
             return Fetched(url, 200, route.read_text(encoding="utf-8"), None)
         return route
+
+
+class HttpFetcher:
+    """Plain HTTP fetcher for robots.txt, sitemaps and feeds, which a browser would mangle."""
+
+    def __init__(self, transport: httpx.BaseTransport | None = None, timeout: float = 20.0):
+        self._client = httpx.Client(headers={"User-Agent": USER_AGENT}, follow_redirects=True,
+                                    timeout=timeout, transport=transport)
+
+    def __enter__(self) -> "HttpFetcher":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
+    def fetch(self, url: str) -> Fetched:
+        try:
+            response = self._client.get(url)
+        except httpx.HTTPError as exc:
+            return Fetched(url, 0, None, f"{type(exc).__name__}: {exc}")
+        return Fetched(url, response.status_code, response.text, None, str(response.url))
+
+    def close(self) -> None:
+        self._client.close()
 
 
 class Crawl4aiFetcher:
@@ -77,7 +104,7 @@ class Crawl4aiFetcher:
         status = result.status_code or 0
         if not result.success:
             return Fetched(url, status, None, result.error_message or "fetch failed")
-        return Fetched(url, status, result.html, None)
+        return Fetched(url, status, result.html, None, getattr(result, "redirected_url", None))
 
     def close(self) -> None:
         if self._loop is None:
@@ -98,21 +125,27 @@ def _default_crawler() -> Any:
 
 
 class PoliteFetcher:
-    """Wraps a Fetcher: honours robots.txt and spaces requests per domain.
+    """Wraps fetchers: honours robots.txt and spaces requests per domain.
+
+    `inner` fetches article pages. `meta` (default: `inner`) fetches robots.txt and
+    sitemaps/feeds, which need raw bytes rather than a rendered DOM. Both share the
+    per-domain interval.
 
     robots.txt policy: 4xx means no restrictions; 5xx or an unreachable file means
-    everything on that domain is disallowed. Every inner request, robots.txt included,
-    counts toward the per-domain interval.
+    everything on that domain is disallowed. A redirect to another origin, or to a
+    disallowed URL, discards the response.
     """
 
     def __init__(
         self,
         inner: Fetcher,
+        meta: Fetcher | None = None,
         min_interval: float = 2.0,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ):
         self.inner = inner
+        self.meta = meta or inner
         self.min_interval = min_interval
         self._clock = clock
         self._sleep = sleep
@@ -126,15 +159,26 @@ class PoliteFetcher:
         return rules.can_fetch(_PRODUCT_TOKEN, url)
 
     def fetch(self, url: str) -> Fetched:
+        return self._guarded(self.inner, url)
+
+    def meta_view(self) -> Fetcher:
+        """A Fetcher for sitemaps and feeds: same politeness, routed to `meta`."""
+        return _MetaView(self)
+
+    def _guarded(self, fetcher: Fetcher, url: str) -> Fetched:
         if not self.allowed(url):
             return Fetched(url, 0, None, "robots disallowed")
-        return self._throttled_fetch(url)
+        got = self._throttled_fetch(fetcher, url)
+        final = got.final_url
+        if final and final != url:
+            if _origin(final) != _origin(url) or not self.allowed(final):
+                return Fetched(url, 0, None, "robots disallowed")
+        return got
 
     def _rules_for(self, url: str) -> "RobotFileParser | bool":
-        parts = urlsplit(url)
-        origin = f"{parts.scheme.lower()}://{parts.netloc.lower()}"
+        origin = _origin(url)
         if origin not in self._robots:
-            got = self._throttled_fetch(f"{origin}/robots.txt")
+            got = self._throttled_fetch(self.meta, f"{origin}/robots.txt")
             if got.html is not None and got.status == 200:
                 parser = RobotFileParser()
                 parser.parse(got.html.splitlines())
@@ -143,7 +187,7 @@ class PoliteFetcher:
                 self._robots[origin] = 400 <= got.status < 500
         return self._robots[origin]
 
-    def _throttled_fetch(self, url: str) -> Fetched:
+    def _throttled_fetch(self, fetcher: Fetcher, url: str) -> Fetched:
         domain = urlsplit(url).netloc.lower()
         last = self._last_request.get(domain)
         if last is not None:
@@ -151,6 +195,19 @@ class PoliteFetcher:
             if wait > 0:
                 self._sleep(wait)
         try:
-            return self.inner.fetch(url)
+            return fetcher.fetch(url)
         finally:
             self._last_request[domain] = self._clock()
+
+
+class _MetaView:
+    def __init__(self, polite: PoliteFetcher):
+        self._polite = polite
+
+    def fetch(self, url: str) -> Fetched:
+        return self._polite._guarded(self._polite.meta, url)
+
+
+def _origin(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme.lower()}://{parts.netloc.lower()}"

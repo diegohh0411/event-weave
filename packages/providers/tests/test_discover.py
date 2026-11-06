@@ -96,3 +96,12 @@ def test_outlet_requires_a_source_and_loads_from_yaml(tmp_path):
 def test_fixture_fetcher_unknown_url_asserts():
     with pytest.raises(AssertionError):
         FixtureFetcher({}).fetch("https://nope.test/")
+
+
+def test_sitemap_with_entity_expansion_is_rejected_not_expanded():
+    bomb = ('<?xml version="1.0"?><!DOCTYPE urlset [<!ENTITY a "aaaa"><!ENTITY b "&a;&a;&a;&a;">]>'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>&b;</loc></url></urlset>')
+    errors = []
+    f = FixtureFetcher({f"{BASE}/sitemap.xml": Fetched("x", 200, bomb, None)})
+    assert discover(outlet(), f, WINDOW, lambda url, reason: errors.append((url, reason))) == []
+    assert len(errors) == 1 and errors[0][0] == f"{BASE}/sitemap.xml"

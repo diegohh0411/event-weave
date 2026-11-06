@@ -1,5 +1,6 @@
 """Crawl orchestration: discover, fetch politely, extract, and store with dedup."""
 import gzip
+import logging
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -19,6 +20,7 @@ PROVIDER = "crawl"
 ROBOTS_DISALLOWED = "robots disallowed"
 FETCH_ERROR = "fetch error: "
 UNDATED_ORDER = 2**62
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -28,24 +30,34 @@ class CrawlReport:
     stored: int = 0
     duplicates: int = 0
     rejected: dict[str, int] = field(default_factory=dict)
+    discovery_errors: dict[str, int] = field(default_factory=dict)  # by outlet name
 
 
 def crawl(engine: Engine, outlets: list[Outlet], fetcher: Fetcher, now: datetime,
-          days: int = 7) -> CrawlReport:
+          days: int = 7, meta_fetcher: Fetcher | None = None) -> CrawlReport:
+    """`fetcher` gets article pages; `meta_fetcher` (default: `fetcher`) gets robots.txt,
+    sitemaps and feeds. A PoliteFetcher passed as `fetcher` is used as is."""
     if not isinstance(fetcher, PoliteFetcher):
-        fetcher = PoliteFetcher(fetcher)
+        fetcher = PoliteFetcher(fetcher, meta=meta_fetcher)
+    meta = fetcher.meta_view()
     window = (now - timedelta(days=days), now)
     report = CrawlReport()
     rejected: Counter[str] = Counter()
+    errors: Counter[str] = Counter()
     language = {o.name: o.language for o in outlets}
     for outlet in outlets:
-        candidates = discover(outlet, fetcher, window)
+        def on_error(url: str, reason: str, name: str = outlet.name) -> None:
+            errors[name] += 1
+            log.warning("discovery failed for %s (%s): %s", url, name, reason)
+
+        candidates = discover(outlet, meta, window, on_error)
         report.discovered += len(candidates)
         for candidate in candidates:
             if _already_crawled(engine, candidate.url):
                 continue
             _crawl_page(engine, candidate, language[candidate.outlet], fetcher, now, report, rejected)
     report.rejected = dict(rejected)
+    report.discovery_errors = dict(errors)
     return report
 
 

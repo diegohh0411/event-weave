@@ -1,4 +1,7 @@
-from weave_providers.crawl.fetch import Crawl4aiFetcher, Fetched, FixtureFetcher, PoliteFetcher, USER_AGENT
+import httpx
+
+from weave_providers.crawl.fetch import (
+    Crawl4aiFetcher, Fetched, FixtureFetcher, HttpFetcher, PoliteFetcher, USER_AGENT)
 
 
 def robots(body: str, status: int = 200) -> Fetched:
@@ -187,3 +190,82 @@ def test_origin_key_ignores_scheme_and_host_case():
     assert pf.fetch("HTTPS://EX.com/private/a").error == "robots disallowed"
     assert pf.fetch("https://Ex.COM/ok").status == 200
     assert inner.calls == ["https://ex.com/robots.txt", "https://Ex.COM/ok"]
+
+
+class Redirecting:
+    def __init__(self, final_url):
+        self.final_url, self.calls = final_url, []
+
+    def fetch(self, url):
+        self.calls.append(url)
+        if url.endswith("/robots.txt"):
+            return robots("User-agent: *\nDisallow: /private")
+        return Fetched(url, 200, "<html>secret</html>", None, self.final_url)
+
+
+def test_redirect_to_other_origin_is_discarded():
+    pf, _ = polite(Redirecting("https://elsewhere.com/a"))
+    assert pf.fetch("https://ex.com/a") == Fetched("https://ex.com/a", 0, None, "robots disallowed")
+
+
+def test_redirect_to_disallowed_path_is_discarded():
+    pf, _ = polite(Redirecting("https://ex.com/private/a"))
+    assert pf.fetch("https://ex.com/a") == Fetched("https://ex.com/a", 0, None, "robots disallowed")
+
+
+def test_redirect_within_origin_to_allowed_path_is_kept():
+    pf, _ = polite(Redirecting("https://ex.com/b"))
+    got = pf.fetch("https://ex.com/a")
+    assert got.status == 200 and got.html == "<html>secret</html>"
+
+
+def test_http_fetcher_sends_user_agent_and_follows_redirects():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers["user-agent"])
+        if request.url.path == "/old":
+            return httpx.Response(301, headers={"location": "https://ex.com/new"})
+        return httpx.Response(200, text="User-agent: *\nDisallow: /x")
+
+    with HttpFetcher(transport=httpx.MockTransport(handler)) as f:
+        got = f.fetch("https://ex.com/old")
+    assert got == Fetched("https://ex.com/old", 200, "User-agent: *\nDisallow: /x", None, "https://ex.com/new")
+    assert seen == [USER_AGENT, USER_AGENT]
+
+
+def test_http_fetcher_returns_errors_and_statuses():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/boom":
+            raise httpx.ConnectTimeout("slow")
+        return httpx.Response(404, text="nope")
+
+    with HttpFetcher(transport=httpx.MockTransport(handler)) as f:
+        assert f.fetch("https://ex.com/boom").error.startswith("ConnectTimeout")
+        assert f.fetch("https://ex.com/missing").status == 404
+
+
+def test_crawl4ai_fetcher_fills_final_url():
+    class Redirected(FakeResult):
+        redirected_url = "https://ex.com/b"
+
+    class C(FakeCrawler):
+        async def arun(self, url, config):
+            return Redirected()
+
+    with Crawl4aiFetcher(crawler_factory=C) as f:
+        assert f.fetch("https://ex.com/a").final_url == "https://ex.com/b"
+
+
+def test_meta_view_uses_meta_fetcher_but_same_politeness():
+    inner = FixtureFetcher({"https://ex.com/a": page("https://ex.com/a")})
+    meta = FixtureFetcher({
+        "https://ex.com/robots.txt": robots("User-agent: *\nDisallow: /private"),
+        "https://ex.com/sitemap.xml": page("https://ex.com/sitemap.xml"),
+    })
+    pf, clock = polite(inner, meta=meta)
+    assert pf.meta_view().fetch("https://ex.com/sitemap.xml").status == 200
+    assert pf.meta_view().fetch("https://ex.com/private/feed").error == "robots disallowed"
+    pf.fetch("https://ex.com/a")
+    assert inner.calls == ["https://ex.com/a"]
+    assert clock.sleeps == [2.0, 2.0]

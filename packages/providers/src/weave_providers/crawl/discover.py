@@ -1,5 +1,6 @@
 """URL discovery from sitemaps and feeds only; links in pages are never followed."""
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -45,12 +46,14 @@ def _text(el: ET.Element, path: str) -> str | None:
     return found.text.strip() if found is not None and found.text else None
 
 
+ErrorSink = Callable[[str, str], None]  # (url, reason)
+
+
 def _sitemap_entries(xml: str) -> tuple[list[str], list[tuple[str, datetime | None, str | None]]]:
-    """Return (child sitemap URLs, [(url, date, title)])."""
-    try:
-        root = ET.fromstring(xml)
-    except ET.ParseError:
-        return [], []
+    """Return (child sitemap URLs, [(url, date, title)]). Raises on malformed or hostile XML."""
+    from defusedxml import ElementTree as SafeET  # extra `crawl`; sitemaps are untrusted
+
+    root = SafeET.fromstring(xml)
     children = [loc for s in root.findall(f"{SM}sitemap") if (loc := _text(s, f"{SM}loc"))]
     entries = []
     for u in root.findall(f"{SM}url"):
@@ -63,25 +66,38 @@ def _sitemap_entries(xml: str) -> tuple[list[str], list[tuple[str, datetime | No
     return children, entries
 
 
-def _fetch_text(fetcher: Fetcher, url: str) -> str | None:
+def _fetch_text(fetcher: Fetcher, url: str, on_error: ErrorSink) -> str | None:
     got = fetcher.fetch(url)
-    return got.html if got.status == 200 and got.html else None
+    if got.status == 200 and got.html:
+        return got.html
+    on_error(url, got.error or ("empty response" if got.status == 200 else f"HTTP {got.status}"))
+    return None
 
 
-def _from_sitemap(fetcher: Fetcher, url: str):
-    xml = _fetch_text(fetcher, url)
+def _parse_sitemap(xml: str, url: str, on_error: ErrorSink):
+    from defusedxml import DefusedXmlException
+
+    try:
+        return _sitemap_entries(xml)
+    except (ET.ParseError, DefusedXmlException) as exc:
+        on_error(url, f"XML {type(exc).__name__}: {exc}")
+        return [], []
+
+
+def _from_sitemap(fetcher: Fetcher, url: str, on_error: ErrorSink):
+    xml = _fetch_text(fetcher, url, on_error)
     if xml is None:
         return []
-    children, entries = _sitemap_entries(xml)
+    children, entries = _parse_sitemap(xml, url, on_error)
     for child in children:  # one level only
-        child_xml = _fetch_text(fetcher, child)
+        child_xml = _fetch_text(fetcher, child, on_error)
         if child_xml is not None:
-            entries.extend(_sitemap_entries(child_xml)[1])
+            entries.extend(_parse_sitemap(child_xml, child, on_error)[1])
     return entries
 
 
-def _from_feed(fetcher: Fetcher, url: str):
-    body = _fetch_text(fetcher, url)
+def _from_feed(fetcher: Fetcher, url: str, on_error: ErrorSink):
+    body = _fetch_text(fetcher, url, on_error)
     if body is None:
         return []
     import feedparser  # extra `crawl`; imported lazily so `weave crawl` can explain its absence
@@ -101,11 +117,13 @@ def _on_domain(url: str, domain: str) -> bool:
     return host == domain or host.endswith("." + domain)
 
 
-def discover(outlet: Outlet, fetcher: Fetcher,
-             window: tuple[datetime, datetime]) -> list[Candidate]:
+def discover(outlet: Outlet, fetcher: Fetcher, window: tuple[datetime, datetime],
+             on_error: ErrorSink | None = None) -> list[Candidate]:
+    """`on_error(url, reason)` is called for each sitemap/feed that fails to fetch or parse."""
     start, end = _utc(window[0]), _utc(window[1])
-    sources = ([_from_sitemap(fetcher, u) for u in outlet.sitemaps]
-               + [_from_feed(fetcher, u) for u in outlet.feeds])
+    sink = on_error or (lambda url, reason: None)
+    sources = ([_from_sitemap(fetcher, u, sink) for u in outlet.sitemaps]
+               + [_from_feed(fetcher, u, sink) for u in outlet.feeds])
     found: dict[str, Candidate] = {}
     for entries in sources:
         has_dates = any(d for _, d, _ in entries)

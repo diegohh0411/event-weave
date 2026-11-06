@@ -447,6 +447,7 @@ source = { virtual = "." }
 [package.dev-dependencies]
 dev = [
     { name = "crawl4ai" },
+    { name = "defusedxml" },
     { name = "feedparser" },
     { name = "httpx" },
     { name = "pytest" },
@@ -462,6 +463,7 @@ dev = [
 [package.metadata.requires-dev]
 dev = [
     { name = "crawl4ai", specifier = "==0.9.5" },
+    { name = "defusedxml" },
     { name = "feedparser", specifier = ">=6" },
     { name = "httpx" },
     { name = "pytest" },
@@ -1851,6 +1853,7 @@ name = "weave-providers"
 version = "0.1.0"
 source = { editable = "packages/providers" }
 dependencies = [
+    { name = "httpx" },
     { name = "pyyaml" },
     { name = "weave-core" },
 ]
@@ -1858,13 +1861,16 @@ dependencies = [
 [package.optional-dependencies]
 crawl = [
     { name = "crawl4ai" },
+    { name = "defusedxml" },
     { name = "feedparser" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "crawl4ai", marker = "extra == 'crawl'", specifier = "==0.9.5" },
+    { name = "defusedxml", marker = "extra == 'crawl'", specifier = ">=0.7" },
     { name = "feedparser", marker = "extra == 'crawl'", specifier = ">=6" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "weave-core", editable = "packages/core" },
 ]
