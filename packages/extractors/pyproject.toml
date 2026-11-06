@@ -20,3 +20,4 @@ packages = ["src/weave_extractors"]
 
 [project.entry-points."weave.adapters"]
 gold = "weave_extractors.gold:GoldExtractor"
+stanza-rules = "weave_extractors.rules:StanzaRulesExtractor"

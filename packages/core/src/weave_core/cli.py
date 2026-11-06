@@ -56,6 +56,19 @@ if _crawl_command is not None:
     app.command('crawl')(_crawl_command)
 
 
+def _extractors():
+    try:
+        from weave_extractors.cli import app as extractors_app
+    except ImportError:  # weave-extractors is not installed
+        return None
+    return extractors_app
+
+
+_extractors_app = _extractors()
+if _extractors_app is not None:
+    app.add_typer(_extractors_app, name='extractors')
+
+
 def _service(probe: bool = True):
     settings = Settings.from_env()
     registry = Registry()
