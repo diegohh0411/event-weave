@@ -53,7 +53,7 @@ class McecrProvider:
 
     def _root(self) -> Path:
         raw = os.path.expandvars(self.settings.path)
-        if not raw or "${" in raw or "$" in raw:
+        if not raw or "${WEAVE_MCECR_PATH}" in raw:
             raise AdapterFailure(
                 f"MCECR path {self.settings.path!r} is not set; export WEAVE_MCECR_PATH",
                 retryable=False,
@@ -123,7 +123,8 @@ class McecrProvider:
             )
             ids[d.language, d.topic, d.doc_index] = rec.id
             documents.append(rec)
-            emits.append(UnitRef(UnitKind.document, rec.id, rec.content_hash, (i,), d.topic))
+            emits.append(UnitRef(
+                UnitKind.document, rec.id, rec.content_hash, (i,), f"{rec.language}/{d.topic}"))
             gold_documents.append({
                 "document_id": rec.id, "language": d.language, "topic": d.topic,
                 "split": splits_of[f"{d.language}/{d.topic}"], "doc_index": d.doc_index,

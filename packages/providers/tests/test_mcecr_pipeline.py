@@ -82,7 +82,7 @@ def test_mcecr_run_provides_documents_gold_and_feeds_extract():
             assert c.execute(sa.select(sa.func.count()).select_from(gold_mentions)).scalar() > 0
             assert c.execute(sa.select(sa.func.count()).select_from(gold_pairs)).scalar() > 0
             parts = {r[0] for r in c.execute(sa.select(jobs.c.partition).where(jobs.c.stage == Stage.extract))}
-            assert parts == {"t1"}
+            assert parts == {"en/t1"}
             done = c.execute(sa.select(sa.func.count()).select_from(jobs).where(
                 jobs.c.stage == Stage.extract, jobs.c.status == JobStatus.done)).scalar()
             assert done == 2

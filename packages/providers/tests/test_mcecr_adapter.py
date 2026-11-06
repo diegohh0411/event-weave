@@ -24,10 +24,18 @@ def dataset(tmp_path):
     (root / ".DS_Store").write_bytes(b"x")
     # t3 appears in no pair file: it has no split
     (root / "english/events/t3.json").write_text(json.dumps([tok("Lonely", 0, 0)]))
-    # t2 shares t1's second document text but is another topic
-    (root / "english/crossDoc/dev.json").write_text(
-        json.dumps({"topic_id": "t2", "doc_ids": [0, 0], "source_id": "T1",
-                    "target_id": "T2", "label": 0}) + "\n")
+    # t4 holds a document whose text equals t1's second document exactly
+    (root / "english/events/t4.json").write_text(json.dumps(
+        [tok(w, i, 0) for w, i in (("Obama", 0), ("visited", 6), ("Hawaii", 14), (".", 21))]))
+    (root / "english/crossDoc/dev.json").write_text("".join(
+        json.dumps({"topic_id": t, "doc_ids": [0, 0], "source_id": "T1",
+                    "target_id": "T2", "label": 0}) + "\n" for t in ("t2", "t4")))
+    # same topic id as english t1, in another language
+    shutil.copy(root / "spanish/events/s1.json", root / "spanish/events/t1.json")
+    (root / "spanish/withinDoc").mkdir(exist_ok=True)
+    (root / "spanish/withinDoc/test.json").write_text(
+        json.dumps({"topic_id": "t1", "doc_ids": [0], "source_id": "T1",
+                    "target_id": "T2", "label": 1}) + "\n")
     return root
 
 
@@ -76,7 +84,7 @@ def test_documents_reveal_no_topic_or_split(result):
 def test_gold_rows_and_partition_hint(result):
     assert {r["topic"] for r in result.rows["gold_documents"]} == {"t1"}
     assert {r["split"] for r in result.rows["gold_documents"]} == {"test"}
-    assert all(u.partition_hint == "t1" for u in result.emits)
+    assert all(u.partition_hint == "en/t1" for u in result.emits)
     assert [u.order_key for u in result.emits] == [d.order_key for d in result.documents]
     doc_ids = set(ids(result))
     assert {r["document_id"] for r in result.rows["gold_mentions"]} <= doc_ids
@@ -93,10 +101,17 @@ def test_unsplit_topic_excluded_and_reported(result):
 
 def test_identical_text_in_two_topics_gets_two_ids(dataset):
     r = run(dataset, splits=["test", "dev"])
-    same = [d for d in r.documents if d.content_hash == r.documents[0].content_hash]
-    assert len(set(ids(r))) == len(r.documents)
-    t2 = [g for g in r.rows["gold_documents"] if g["topic"] == "t2"]
-    assert t2 and t2[0]["split"] == "dev" and same
+    by_topic = {g["document_id"]: g["topic"] for g in r.rows["gold_documents"]}
+    t1 = next(d for d in r.documents if by_topic[d.id] == "t1" and d.text == "Obama visited Hawaii .")
+    t4 = next(d for d in r.documents if by_topic[d.id] == "t4")
+    assert t1.text == t4.text and t1.content_hash == t4.content_hash
+    assert t1.id != t4.id and t1.external_id != t4.external_id
+
+
+def test_same_topic_id_in_two_languages_gets_two_partitions(dataset):
+    r = run(dataset, languages=["english", "spanish"])
+    assert {u.partition_hint for u in r.emits} == {"en/t1", "es/t1"}
+    assert {g["topic"] for g in r.rows["gold_documents"]} == {"t1"}
 
 
 def test_only_known_language_directories_and_unknown_language_fails(dataset):
