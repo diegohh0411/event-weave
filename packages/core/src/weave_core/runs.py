@@ -79,7 +79,7 @@ class RunService:
         return row.config_hash
 
     def start(self, run_id):
-        now = datetime.now(timezone.utc)
+        now = sa.func.now()  # database time: job availability is compared against DB now()
         with session_scope(self.engine) as session:
             config = session.execute(sa.select(runs.c.config).where(runs.c.id == run_id)).scalar_one()
             cfg = RunConfig.model_validate(config)

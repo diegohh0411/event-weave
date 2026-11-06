@@ -328,3 +328,13 @@ def test_rows_for_non_gold_table_are_refused(queue, started_run, count_rows, job
         finish(queue, job, StageResult({}, [doc_unit("d1", 0, "t1")], [record()], {"mentions": [{}]}))
     assert count_rows("documents") == 0
     assert job_row(started_run, Stage.provide).status == JobStatus.claimed
+
+
+def test_large_gold_pairs_batch_exceeds_bind_parameter_cap(queue, started_run, count_rows):
+    [job] = queue.claim(Stage.provide, 1, "w")
+    pairs = [{"language": "en", "kind": "within", "split": "train", "topic": "t1",
+              "source_document_id": "fake:d1", "source_mention_id": f"m{i}",
+              "target_document_id": "fake:d1", "target_mention_id": f"n{i}", "label": 1}
+             for i in range(8000)]
+    assert finish(queue, job, StageResult({}, [doc_unit("d1", 0, "t1")], [record()], {"gold_pairs": pairs}))
+    assert count_rows("gold_pairs") == 8000

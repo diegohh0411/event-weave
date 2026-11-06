@@ -102,8 +102,8 @@ class Queue:
             values = asdict(document) | {"order_key": list(document.order_key)}
             session.execute(insert(documents).values(id=document.id, **values).on_conflict_do_nothing())
         for name, rows in result.rows.items():
-            if rows:
-                session.execute(insert(metadata.tables[name]).values(rows).on_conflict_do_nothing())
+            if rows:  # executemany: a single multi-VALUES statement would hit the 65,535 bind-parameter cap
+                session.execute(insert(metadata.tables[name]).on_conflict_do_nothing(), rows)
         if cache_key is not None:
             session.execute(insert(stage_outputs).values(
                 cache_key=cache_key, stage=job.stage, adapter=spec.name, adapter_version=spec.version,
