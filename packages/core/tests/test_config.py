@@ -64,3 +64,19 @@ def test_invalid_settings_named(registry, catalog, good_config):
     with pytest.raises(ConfigError) as e:
         validate(good_config, registry, catalog)
     assert e.value.problems[0].startswith("stage extract: invalid settings:")
+
+
+class DefaultingCatalog(StaticCatalog):
+    def default_for(self, capability):
+        return "good-extractor" if capability == Capability.extraction else None
+
+def test_default_deployment_fills_missing_capability(registry, catalog, good_config):
+    cat = DefaultingCatalog(catalog)
+    good_config.stages[Stage.enrich].deployments = {}
+    v = validate(good_config, registry, cat)
+    assert v.stages[Stage.enrich].deployments == {Capability.extraction: "good-extractor"}
+
+def test_missing_deployment_without_default_still_errors(registry, catalog, good_config):
+    good_config.stages[Stage.enrich].deployments = {}
+    with pytest.raises(ConfigError, match="needs a deployment for"):
+        validate(good_config, registry, catalog)

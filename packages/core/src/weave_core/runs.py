@@ -14,20 +14,31 @@ from weave_core.schema import jobs, runs
 from weave_core.stages import JobStatus, RunState, Stage, UnitKind
 
 
+@dataclass(frozen=True)
+class Estimate:
+    amount: Decimal | None
+    reason: str | None = None
+
+
 class CostEstimator(Protocol):
-    def estimate(self, cfg: RunConfig) -> Decimal | None: ...
+    def estimate(self, cfg: RunConfig) -> Estimate: ...
 
 
 class NoEstimate:
-    def estimate(self, cfg: RunConfig) -> Decimal | None:
-        return None
+    def estimate(self, cfg: RunConfig) -> Estimate:
+        return Estimate(None, 'no estimator')
+
+
+def provide_hash(cfg: RunConfig) -> str:
+    provider = cfg.stages[Stage.provide]
+    return hashlib.sha256(json.dumps(provider.model_dump(mode='json'), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
 @dataclass
 class RunCreated:
     run_id: UUID
     config_hash: str
-    estimate: Decimal | None
+    estimate: Estimate
 
 
 @dataclass
@@ -49,8 +60,8 @@ def mark_done_if_finished(session, run_id: UUID) -> bool:
 
 
 class RunService:
-    def __init__(self, engine, registry, catalog, estimator: CostEstimator = NoEstimate()):
-        self.engine, self.registry, self.catalog, self.estimator = engine, registry, catalog, estimator
+    def __init__(self, engine, registry, catalog, estimator: CostEstimator = NoEstimate(), on_start=None):
+        self.engine, self.registry, self.catalog, self.estimator, self.on_start = engine, registry, catalog, estimator, on_start
 
     def create(self, cfg: RunConfig) -> RunCreated:
         cfg = validate(cfg, self.registry, self.catalog)
@@ -70,11 +81,14 @@ class RunService:
     def start(self, run_id):
         now = datetime.now(timezone.utc)
         with session_scope(self.engine) as session:
-            self._transition(session, run_id, RunState.created, RunState.running, started_at=now)
             config = session.execute(sa.select(runs.c.config).where(runs.c.id == run_id)).scalar_one()
-            provider = RunConfig.model_validate(config).stages[Stage.provide]
-            digest = hashlib.sha256(json.dumps(provider.model_dump(mode='json'), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+            cfg = RunConfig.model_validate(config)
+            validate(cfg, self.registry, self.catalog)  # a run cannot start with a deployment that is not ready
+            self._transition(session, run_id, RunState.created, RunState.running, started_at=now)
+            digest = provide_hash(cfg)
             session.execute(jobs.insert().values(run_id=run_id, stage=Stage.provide, unit_kind=UnitKind.run, unit_id=str(run_id), unit_content_hash=digest, partition='*', order_key=[], input_hash=digest, status=JobStatus.pending, available_at=now))
+            if self.on_start is not None:
+                self.on_start(session, run_id, cfg)
 
     def cancel(self, run_id):
         with session_scope(self.engine) as session:

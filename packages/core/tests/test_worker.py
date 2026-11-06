@@ -117,3 +117,12 @@ def test_heartbeat_failure_recovers_or_stops_claiming(
     assert service.status(first).stages[Stage.provide] == {JobStatus.done: 1}
     assert "heartbeat database unavailable" in caplog.text
     assert all(b - a >= interval * 0.8 for a, b in zip(attempts, attempts[1:]))
+
+
+def test_build_adapter_passes_stage_and_adapter_name(engine, registry, service, good_config):
+    from weave_core.db import session_scope
+    from weave_core.worker import build_adapter
+    run = service.create(good_config).run_id
+    with session_scope(engine) as session:
+        adapter, _ = build_adapter(session, run, Stage.enrich, registry)
+    assert adapter.ctx.stage == Stage.enrich and adapter.ctx.adapter == "fake-enricher"

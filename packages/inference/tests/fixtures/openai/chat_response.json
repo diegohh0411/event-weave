@@ -1,0 +1,2 @@
+{"id":"chatcmpl-1","object":"chat.completion","model":"nuextract3","choices":[{"index":0,"message":{"role":"assistant","content":"{\"venue\": \"Foro Indie\"}"},"finish_reason":"stop"}],
+ "usage":{"prompt_tokens":100,"completion_tokens":20,"total_tokens":120,"prompt_tokens_details":{"cached_tokens":64}}}

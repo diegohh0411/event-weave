@@ -27,7 +27,7 @@ def build_adapter(session, run_id, stage, registry):
     if cls.spec.max_concurrency < 1:
         raise ValueError("max_concurrency must be positive")
     adapter = cls(cls.spec.settings_model.model_validate(choice.settings),
-                  AdapterContext(run_id, cfg.seed, choice.deployments))
+                  AdapterContext(run_id, cfg.seed, choice.deployments, stage, choice.adapter))
     return adapter, choice
 
 

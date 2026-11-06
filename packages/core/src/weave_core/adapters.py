@@ -71,6 +71,8 @@ class AdapterContext:
     run_id: UUID
     seed: int
     deployments: Mapping[Capability, str]
+    stage: Stage | None = None
+    adapter: str | None = None
 
 
 class StageAdapter(Protocol):

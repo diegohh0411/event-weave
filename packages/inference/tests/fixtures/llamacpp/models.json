@@ -1,0 +1,4 @@
+{"object":"list","data":[
+ {"id":"lfm2-d1-q8","object":"model","architecture":{"input_modalities":["text"],"output_modalities":["decisions"]}},
+ {"id":"nuextract3","object":"model","architecture":{"input_modalities":["text"],"output_modalities":["text"]}},
+ {"id":"embeddinggemma-2","object":"model","architecture":{"input_modalities":["text"],"output_modalities":["embeddings"]}}]}
