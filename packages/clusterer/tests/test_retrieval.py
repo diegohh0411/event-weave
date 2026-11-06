@@ -97,3 +97,55 @@ def test_score_ties_break_on_earliest_member_not_cluster_id(session):
     add_member(session, run, "p", "C", "m-mid", {"action": unit(0.2)}, order=(3,))
     got = retrieve(session, run, "p", q(action=unit(0.2)), W, 5, **DD)
     assert [c.cluster_id for c in got] == ["B", "C", "A"]
+
+
+def _shared_mention_two_runs(session, a_vec, b_vec):
+    """Mention m1 embedded in run A and run B from different enrichments, same deployment and dimension."""
+    run_a, run_b = make_run(session), make_run(session)
+    add_member(session, run_a, "p", "A", "m1", a_vec)
+    add_member(session, run_b, "p", "B", "m1", b_vec)
+    return run_a, run_b
+
+
+def test_retrieve_uses_only_the_runs_enrichment_vectors(session):
+    run_a, run_b = _shared_mention_two_runs(session, {"action": unit(1.5)}, {"action": unit(0.0)})
+    got = retrieve(session, run_a, "p", q(action=unit(0.0)), W, 5, **DD)
+    assert [c.cluster_id for c in got] == ["A"] and got[0].score == pytest.approx(math.cos(1.5))
+    got = retrieve(session, run_b, "p", q(action=unit(0.0)), W, 5, **DD)
+    assert got[0].score == pytest.approx(1.0)
+
+
+def test_members_vectors_only_from_the_runs_enrichment(session):
+    run_a, run_b = _shared_mention_two_runs(session, {"action": unit(1.5)}, {"action": unit(0.0), "time": unit(0.3)})
+    (m,) = PartitionView(session, run_a, "p", **DD).members("A")
+    assert m.vectors == {"action": [pytest.approx(x) for x in unit(1.5)]}
+    (m,) = PartitionView(session, run_b, "p", **DD).members("B")
+    assert set(m.vectors) == {"action", "time"}
+
+
+def test_all_empty_enrichment_gets_no_fields_despite_other_runs_vectors(db):
+    import sqlalchemy as sa
+    from helpers import decisions, drain, make_pipeline_run, seed_unit
+    from weave_core.schema import enrichments, member_vectors, stage_outputs, jobs
+    with db.begin() as c:
+        other = make_pipeline_run(c)
+        seed_unit(c, other, "m1", (1,), {"action": unit(0.0)})
+        run = make_pipeline_run(c)
+        seed_unit(c, run, "m0", (0,), {"action": unit(0.0)})  # so the partition is not empty
+        # same mention, this run's enrichment is all-empty and has no vectors
+        c.execute(sa.insert(enrichments).values(id="e-empty", mention_id="m1"))
+        c.execute(sa.insert(stage_outputs).values(
+            cache_key="k-empty", stage="enrich", adapter="a", adapter_version="1",
+            output={"enrichment": {f: {"text": None, "spans": [], "confidence": None}
+                                   for f in ("action", "participants", "location", "time")},
+                    "enrichment_id": "e-empty"}, emits=[], created_at=sa.func.now()))
+        ids = {}
+        for stage, status, parent in (("enrich", "done", None), ("embed", "done", "enrich"),
+                                      ("cluster", "pending", "embed")):
+            ids[stage] = c.execute(sa.insert(jobs).values(
+                run_id=run, stage=stage, unit_kind="mention", unit_id="m1", unit_content_hash="h",
+                parent_job_id=ids.get(parent), partition="all", order_key=[1], input_hash="i", status=status,
+                attempts=0, available_at=sa.func.now(), cache_key="k-empty" if stage == "enrich" else None,
+            ).returning(jobs.c.id)).scalar_one()
+    drain(db)
+    assert decisions(db, run)["m1"].reason == "no_fields"

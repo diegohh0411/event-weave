@@ -45,10 +45,14 @@ class PartitionView:
             .order_by(cm.c.order_key, cm.c.mention_id)).all()
         ids = [r.mention_id for r in rows]
         vectors: dict[str, dict[str, list[float]]] = {i: {} for i in ids}
-        if ids:
+        # Only the vectors of the enrichment this run's enrich stage produced for each member.
+        pairs = [(r.mention_id, (r.output or {}).get("enrichment_id")) for r in rows
+                 if (r.output or {}).get("enrichment_id")]
+        if pairs:
             for v in self.session.execute(
                     sa.select(member_vectors.c.mention_id, member_vectors.c.field, member_vectors.c.vector)
-                    .where(member_vectors.c.mention_id.in_(ids), member_vectors.c.kind == "document",
+                    .where(sa.tuple_(member_vectors.c.mention_id, member_vectors.c.enrichment_id).in_(pairs),
+                           member_vectors.c.kind == "document",
                            member_vectors.c.deployment == self.deployment, member_vectors.c.dimension == self.dimension)):
                 vectors[v.mention_id][v.field] = v.vector
         out = []

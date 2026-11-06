@@ -6,7 +6,10 @@ import sqlalchemy as sa
 _SQL = sa.text("""
     SELECT cm.cluster_id AS cluster_id, max(1 - (mv.vector <=> CAST(:q AS vector))) AS score
     FROM cluster_members cm
-    JOIN member_vectors mv ON mv.mention_id = cm.mention_id AND mv.field = :f AND mv.kind = 'document'
+    JOIN jobs j ON j.run_id = cm.run_id AND j.stage = 'enrich' AND j.unit_id = cm.mention_id
+    JOIN stage_outputs so ON so.cache_key = j.cache_key
+    JOIN member_vectors mv ON mv.mention_id = cm.mention_id AND mv.enrichment_id = so.output->>'enrichment_id'
+      AND mv.field = :f AND mv.kind = 'document'
       AND mv.deployment = :dep AND mv.dimension = :dim
     WHERE cm.run_id = :run AND cm.partition = :p
     GROUP BY cm.cluster_id""")

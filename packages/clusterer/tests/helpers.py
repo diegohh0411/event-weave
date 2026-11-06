@@ -25,11 +25,13 @@ def add_member(c, run_id, partition, cluster_id, mention_id, vectors, order=(1,)
     """Seed one mention (own document), its cluster membership, document vectors and enrich output."""
     doc_id = "d-" + mention_id
     text = f"Sentence of {mention_id}."
-    c.execute(sa.insert(documents).values(
-        id=doc_id, provider="p", external_id=doc_id, language=language, title="t", byline="", outlet="o", url="u",
-        published_at=published_at, text=text, token_offsets=[], sentence_offsets=[[0, len(text)]], content_hash="x"))
-    c.execute(sa.insert(mentions).values(id=mention_id, document_id=doc_id, start=0, end=1, tok_start=0, tok_end=1,
-                                         sentence=0, text="x", extractor="e", extractor_version="1"))
+    if c.execute(sa.select(mentions.c.id).where(mentions.c.id == mention_id)).first() is None:  # shared across runs
+        c.execute(sa.insert(documents).values(
+            id=doc_id, provider="p", external_id=doc_id, language=language, title="t", byline="", outlet="o", url="u",
+            published_at=published_at, text=text, token_offsets=[], sentence_offsets=[[0, len(text)]],
+            content_hash="x"))
+        c.execute(sa.insert(mentions).values(id=mention_id, document_id=doc_id, start=0, end=1, tok_start=0,
+                                             tok_end=1, sentence=0, text="x", extractor="e", extractor_version="1"))
     c.execute(sa.insert(enrichments).values(id="e-" + mention_id + str(run_id)[:4], mention_id=mention_id))
     if c.execute(sa.select(clusters.c.id).where(clusters.c.id == cluster_id)).first() is None:
         c.execute(sa.insert(clusters).values(id=cluster_id, run_id=run_id, partition=partition, size=0))
@@ -40,10 +42,12 @@ def add_member(c, run_id, partition, cluster_id, mention_id, vectors, order=(1,)
             id=f"v-{mention_id}-{f}-{str(run_id)[:4]}-{deployment}-{len(vec)}", mention_id=mention_id,
             enrichment_id="e-" + mention_id + str(run_id)[:4], field=f, kind="document", deployment=deployment,
             dimension=len(vec), vector=vec))
-    if enrichment is not None:
+    if True:  # every seeded mention has a run-scoped enrich output naming its enrichment
         key = f"k-{mention_id}-{run_id}"
         c.execute(sa.insert(stage_outputs).values(cache_key=key, stage="enrich", adapter="a", adapter_version="1",
-                                                  output={"enrichment": enrichment}, emits=[],
+                                                  output={"enrichment": enrichment or {},
+                                                          "enrichment_id": "e-" + mention_id + str(run_id)[:4]},
+                                                  emits=[],
                                                   created_at=datetime.now(timezone.utc)))
         c.execute(sa.insert(jobs).values(run_id=run_id, stage="enrich", unit_kind="mention", unit_id=mention_id,
                                          unit_content_hash="h", partition=partition, order_key=list(order),

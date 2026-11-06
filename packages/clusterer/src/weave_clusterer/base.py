@@ -107,8 +107,11 @@ class ClustererBase:
         deployment, dimension = self.embed_scope(session)
         run_id = self.ctx.run_id
         enrichment = (upstream.get(Stage.enrich) or {}).get("enrichment") or {}
-        mention, member = self._load_mention(session, unit, enrichment, deployment, dimension)
-        query = self._query_vectors(session, unit.id, deployment, dimension)
+        enrichment_id = (upstream.get(Stage.enrich) or {}).get("enrichment_id")
+        if not enrichment_id:
+            raise AdapterFailure("enrich output has no enrichment_id", retryable=False)
+        mention, member = self._load_mention(session, unit, enrichment, enrichment_id, deployment, dimension)
+        query = self._query_vectors(session, unit.id, enrichment_id, deployment, dimension)
         view = PartitionView(session, run_id, partition, deployment=deployment, dimension=dimension)
         self._session, self._view = session, view
         s = self.settings
@@ -154,15 +157,16 @@ class ClustererBase:
                 "reason": decision.reason, "cluster_id": cluster_id}]}
         return StageResult(output={"cluster_id": cluster_id, "outcome": decision.outcome}, emits=None, rows=rows)
 
-    def _query_vectors(self, session, mention_id: str, deployment: str, dimension: int) -> dict[str, str]:
+    def _query_vectors(self, session, mention_id: str, enrichment_id: str, deployment: str, dimension: int) -> dict[str, str]:
         rows = session.execute(sa.select(member_vectors.c.field, member_vectors.c.vector).where(
-            member_vectors.c.mention_id == mention_id, member_vectors.c.kind == "query",
+            member_vectors.c.mention_id == mention_id, member_vectors.c.enrichment_id == enrichment_id,
+            member_vectors.c.kind == "query",
             member_vectors.c.deployment == deployment, member_vectors.c.dimension == dimension)).all()
         by_field = {r.field: to_literal(list(r.vector)) for r in rows}
         return {f: by_field[f] for f in FIELDS if f in by_field}
 
-    def _load_mention(self, session, unit: UnitRef, enrichment: dict, deployment: str,
-                      dimension: int) -> tuple[MentionContext, Member]:
+    def _load_mention(self, session, unit: UnitRef, enrichment: dict, enrichment_id: str,
+                      deployment: str, dimension: int) -> tuple[MentionContext, Member]:
         row = session.execute(
             sa.select(mentions.c.start, mentions.c.end, mentions.c.sentence, documents.c.text,
                       documents.c.sentence_offsets, documents.c.language, documents.c.published_at, documents.c.title)
@@ -178,7 +182,8 @@ class ClustererBase:
         fields = {f: t for f in FIELDS if (t := field_text(enrichment, f))}
         vectors = {r.field: list(r.vector) for r in session.execute(
             sa.select(member_vectors.c.field, member_vectors.c.vector).where(
-                member_vectors.c.mention_id == unit.id, member_vectors.c.kind == "document",
+                member_vectors.c.mention_id == unit.id, member_vectors.c.enrichment_id == enrichment_id,
+                member_vectors.c.kind == "document",
                 member_vectors.c.deployment == deployment, member_vectors.c.dimension == dimension))}
         member = Member(unit.id, tuple(unit.order_key), enrichment, plain, row.language, row.published_at, vectors)
         return MentionContext(unit.id, marked, fields, row.title, row.published_at, row.language), member
