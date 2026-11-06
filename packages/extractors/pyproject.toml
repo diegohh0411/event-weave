@@ -22,3 +22,4 @@ packages = ["src/weave_extractors"]
 gold = "weave_extractors.gold:GoldExtractor"
 stanza-rules = "weave_extractors.rules:StanzaRulesExtractor"
 system-one = "weave_extractors.system_one:SystemOneExtractor"
+nuextract3 = "weave_extractors.nuextract:NuExtract3Extractor"
