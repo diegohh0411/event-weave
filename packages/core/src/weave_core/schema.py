@@ -69,3 +69,15 @@ crawled_pages = sa.Table("crawled_pages", metadata,
     sa.Column("status", T, nullable=False), sa.Column("reason", T), sa.Column("raw_html_gz", sa.LargeBinary),
     sa.Column("document_id", T, sa.ForeignKey("documents.id")),
     sa.CheckConstraint("status in ('stored', 'rejected')", name="ck_crawled_pages_status"))
+
+mentions = sa.Table("mentions", metadata,
+    sa.Column("id", T, primary_key=True),
+    sa.Column("document_id", T, sa.ForeignKey("documents.id"), nullable=False, index=True),
+    *[sa.Column(n, sa.Integer, nullable=False) for n in ("start", "end", "tok_start", "tok_end", "sentence")],
+    *[sa.Column(n, T, nullable=False) for n in ("text", "extractor", "extractor_version")],
+    sa.Column("probability", sa.Float))
+mention_tags = sa.Table("mention_tags", metadata,
+    sa.Column("mention_id", T, sa.ForeignKey("mentions.id"), primary_key=True),
+    sa.Column("tagger", T, primary_key=True), sa.Column("tagger_version", T, primary_key=True),
+    sa.Column("deployment", T, primary_key=True), sa.Column("significance", sa.Float),
+    sa.Column("event_type", T), sa.Column("event_type_probs", JSONB))

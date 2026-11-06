@@ -37,7 +37,7 @@ def test_migration_creates_ledger_and_run_deployments(database_url):
     assert insp.get_pk_constraint("run_deployments")["constrained_columns"] == ["run_id", "deployment"]
     cfg = Config()
     cfg.set_main_option("script_location", str(Path(weave_core.__file__).parent / "migrations"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["0003_providers"]
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0004_mentions"]
 
 
 def test_documents_have_order_key_and_no_gold_columns(database_url):
@@ -56,3 +56,15 @@ def test_gold_and_crawl_tables_exist(database_url):
         "target_document_id", "target_mention_id", "label"}
     assert {c["name"] for c in insp.get_columns("crawled_pages")} == {
         "canonical_url", "url", "outlet", "fetched_at", "status", "reason", "raw_html_gz", "document_id"}
+
+
+def test_mentions_tables_exist(database_url):
+    insp = sa.inspect(make_engine(database_url))
+    assert {c["name"] for c in insp.get_columns("mentions")} == {
+        "id", "document_id", "start", "end", "tok_start", "tok_end", "sentence", "text",
+        "extractor", "extractor_version", "probability"}
+    assert ("document_id",) in {tuple(i["column_names"]) for i in insp.get_indexes("mentions")}
+    assert {c["name"] for c in insp.get_columns("mention_tags")} == {
+        "mention_id", "tagger", "tagger_version", "deployment", "significance", "event_type", "event_type_probs"}
+    assert insp.get_pk_constraint("mention_tags")["constrained_columns"] == [
+        "mention_id", "tagger", "tagger_version", "deployment"]
