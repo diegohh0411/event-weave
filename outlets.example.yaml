@@ -1,0 +1,10 @@
+# Copy to outlets.yaml. Each outlet needs at least one sitemap or feed.
+outlets:
+  - name: example-news
+    domain: example-news.test
+    language: en
+    sitemaps:
+      - https://www.example-news.test/news-sitemap.xml
+    feeds:
+      - https://www.example-news.test/feed.rss
+    per_day: 20   # optional: keep the newest N URLs per day

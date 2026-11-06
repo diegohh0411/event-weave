@@ -18,6 +18,7 @@ class AdapterSpec:
     settings_model: type[BaseModel]
     capabilities: frozenset[Capability] = frozenset()
     max_concurrency: int = 4
+    cacheable: bool = True  # False: output depends on state outside the inputs, so is never reused
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,7 @@ class DocumentRecord:
     token_offsets: list
     sentence_offsets: list
     content_hash: str
+    order_key: tuple[int, ...] = ()
 
     @property
     def id(self) -> str:
@@ -54,6 +56,7 @@ class StageResult:
     output: dict
     emits: list[UnitRef] | None = None
     documents: list[DocumentRecord] = field(default_factory=list)
+    rows: dict[str, list[dict]] = field(default_factory=dict)
 
 
 class AdapterFailure(Exception):

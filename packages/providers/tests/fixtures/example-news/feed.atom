@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Example News</title><id>urn:example-news</id><updated>2026-11-04T07:00:00Z</updated>
+  <entry><title>Council votes</title><id>urn:1</id>
+    <link href="https://www.example-news.test/local/council-votes"/>
+    <updated>2026-11-04T07:00:00Z</updated></entry>
+</feed>

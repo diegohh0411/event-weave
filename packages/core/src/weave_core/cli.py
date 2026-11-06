@@ -43,6 +43,19 @@ if _inf is not None:
     app.add_typer(_inf.inference_app, name='inference')
 
 
+def _crawl():
+    try:
+        from weave_providers.crawl.cli import crawl_command
+    except ImportError:  # weave-providers or its `crawl` extra is not installed
+        return None
+    return crawl_command
+
+
+_crawl_command = _crawl()
+if _crawl_command is not None:
+    app.command('crawl')(_crawl_command)
+
+
 def _service(probe: bool = True):
     settings = Settings.from_env()
     registry = Registry()

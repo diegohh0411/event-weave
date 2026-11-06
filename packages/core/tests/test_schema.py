@@ -37,4 +37,22 @@ def test_migration_creates_ledger_and_run_deployments(database_url):
     assert insp.get_pk_constraint("run_deployments")["constrained_columns"] == ["run_id", "deployment"]
     cfg = Config()
     cfg.set_main_option("script_location", str(Path(weave_core.__file__).parent / "migrations"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["0002_inference"]
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0003_providers"]
+
+
+def test_documents_have_order_key_and_no_gold_columns(database_url):
+    cols = {c["name"] for c in sa.inspect(make_engine(database_url)).get_columns("documents")}
+    assert "order_key" in cols
+    assert not cols & {"topic", "split", "gold", "label"}
+
+
+def test_gold_and_crawl_tables_exist(database_url):
+    insp = sa.inspect(make_engine(database_url))
+    assert {c["name"] for c in insp.get_columns("gold_documents")} == {"document_id", "language", "topic", "split", "doc_index"}
+    assert {c["name"] for c in insp.get_columns("gold_mentions")} == {"document_id", "mention_id", "start", "end", "text"}
+    assert insp.get_pk_constraint("gold_mentions")["constrained_columns"] == ["document_id", "mention_id"]
+    assert {c["name"] for c in insp.get_columns("gold_pairs")} == {
+        "id", "language", "kind", "split", "topic", "source_document_id", "source_mention_id",
+        "target_document_id", "target_mention_id", "label"}
+    assert {c["name"] for c in insp.get_columns("crawled_pages")} == {
+        "canonical_url", "url", "outlet", "fetched_at", "status", "reason", "raw_html_gz", "document_id"}

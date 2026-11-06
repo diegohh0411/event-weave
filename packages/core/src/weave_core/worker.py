@@ -72,9 +72,11 @@ def run_worker(engine: sa.Engine, registry: Registry, stage: Stage, worker_id: s
     def execute(job, entry):
         adapter, choice, semaphore = entry
         try:
-            key = cache_key(job.input_hash, adapter.spec, choice.settings, choice.deployments)
-            with session_scope(engine) as session:
-                result = lookup(session, key)
+            key, result = None, None
+            if adapter.spec.cacheable:
+                key = cache_key(job.input_hash, adapter.spec, choice.settings, choice.deployments)
+                with session_scope(engine) as session:
+                    result = lookup(session, key)
             if result is None:
                 with semaphore:
                     result = adapter.process(job.unit, queue.upstream(job))

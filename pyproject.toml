@@ -7,12 +7,25 @@ requires-python = ">=3.12,<3.13"
 members = ["packages/*"]
 
 [dependency-groups]
-dev = ["pytest", "pytest-xdist", "weave-core", "weave-api", "weave-inference", "httpx"]
+dev = [
+    "pytest",
+    "pytest-xdist",
+    "weave-core",
+    "weave-api",
+    "weave-inference",
+    "weave-providers",
+    "httpx",
+    "defusedxml",
+    "feedparser>=6",
+    "crawl4ai==0.9.5",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["packages"]
+markers = ["mcecr: acceptance tests against the real MCECR dataset (needs WEAVE_MCECR_PATH)"]
 
 [tool.uv.sources]
 weave-core = { workspace = true }
 weave-api = { workspace = true }
 weave-inference = { workspace = true }
+weave-providers = { workspace = true }
