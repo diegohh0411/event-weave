@@ -69,13 +69,14 @@ THRESHOLD_SETTINGS = {"k": 5, "weights": {"action": 1.0, "participants": 1.0, "l
                       "threshold": 0.9}
 
 
-def make_pipeline_run(c, settings=None, adapter="threshold") -> uuid.UUID:
+def make_pipeline_run(c, settings=None, adapter="threshold", deployments=None) -> uuid.UUID:
     """A running run whose embed stage used deployment 'stub-emb' at dimension 3."""
     rid = uuid.uuid4()
     cfg = {"name": "t", "track": "realistic", "seed": 1, "stages": {
         "embed": {"adapter": "embedding-gemma", "version": "1", "settings": {"dimension": 3},
                   "deployments": {"embeddings": "stub-emb"}},
-        "cluster": {"adapter": adapter, "version": "1", "settings": settings or THRESHOLD_SETTINGS}}}
+        "cluster": {"adapter": adapter, "version": "1", "settings": settings or THRESHOLD_SETTINGS,
+                    "deployments": deployments or {}}}}
     c.execute(sa.insert(runs).values(id=rid, config=cfg, config_hash="h", state="running",
                                      created_at=datetime.now(timezone.utc)))
     return rid

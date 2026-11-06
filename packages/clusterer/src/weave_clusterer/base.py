@@ -57,6 +57,7 @@ class Decision:
     noul: float | None = None
     probabilities: dict | None = None
     deployment: str | None = None
+    labels: dict[str, str] | None = None  # cluster id -> the label the model saw, for candidates actually offered
 
 
 def cluster_id_for(run_id, partition: str, first_mention_id: str) -> str:
@@ -69,12 +70,18 @@ class ClustererBase:
     def __init__(self, settings: ClustererSettings, ctx: AdapterContext):
         self.settings, self.ctx = settings, ctx
         self._embed: tuple[str, int] | None = None
+        self._session: Session | None = None  # live during process(), for adapters that need members or a cache
+        self._view: PartitionView | None = None
 
     # -- to implement -------------------------------------------------------
     def decide(self, mention: MentionContext, candidates: list[Candidate], cards: dict[str, Card]) -> Decision:
         raise NotImplementedError
 
     # -- shared -------------------------------------------------------------
+    def rebuild_cards(self, cluster_ids, values_per_field: int, max_chars: int) -> dict[str, Card]:
+        """Cards of the given clusters at another size (context trimming). Only valid inside process()."""
+        return {cid: build_card(self._view.members(cid), values_per_field, max_chars) for cid in cluster_ids}
+
     def effective_k(self) -> int:
         k = self.settings.k
         if Capability.system_one in self.spec.capabilities:
@@ -102,6 +109,7 @@ class ClustererBase:
         mention, member = self._load_mention(session, unit, enrichment, deployment, dimension)
         query = self._query_vectors(session, unit.id, deployment, dimension)
         view = PartitionView(session, run_id, partition, deployment=deployment, dimension=dimension)
+        self._session, self._view = session, view
         s = self.settings
         candidates: list[Candidate] = []
         cards: dict[str, Card] = {}
@@ -120,7 +128,7 @@ class ClustererBase:
                 decision = self.decide(mention, candidates, cards)
                 if decision.outcome == "join" and decision.cluster_id not in cards:
                     decision = Decision("new", None, "invalid_choice", decision.noul, decision.probabilities,
-                                        decision.deployment)
+                                        decision.deployment, decision.labels)
         if decision.outcome == "join":
             cluster_id = decision.cluster_id
             members = view.members(cluster_id) + [member]
@@ -137,8 +145,9 @@ class ClustererBase:
             "cluster_decisions": [{
                 "run_id": run_id, "mention_id": unit.id, "adapter": self.spec.name,
                 "adapter_version": self.spec.version, "deployment": decision.deployment,
-                "candidates": [{"cluster_id": c.cluster_id, "score": c.score, "field_scores": c.field_scores}
-                               for c in candidates],
+                "candidates": [{"cluster_id": c.cluster_id, "score": c.score, "field_scores": c.field_scores,
+                                "card_hash": card_hash(cards[c.cluster_id]),
+                                "label": (decision.labels or {}).get(c.cluster_id)} for c in candidates],
                 "noul": decision.noul, "probabilities": decision.probabilities, "outcome": decision.outcome,
                 "reason": decision.reason, "cluster_id": cluster_id}]}
         return StageResult(output={"cluster_id": cluster_id, "outcome": decision.outcome}, emits=None, rows=rows)
