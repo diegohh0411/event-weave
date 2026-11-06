@@ -1,0 +1,1 @@
+"""MCECR dataset adapter."""

@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = "==3.12.*"
 
 [manifest]
@@ -8,6 +8,7 @@ members = [
     "weave-api",
     "weave-core",
     "weave-inference",
+    "weave-providers",
 ]
 
 [[package]]
@@ -95,6 +96,7 @@ dev = [
     { name = "weave-api" },
     { name = "weave-core" },
     { name = "weave-inference" },
+    { name = "weave-providers" },
 ]
 
 [package.metadata]
@@ -107,6 +109,7 @@ dev = [
     { name = "weave-api", editable = "packages/api" },
     { name = "weave-core", editable = "packages/core" },
     { name = "weave-inference", editable = "packages/inference" },
+    { name = "weave-providers", editable = "packages/providers" },
 ]
 
 [[package]]
@@ -586,3 +589,14 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "weave-core", editable = "packages/core" },
 ]
+
+[[package]]
+name = "weave-providers"
+version = "0.1.0"
+source = { editable = "packages/providers" }
+dependencies = [
+    { name = "weave-core" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "weave-core", editable = "packages/core" }]

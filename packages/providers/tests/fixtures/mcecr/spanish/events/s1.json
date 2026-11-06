@@ -1,0 +1,1 @@
+[{"text": "Hola", "span": [0, 4], "label": "B-Event", "sent_ind": 0, "doc_ind": 0, "id": "T1"}, {"text": "mundo", "span": [5, 10], "label": "O", "sent_ind": 0, "doc_ind": 0}]
