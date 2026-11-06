@@ -37,7 +37,7 @@ def test_migration_creates_ledger_and_run_deployments(database_url):
     assert insp.get_pk_constraint("run_deployments")["constrained_columns"] == ["run_id", "deployment"]
     cfg = Config()
     cfg.set_main_option("script_location", str(Path(weave_core.__file__).parent / "migrations"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["0005_enrichments"]
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0006_clusters"]
 
 
 def test_documents_have_order_key_and_no_gold_columns(database_url):
@@ -78,3 +78,29 @@ def test_enrichments_table_exists(database_url):
     assert ("mention_id",) in {tuple(i["column_names"]) for i in insp.get_indexes("enrichments")}
     assert {c["name"]: c["nullable"] for c in insp.get_columns("enrichments")}["mention_id"] is False
     assert insp.get_foreign_keys("enrichments")[0]["referred_table"] == "mentions"
+
+
+def test_cluster_tables_exist(database_url):
+    insp = sa.inspect(make_engine(database_url))
+    assert {"member_vectors", "clusters", "cluster_members", "cluster_decisions", "decision_cache"} <= set(insp.get_table_names())
+    assert {c["name"] for c in insp.get_columns("member_vectors")} == {
+        "id", "mention_id", "enrichment_id", "field", "kind", "deployment", "dimension", "vector"}
+    assert ("mention_id", "field", "kind") in {tuple(i["column_names"]) for i in insp.get_indexes("member_vectors")}
+    assert insp.get_pk_constraint("cluster_members")["constrained_columns"] == ["run_id", "mention_id"]
+    assert insp.get_pk_constraint("cluster_decisions")["constrained_columns"] == ["run_id", "mention_id"]
+    assert ("run_id", "partition") in {tuple(i["column_names"]) for i in insp.get_indexes("clusters")}
+
+
+def test_member_vector_roundtrip(database_url):
+    from weave_core.schema import documents, enrichments, member_vectors, mentions
+    engine = make_engine(database_url)
+    with engine.begin() as c:
+        c.execute(sa.text("insert into documents (id, provider, external_id, language, title, byline, outlet, url, text,"
+                          " token_offsets, sentence_offsets, content_hash) values ('d','p','e','en','t','b','o','u','x','[]','[]','h')"))
+        c.execute(sa.text("insert into mentions (id, document_id, start, \"end\", tok_start, tok_end, sentence, text, extractor,"
+                          " extractor_version) values ('m','d',0,1,0,1,0,'x','x','1')"))
+        c.execute(sa.text("insert into enrichments (id, mention_id) values ('e','m')"))
+        c.execute(member_vectors.insert().values(id="v", mention_id="m", enrichment_id="e", field="action", kind="document",
+                                                 deployment="d", dimension=3, vector=[1, 0, 0]))
+        assert c.scalar(sa.text("select vector <=> '[1,0,0]'::vector from member_vectors")) == 0
+        assert c.scalar(sa.select(member_vectors.c.vector)) == [1.0, 0.0, 0.0]

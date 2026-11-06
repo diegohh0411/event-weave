@@ -239,3 +239,10 @@ def test_provider_rate_is_inherited_when_deployment_has_none(engine, run_id, mon
 def test_parallel_calls_overlap_when_provider_allows_it(engine, run_id, monkeypatch):
     # Control: proves the in-flight measurement above can detect overlap.
     assert _max_in_flight(engine, run_id, monkeypatch, concurrency=3) > 1
+
+
+def test_deployment_accessor(engine, run_id):
+    inf = make(engine, run_id, [dep("stub-emb", "m-emb")], mapping={Capability.embeddings: "stub-emb"})
+    assert inf.deployment(Capability.embeddings).id == "stub-emb"
+    with pytest.raises(NotReady):
+        inf.deployment(Capability.llm)

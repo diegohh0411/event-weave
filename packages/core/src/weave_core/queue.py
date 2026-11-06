@@ -46,7 +46,9 @@ def _owns(job):
                    jobs.c.status == JobStatus.claimed, jobs.c.claim_token == job.claim_token)
 
 
-STAGE_ROW_TABLES = frozenset({"mentions", "mention_tags", "enrichments"})
+STAGE_ROW_TABLES = frozenset({"mentions", "mention_tags", "enrichments",
+                              "member_vectors", "clusters", "cluster_members", "cluster_decisions"})
+UPSERT_TABLES = frozenset({"clusters"})
 
 
 class Queue:
@@ -104,9 +106,20 @@ class Queue:
         for document in result.documents:
             values = asdict(document) | {"order_key": list(document.order_key)}
             session.execute(insert(documents).values(id=document.id, **values).on_conflict_do_nothing())
-        for name, rows in result.rows.items():
-            if rows:  # executemany: a single multi-VALUES statement would hit the 65,535 bind-parameter cap
-                session.execute(insert(metadata.tables[name]).on_conflict_do_nothing(), rows)
+        order = {t.name: i for i, t in enumerate(metadata.sorted_tables)}  # FK parents before children
+        for name, rows in sorted(result.rows.items(), key=lambda item: order[item[0]]):
+            if not rows:
+                continue
+            table = metadata.tables[name]
+            statement = insert(table)
+            if name in UPSERT_TABLES:
+                keys = {c.name for c in table.primary_key.columns}
+                statement = statement.on_conflict_do_update(
+                    index_elements=list(table.primary_key.columns),
+                    set_={c.name: statement.excluded[c.name] for c in table.columns if c.name not in keys})
+            else:
+                statement = statement.on_conflict_do_nothing()
+            session.execute(statement, rows)  # executemany: a single multi-VALUES statement would hit the 65,535 bind-parameter cap
         if cache_key is not None:
             session.execute(insert(stage_outputs).values(
                 cache_key=cache_key, stage=job.stage, adapter=spec.name, adapter_version=spec.version,
