@@ -7,6 +7,7 @@ members = [
     "event-weave",
     "weave-api",
     "weave-core",
+    "weave-enrichers",
     "weave-extractors",
     "weave-inference",
     "weave-providers",
@@ -530,6 +531,7 @@ dev = [
     { name = "pytest-xdist" },
     { name = "weave-api" },
     { name = "weave-core" },
+    { name = "weave-enrichers" },
     { name = "weave-extractors" },
     { name = "weave-inference" },
     { name = "weave-providers" },
@@ -547,6 +549,7 @@ dev = [
     { name = "pytest-xdist" },
     { name = "weave-api", editable = "packages/api" },
     { name = "weave-core", editable = "packages/core" },
+    { name = "weave-enrichers", editable = "packages/enrichers" },
     { name = "weave-extractors", editable = "packages/extractors" },
     { name = "weave-inference", editable = "packages/inference" },
     { name = "weave-providers", editable = "packages/providers" },
@@ -2159,6 +2162,25 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "sqlalchemy", specifier = ">=2.1.1" },
     { name = "typer" },
+]
+
+[[package]]
+name = "weave-enrichers"
+version = "0.1.0"
+source = { editable = "packages/enrichers" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "weave-core" },
+    { name = "weave-inference" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "pydantic", specifier = ">=2" },
+    { name = "weave-core", editable = "packages/core" },
+    { name = "weave-inference", editable = "packages/inference" },
 ]
 
 [[package]]
