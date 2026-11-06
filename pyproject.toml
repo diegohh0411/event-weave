@@ -11,6 +11,7 @@ dev = ["pytest", "pytest-xdist", "weave-core", "weave-api", "weave-inference", "
 
 [tool.pytest.ini_options]
 testpaths = ["packages"]
+markers = ["mcecr: acceptance tests against the real MCECR dataset (needs WEAVE_MCECR_PATH)"]
 
 [tool.uv.sources]
 weave-core = { workspace = true }
