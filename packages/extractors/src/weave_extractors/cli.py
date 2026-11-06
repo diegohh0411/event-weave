@@ -32,3 +32,19 @@ def event_nouns(stanza_url: str = typer.Option(None, help="Defaults to WEAVE_STA
     for lang, lemmas in sorted(lists.items()):
         (out / f"{lang}.txt").write_text("".join(f"{lemma}\n" for lemma in lemmas), encoding="utf-8")
         typer.echo(f"{lang}: {len(lemmas)}")
+
+
+@app.command("report")
+def report(run_id: str) -> None:
+    """Counts for a run's extract stage: documents, mentions, and everything dropped."""
+    from uuid import UUID
+
+    from .report import extract_report
+    engine = make_engine(Settings.from_env().database_url)
+    try:
+        counts = extract_report(engine, UUID(run_id))
+    finally:
+        engine.dispose()
+    width = max(len(k) for k in counts)
+    for key, value in counts.items():
+        typer.echo(f"{key:<{width}}  {value}")
