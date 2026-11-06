@@ -13,3 +13,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/weave_providers"]
+
+[project.entry-points."weave.adapters"]
+mcecr = "weave_providers.mcecr.adapter:McecrProvider"
