@@ -200,14 +200,15 @@ def test_undated_page_gets_max_order_key_and_sorts_last(engine, monkeypatch):
 def test_equal_timestamps_replay_in_url_order(engine, monkeypatch):
     base = (FIX / "reuters" / "article.html").read_text(encoding="utf-8")
     r = routes()
-    r[f"{BASE}/sitemap.xml"] = Fetched("x", 200, sitemap(("/a/zeta", "2026-11-03T10:00:00Z"),
+    r[f"{BASE}/sitemap.xml"] = Fetched("x", 200, sitemap(("/a/beta", "2026-11-03T10:00:00Z"),
                                                        ("/a/alpha", "2026-11-03T10:00:00Z")), None)
-    r[f"{BASE}/a/zeta"] = Fetched("x", 200, base.replace("replace roughly forty", "replace roughly fifty"), None)
+    r[f"{BASE}/a/beta"] = Fetched("x", 200, base.replace("replace roughly forty", "replace roughly fifty"), None)
     r[f"{BASE}/a/alpha"] = Fetched("x", 200, base, None)
     crawl(engine, OUTLETS, polite(r)[0], NOW)
     keys = {tuple(k) for _, k in rows(engine, "select url, order_key from documents")}
     assert len(keys) == 1  # same page timestamp
-    assert replay_urls(engine, monkeypatch) == [f"{BASE}/a/alpha", f"{BASE}/a/zeta"]
+    # ids sort opposite to URLs here (alpha > beta), so only the url tie-break gives this order
+    assert replay_urls(engine, monkeypatch) == [f"{BASE}/a/alpha", f"{BASE}/a/beta"]
 
 
 def test_empty_200_response_is_a_fetch_error(engine):
@@ -215,3 +216,14 @@ def test_empty_200_response_is_a_fetch_error(engine):
     r[f"{BASE}/a/blank"] = Fetched("x", 200, None, None)
     crawl(engine, OUTLETS, polite(r)[0], NOW)
     assert rows(engine, "select reason from crawled_pages") == [("fetch error: empty response",)]
+
+
+def test_weave_crawl_explains_missing_extra(monkeypatch):
+    import sys
+    from weave_core.cli import app
+
+    monkeypatch.setitem(sys.modules, "feedparser", None)
+    monkeypatch.setitem(sys.modules, "crawl4ai", None)
+    result = CliRunner().invoke(app, ["crawl", "outlets.yaml"])
+    assert result.exit_code == 1
+    assert "install weave-providers[crawl]" in result.output

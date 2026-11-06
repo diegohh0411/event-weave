@@ -63,11 +63,11 @@ def _crawl_page(engine, candidate: Candidate, language: str, fetcher: Fetcher, n
     if got.error == ROBOTS_DISALLOWED:
         _record(engine, candidate, now, ROBOTS_DISALLOWED, None, rejected)
         return
-    if got.error or got.status == 0 or got.status >= 500 or (got.html is None and got.status == 200):
+    if got.error or got.status == 0 or got.status >= 500 or (not got.html and got.status == 200):
         reason = FETCH_ERROR + (got.error or ("empty response" if got.status == 200 else f"HTTP {got.status}"))
         _record(engine, candidate, now, reason, None, rejected, count_as=FETCH_ERROR.rstrip(": "))
         return
-    if got.status != 200 or got.html is None:
+    if got.status != 200 or not got.html:
         _record(engine, candidate, now, f"HTTP {got.status}", None, rejected)
         return
     report.fetched += 1

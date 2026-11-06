@@ -4,8 +4,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-import feedparser
-
 from weave_providers.crawl.fetch import Fetcher
 from weave_providers.crawl.outlets import Outlet
 
@@ -86,6 +84,8 @@ def _from_feed(fetcher: Fetcher, url: str):
     body = _fetch_text(fetcher, url)
     if body is None:
         return []
+    import feedparser  # extra `crawl`; imported lazily so `weave crawl` can explain its absence
+
     out = []
     for e in feedparser.parse(body).entries:
         parsed = e.get("published_parsed") or e.get("updated_parsed")  # feedparser yields UTC
