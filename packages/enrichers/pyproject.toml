@@ -18,3 +18,4 @@ packages = ["src/weave_enrichers"]
 [project.entry-points."weave.adapters"]
 clairic = "weave_enrichers.clairic:ClairicEnricher"
 nuextract3 = "weave_enrichers.nuextract:NuExtract3Enricher"
+system-one = "weave_enrichers.system_one:SystemOneEnricher"

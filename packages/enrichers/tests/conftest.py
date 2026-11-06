@@ -60,7 +60,10 @@ def stub_inference(db):
             deployments={"stub-s1": Deployment(id="stub-s1", model="m-s1", provider="stub"),
                          "stub-llm": Deployment(id="stub-llm", model="m-llm", provider="stub"),
                          "stub-s1-small": Deployment(id="stub-s1-small", model="m-s1", provider="stub",
-                                                     limits=Limits(context_tokens=context_tokens))})
+                                                     limits=Limits(context_tokens=context_tokens)),
+                         "stub-s1-3": Deployment(id="stub-s1-3", model="m-s1", provider="stub",
+                                                 limits=Limits(max_choice_options=3)),
+                         "stub-s1-joint": Deployment(id="stub-s1-joint", model="m-s1", provider="stub", joint=True)})
         catalog.readiness = {k: Readiness(ready=True) for k in catalog.deployments}
         Inference.configure(catalog, db)
         return catalog
