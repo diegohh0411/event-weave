@@ -39,12 +39,14 @@ LOCATIVE_MARKERS = {
 
 PARSE_CACHE_SIZE = 16
 _PARSES: "OrderedDict[tuple, list[Sentence]]" = OrderedDict()
-_PARSE_LOCK = threading.Lock()
+_PARSE_LOCK = threading.Lock()  # bookkeeping only: never held across a parse
+_KEY_LOCKS: dict[tuple, threading.Lock] = {}
 
 
 def clear_cache() -> None:
     with _PARSE_LOCK:
         _PARSES.clear()
+        _KEY_LOCKS.clear()
 
 
 @dataclass
@@ -156,14 +158,18 @@ class SystemOneEnricher(EnricherBase):
         check_language(doc.language)
         key = (doc.id, doc.content_hash, self.settings.stanza_url)
         with _PARSE_LOCK:
-            if key in _PARSES:
-                _PARSES.move_to_end(key)
-                return _PARSES[key]
-        sentences = self.client().parse(doc.text, doc.language, ner=True)
-        with _PARSE_LOCK:
-            _PARSES[key] = sentences
-            while len(_PARSES) > PARSE_CACHE_SIZE:
-                _PARSES.popitem(last=False)
+            key_lock = _KEY_LOCKS.setdefault(key, threading.Lock())
+        with key_lock:  # mentions of one document wait for a single parse; other documents run concurrently
+            with _PARSE_LOCK:
+                if key in _PARSES:
+                    _PARSES.move_to_end(key)
+                    return _PARSES[key]
+            sentences = self.client().parse(doc.text, doc.language, ner=True)
+            with _PARSE_LOCK:
+                _PARSES[key] = sentences
+                while len(_PARSES) > PARSE_CACHE_SIZE:
+                    old, _ = _PARSES.popitem(last=False)
+                    _KEY_LOCKS.pop(old, None)
         return sentences
 
     # -- deployment ----------------------------------------------------------
@@ -189,7 +195,7 @@ class SystemOneEnricher(EnricherBase):
     def choose(self, state: str, kinds: dict[str, tuple[str, list[str]]], noul: list) -> tuple[dict, dict[str, tuple]]:
         """Run the Noul questions together with every kind's Choice rounds; return all Noul answers and, per kind,
         (winner, probability). A kind with one option needs no Choice. Rounds of at most max_choice_options."""
-        info = self.deployment_info()
+        info = self.deployment_info()  # joint deployments need no special case: a job is one mention, so one request
         cap = info.limits.max_choice_options if info else None
         levels = {kind: options for kind, (_, options) in kinds.items() if len(options) > 1}
         winners: dict[str, tuple] = {}
@@ -199,7 +205,9 @@ class SystemOneEnricher(EnricherBase):
         while levels or pending_noul:
             batch, shape = list(pending_noul), {}
             for kind, options in levels.items():
-                size = cap if cap and cap >= 2 else len(options)
+                if cap == 1:
+                    raise AdapterFailure("deployment allows 1 choice option: a Choice needs at least 2", retryable=False)
+                size = cap or len(options)
                 count = -(-len(options) // size)  # balanced chunks, so none is left with a single option
                 bounds = [round(i * len(options) / count) for i in range(count + 1)]
                 chunks = [options[bounds[i]:bounds[i + 1]] for i in range(count)]

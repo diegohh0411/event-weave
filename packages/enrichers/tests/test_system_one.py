@@ -191,3 +191,57 @@ def test_contract(stub_inference, arrest):
     set_stub_script("stub", {"p0": 0.9, "p1": 0.9, "loc_stated": 0.9, "time_stated": 0.9})
     run_contract(lambda d: S1(d, client), [(doc, m)])
     # no empty case: the action is built in code, so an enrichment is never entirely empty
+
+
+def test_same_document_parses_once_concurrently(arrest):
+    import threading
+    doc, m, client = arrest
+    calls, barrier = [], threading.Barrier(4, timeout=5)
+
+    class Counting:
+        def parse(self, text, lang, ner=False):
+            calls.append(1)
+            import time
+            time.sleep(0.2)
+            return client.parse(text, lang, ner)
+
+    def go():
+        barrier.wait()
+        S1(doc, Counting()).parse(doc)
+
+    threads = [threading.Thread(target=go) for _ in range(4)]
+    [t.start() for t in threads]
+    [t.join(10) for t in threads]
+    assert len(calls) == 1
+
+
+def test_choice_limit_of_one_fails(stub_inference, tmp_path, db):
+    from weave_core.adapters import AdapterFailure
+    from weave_inference.gateway import Inference
+    doc, m, client, _ = seven_places(tmp_path)
+    Inference._catalog.deployments["stub-s1-3"].limits.max_choice_options = 1
+    set_stub_script("stub", {"loc_stated": 0.9})
+    with pytest.raises(AdapterFailure) as exc:
+        S1(doc, client, deployment="stub-s1-3").enrich(doc, m, build_window(doc, m, 1))
+    assert exc.value.retryable is False
+
+
+def test_repeated_text_picks_occurrence_nearest_trigger(stub_inference, tmp_path):
+    text = "Madrid reacted. Police arrested two men in Madrid."
+    t = text.index("arrested")
+    words = [("Madrid", "PROPN", "Madrid", "nsubj", 2), ("reacted", "VERB", "react", "root", 0), (".", "PUNCT", ".", "punct", 2)]
+    sents = parse(text[:15], words)
+    # one sentence for simplicity: all words as a single dependency tree around "arrested"
+    w2 = [("Madrid", "PROPN", "Madrid", "dep", 4), ("reacted", "VERB", "react", "dep", 4), (".", "PUNCT", ".", "dep", 4),
+          ("Police", "NOUN", "police", "nsubj", 4), ("arrested", "VERB", "arrest", "root", 0), ("in", "ADP", "in", "case", 7),
+          ("Madrid", "PROPN", "Madrid", "obl", 5), (".", "PUNCT", ".", "punct", 5)]
+    client = FixtureStanzaClient(tmp_path)
+    client.save(text, "en", parse(text, w2, [("Madrid", "GPE")]) , ner=True)
+    sent = client.parse(text, "en", ner=True)
+    sent[0].entities.append(Entity(start=text.rindex("Madrid"), end=text.rindex("Madrid") + 6, type="GPE", text="Madrid"))
+    client.save(text, "en", sent, ner=True)
+    doc = make_doc(text)
+    m = make_mention(doc, t, t + 8, sentence=1)
+    set_stub_script("stub", {"loc_stated": 0.9})
+    enrichment, _ = S1(doc, client).enrich(doc, m, build_window(doc, m, 1))
+    assert enrichment.location.spans == [(text.rindex("Madrid"), text.rindex("Madrid") + 6)]
