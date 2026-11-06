@@ -1,4 +1,6 @@
 """Shared enrich-stage behaviour: find the mention, load the document, enforce the slice invariant."""
+import hashlib
+import json
 from typing import Mapping
 
 from pydantic import BaseModel
@@ -10,6 +12,12 @@ from .shape import Enrichment, enrichment_id
 from .window import MentionWindow, build_window
 
 FIELDS = ("action", "participants", "location", "time")
+
+
+def settings_hash(settings: BaseModel) -> str:
+    """Stable digest of an adapter's settings, so a re-run with other settings gets its own enrichment rows."""
+    canonical = json.dumps(settings.model_dump(mode="json"), sort_keys=True)
+    return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
 
 class EnricherBase:
@@ -41,7 +49,8 @@ class EnricherBase:
         window = build_window(doc, mention, getattr(self.settings, "window_sentences", 1))
         enrichment, discarded = self.enrich(doc, mention, window)
         check_slices(doc.text, enrichment)
-        row = {"id": enrichment_id(unit.id, self.spec.name, self.spec.version, self.deployment()),
+        row = {"id": enrichment_id(unit.id, self.spec.name, self.spec.version, self.deployment(),
+                                settings_hash(self.settings)),
                "mention_id": unit.id, "enricher": self.spec.name, "enricher_version": self.spec.version,
                "deployment": self.deployment(), "discarded": discarded,
                **{name: getattr(enrichment, name).model_dump() for name in FIELDS}}

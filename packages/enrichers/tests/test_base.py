@@ -3,7 +3,7 @@ from contract import run_contract
 from helpers import ctx, make_doc, make_mention, unit_for
 from weave_core.adapters import AdapterFailure, AdapterSpec
 from weave_core.stages import Stage, UnitKind
-from weave_enrichers.base import EnricherBase
+from weave_enrichers.base import EnricherBase, settings_hash
 from weave_enrichers.shape import Enrichment, Field, enrichment_id
 from weave_enrichers.verify import verify_field
 from pydantic import BaseModel
@@ -43,7 +43,7 @@ def test_row_and_output():
     unit = unit_for(M, DOC)
     r = Fake(DOC, "arrested").process(unit, {Stage.extract: {"mentions": [M]}})
     row = r.rows["enrichments"][0]
-    assert row["id"] == enrichment_id(unit.id, "fake", "1", None) and row["enricher"] == "fake"
+    assert row["id"] == enrichment_id(unit.id, "fake", "1", None, settings_hash(S())) and row["enricher"] == "fake"
     assert row["action"]["spans"] == [(7, 15)] and r.output["discarded"] == {"action": 0}
 
 
@@ -58,3 +58,13 @@ def test_unknown_mention_fails():
     with pytest.raises(AdapterFailure) as e:
         Fake(DOC).process(unit_for(other, DOC), {Stage.extract: {"mentions": [M]}})
     assert e.value.retryable is False
+
+
+def test_settings_change_changes_row_id():
+    unit = unit_for(M, DOC)
+    ids = set()
+    for window in (1, 2):
+        e = Fake(DOC, "arrested")
+        e.settings = S(window_sentences=window)
+        ids.add(e.process(unit, {Stage.extract: {"mentions": [M]}}).rows["enrichments"][0]["id"])
+    assert len(ids) == 2

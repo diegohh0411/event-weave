@@ -88,5 +88,6 @@ def test_sample_only_the_runs_own_enrichments(db):
         add(db, run_a, "en", i, "clairic", {"action": "arrested"}, {}, deployment="dep-a")
         add(db, run_b, "en", i, "clairic", {"action": "arrested"}, {}, deployment="dep-b")
     got = sample(db, run_a, 10, seed=1)
-    assert len(got) == 3 and {s["deployment"] for s in got} == {"dep-a"}
-    assert len({s["id"] for s in got}) == 3
+    assert len(got) == 3 and len({s["id"] for s in got}) == 3
+    # run B's outputs have other cache keys; none of them may leak into run A's sample
+    assert not {s["id"] for s in got} & {s["id"] for s in sample(db, run_b, 10, seed=1)}

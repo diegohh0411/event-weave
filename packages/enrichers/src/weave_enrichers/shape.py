@@ -21,5 +21,5 @@ class Enrichment(BaseModel):
     time: TimeField = TimeField()
 
 
-def enrichment_id(mention_id: str, enricher: str, version: str, deployment: str | None) -> str:
-    return hashlib.sha256(":".join([mention_id, enricher, version, deployment or ""]).encode()).hexdigest()[:32]
+def enrichment_id(mention_id: str, enricher: str, version: str, deployment: str | None, settings_hash: str) -> str:
+    return hashlib.sha256(":".join([mention_id, enricher, version, deployment or "", settings_hash]).encode()).hexdigest()[:32]

@@ -8,6 +8,10 @@ def test_enrichment_defaults_empty():
 
 
 def test_enrichment_id_stable_and_distinct():
-    a = enrichment_id("m", "x", "1", None)
-    assert a == enrichment_id("m", "x", "1", None) and len(a) == 32
-    assert a != enrichment_id("m", "x", "1", "dep") and a != enrichment_id("m", "x", "2", None)
+    a = enrichment_id("m", "x", "1", None, "h")
+    assert a == enrichment_id("m", "x", "1", None, "h") and len(a) == 32
+    assert a != enrichment_id("m", "x", "1", "dep", "h") and a != enrichment_id("m", "x", "2", None, "h")
+
+
+def test_enrichment_id_depends_on_settings_hash():
+    assert enrichment_id("m", "x", "1", None, "a") != enrichment_id("m", "x", "1", None, "b")
