@@ -93,3 +93,11 @@ def test_contract(stub_inference):
 
     run_contract(factory, [(doc, m)])
     run_contract(lambda d: setup(d, m, json.dumps({})), [], empty_cases=[(doc, m)])
+
+
+def test_no_normalized_without_located_time(stub_inference):
+    doc = make_doc(TEXT, published_at=PUB)
+    m = make_mention(doc, 7, 15)
+    for time in (None, "next Tuesday"):
+        enrichment, _ = run(doc, m, json.dumps({"time": time, "time_normalized": "2024-05-06"}))
+        assert enrichment.time.text is None and enrichment.time.normalized is None

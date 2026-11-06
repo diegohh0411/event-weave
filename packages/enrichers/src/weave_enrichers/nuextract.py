@@ -59,10 +59,13 @@ class NuExtract3Enricher(EnricherBase):
             answers = _answers(data.get(name))
             good = [a for a in answers if isinstance(a, str)]
             fields[name], bad = verify_field(doc.text, good, anchor, multi=multi)
-            if bad + len(answers) - len(good):
-                discarded[name] = bad + len(answers) - len(good)
+            lost = bad + len(answers) - len(good)
+            if lost:
+                discarded[name] = lost
         raw = data.get("time_normalized")
-        normalized = check_normalized(raw if isinstance(raw, str) else None, doc.published_at, fields["time"].text)
+        located = fields["time"].text
+        normalized = (check_normalized(raw if isinstance(raw, str) else None, doc.published_at, located)
+                      if located is not None else None)
         time = TimeField(**fields["time"].model_dump(), normalized=normalized)
         return Enrichment(action=fields["action"], participants=fields["participants"],
                           location=fields["location"], time=time), discarded
