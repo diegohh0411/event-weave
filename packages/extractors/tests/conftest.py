@@ -40,3 +40,31 @@ def db(database_url, monkeypatch):
     engine = sa.create_engine(database_url)
     yield engine
     engine.dispose()
+
+
+@pytest.fixture
+def stub_inference(db):
+    """Inference wired to stub deployments: stub-s1 (system_one), stub-llm (llm), stub-s1-small (tiny context)."""
+    from weave_core.stages import Capability
+    from weave_inference.catalog import Catalog
+    from weave_inference.clients.stub import clear_stub_scripts
+    from weave_inference.gateway import Inference
+    from weave_inference.probe import Readiness
+    from weave_inference.types import Deployment, Limits, Model, Provider
+
+    def make(context_tokens=None):
+        catalog = Catalog(
+            models={"m-s1": Model(id="m-s1", capability=Capability.system_one),
+                    "m-llm": Model(id="m-llm", capability=Capability.llm)},
+            providers={"stub": Provider(id="stub", kind="stub", base_url="stub://")},
+            deployments={"stub-s1": Deployment(id="stub-s1", model="m-s1", provider="stub"),
+                         "stub-llm": Deployment(id="stub-llm", model="m-llm", provider="stub"),
+                         "stub-s1-small": Deployment(id="stub-s1-small", model="m-s1", provider="stub",
+                                                     limits=Limits(context_tokens=context_tokens))})
+        catalog.readiness = {k: Readiness(ready=True) for k in catalog.deployments}
+        Inference.configure(catalog, db)
+        return catalog
+
+    make()
+    yield make
+    clear_stub_scripts()

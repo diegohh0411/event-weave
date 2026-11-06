@@ -32,7 +32,9 @@ def store(engine, doc: Doc) -> None:
 
 
 def ctx(**deployments) -> AdapterContext:
-    return AdapterContext(run_id=uuid4(), seed=1, deployments=deployments)
+    """No run row exists in unit tests, so run_id is None (ledger.run_id is nullable)."""
+    from weave_core.stages import Capability
+    return AdapterContext(run_id=None, seed=1, deployments={Capability(k): v for k, v in deployments.items()})
 
 
 def unit(doc: Doc) -> UnitRef:
