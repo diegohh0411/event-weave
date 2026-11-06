@@ -73,7 +73,11 @@ def sample(engine, run_id: UUID, n: int, seed: int) -> list[dict]:
              .join(mentions, m.id == e.mention_id).join(documents, d.id == m.document_id)
              .where(j.run_id == run_id, j.stage == Stage.enrich, j.status == JobStatus.done))
     with engine.connect() as conn:
-        rows = conn.execute(query).all()
+        config = conn.scalar(sa.select(runs.c.config).where(runs.c.id == run_id)) or {}
+        # Enrichment ids include the deployment, so rows of another run on other deployments are not this run's.
+        chosen = ((config.get("stages") or {}).get(Stage.enrich.value) or {}).get("deployments") or {}
+        deployment = ",".join(str(v) for _, v in sorted(chosen.items())) or None  # as EnricherBase.deployment()
+        rows = conn.execute(query.where(e.deployment.is_not_distinct_from(deployment))).all()
     rows.sort(key=lambda r: hashlib.sha256(f"{seed}:{r.id}".encode()).hexdigest())
     out = []
     for r in rows[:n]:

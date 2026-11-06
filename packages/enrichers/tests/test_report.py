@@ -8,26 +8,29 @@ from weave_enrichers.report import CoverageRow, coverage, sample
 TEXT = "Police arrested two men. Talks resumed."
 
 
-def seed(db):
+def seed(db, deployments=None):
     run_id = uuid.uuid4()
     with db.begin() as c:
         c.execute(sa.insert(runs).values(
-            id=run_id, config={"stages": {"enrich": {"adapter": "clairic"}}}, config_hash="h", state="running",
+            id=run_id, config={"stages": {"enrich": {"adapter": "clairic", "deployments": deployments or {}}}}, config_hash="h", state="running",
             created_at=sa.func.now()))
         for did, lang in (("fake:en", "en"), ("fake:es", "es")):
-            c.execute(sa.insert(documents).values(
-                id=did, provider="fake", external_id=did[5:], language=lang, title="T", byline="", outlet="", url="",
-                text=TEXT, token_offsets=[], sentence_offsets=[[0, 24], [25, 38]], content_hash="x", order_key=[0]))
+            if c.scalar(sa.select(documents.c.id).where(documents.c.id == did)) is None:
+                c.execute(sa.insert(documents).values(
+                    id=did, provider="fake", external_id=did[5:], language=lang, title="T", byline="", outlet="",
+                    url="", text=TEXT, token_offsets=[], sentence_offsets=[[0, 24], [25, 38]], content_hash="x",
+                    order_key=[0]))
     return run_id
 
 
-def add(db, run_id, doc, i, enricher, fields, discarded, status="done"):
+def add(db, run_id, doc, i, enricher, fields, discarded, status="done", deployment=None):
     mid = f"m-{doc}-{i}"
-    key = hashlib.sha256(mid.encode()).hexdigest()
+    key = hashlib.sha256(f"{mid}:{run_id}".encode()).hexdigest()
     with db.begin() as c:
-        c.execute(sa.insert(mentions).values(
-            id=mid, document_id=f"fake:{doc}", start=7, end=15, tok_start=0, tok_end=0, sentence=0, text="arrested",
-            extractor="gold", extractor_version="1"))
+        if c.scalar(sa.select(mentions.c.id).where(mentions.c.id == mid)) is None:
+            c.execute(sa.insert(mentions).values(
+                id=mid, document_id=f"fake:{doc}", start=7, end=15, tok_start=0, tok_end=0, sentence=0,
+                text="arrested", extractor="gold", extractor_version="1"))
         c.execute(sa.insert(jobs).values(
             run_id=run_id, stage="enrich", unit_kind="mention", unit_id=mid, unit_content_hash="x", partition="p",
             order_key=[i], input_hash="i", status=status, available_at=sa.func.now(),
@@ -39,7 +42,7 @@ def add(db, run_id, doc, i, enricher, fields, discarded, status="done"):
             cache_key=key, stage="enrich", adapter=enricher, adapter_version="1",
             output={"enrichment": shaped, "discarded": discarded}, emits=[], created_at=sa.func.now()))
         c.execute(sa.insert(enrichments).values(
-            id=f"e-{mid}", mention_id=mid, enricher=enricher, enricher_version="1", deployment=None,
+            id=f"e-{mid}-{deployment}", mention_id=mid, enricher=enricher, enricher_version="1", deployment=deployment,
             discarded=discarded, **shaped))
 
 
@@ -77,3 +80,13 @@ def test_sample_is_deterministic_and_marked(db):
     assert ids == sorted(ids, key=lambda i: hashlib.sha256(f"1:{i}".encode()).hexdigest())
     assert a[0]["sentence"] == "Police ⟦arrested⟧ two men." and a[0]["enrichment"]["action"]["text"] == "arrested"
     assert a[0]["enricher"] == "clairic" and a[0]["mention_id"].startswith("m-en-")
+
+
+def test_sample_only_the_runs_own_enrichments(db):
+    run_a, run_b = seed(db, {"extraction": "dep-a"}), seed(db, {"extraction": "dep-b"})
+    for i in range(3):
+        add(db, run_a, "en", i, "clairic", {"action": "arrested"}, {}, deployment="dep-a")
+        add(db, run_b, "en", i, "clairic", {"action": "arrested"}, {}, deployment="dep-b")
+    got = sample(db, run_a, 10, seed=1)
+    assert len(got) == 3 and {s["deployment"] for s in got} == {"dep-a"}
+    assert len({s["id"] for s in got}) == 3

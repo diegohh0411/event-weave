@@ -4,9 +4,9 @@ import threading
 import pytest
 import sqlalchemy as sa
 from helpers import make_doc
-from stanza_fixture import ARREST, ARREST_PARSE
-from typer.testing import CliRunner
 from pydantic import BaseModel
+from stanza_fixture import ARREST, ARREST_PARSE, parse
+from typer.testing import CliRunner
 from weave_core.adapters import AdapterSpec, StageResult
 from weave_core.config import RunConfig
 from weave_core.registry import Registry
@@ -25,6 +25,7 @@ from weave_enrichers.shape import Enrichment
 from weave_enrichers.system_one import SystemOneEnricher
 from weave_extractors.gold import GoldExtractor
 from weave_inference.clients.stub import set_stub_script
+from weave_inference.probe import Readiness
 from weave_inference.types import Deployment, Limits, Model
 from weave_providers.replay import ReplayProvider
 
@@ -62,7 +63,6 @@ def pipeline(db, stub_inference, tmp_path, monkeypatch):
     catalog = stub_inference()
     catalog.models["m-x"] = Model(id="m-x", capability=Capability.extraction)
     catalog.deployments["stub-x"] = Deployment(id="stub-x", model="m-x", provider="stub", limits=Limits())
-    from weave_inference.probe import Readiness
     catalog.readiness["stub-x"] = Readiness(ready=True)
     clear_clairic()
     system_one.clear_cache()
@@ -75,7 +75,6 @@ def pipeline(db, stub_inference, tmp_path, monkeypatch):
             {"document_id": rain.id, "mention_id": "T2", "start": 5, "end": 9, "text": "fell"}])
     client = FixtureStanzaClient(tmp_path)
     client.save(ARREST, "en", ARREST_PARSE, ner=True)
-    from stanza_fixture import parse
     client.save(SECOND, "es", parse(SECOND, [("Rain", "NOUN", "rain", "nsubj", 2), ("fell", "VERB", "fall", "root", 0),
                                              (".", "PUNCT", ".", "punct", 2)]), ner=True)
     monkeypatch.setattr(SystemOneEnricher, "client", lambda self: client)
