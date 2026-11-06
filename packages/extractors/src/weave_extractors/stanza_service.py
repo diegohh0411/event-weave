@@ -34,17 +34,23 @@ def stanza_pipeline(model_dir: Path) -> Callable[[str], Callable[[str], list[Sen
                               download_method=None, use_gpu=False)
 
         def parse(text: str) -> list[Sentence]:
-            out = []
-            for sent in nlp(text).sentences:
-                words = []
-                for token in sent.tokens:
-                    for w in token.words:  # multi-word tokens share their token's character span
-                        words.append(Word(text=w.text, start=token.start_char, end=token.end_char, upos=w.upos,
-                                          lemma=w.lemma, feats=w.feats, deprel=w.deprel, head=w.head))
-                out.append(Sentence(words=words))
-            return out
+            return to_sentences(nlp(text))
         return parse
     return factory
+
+
+def to_sentences(parsed) -> list[Sentence]:
+    """Words of a multi-word token (es "del", "dárselo") carry the token's surface text and span, so they
+    align with the stored text; their own lemma and POS are kept."""
+    out = []
+    for sent in parsed.sentences:
+        words = []
+        for token in sent.tokens:
+            for w in token.words:
+                words.append(Word(text=token.text, start=token.start_char, end=token.end_char, upos=w.upos,
+                                  lemma=w.lemma, feats=w.feats, deprel=w.deprel, head=w.head))
+        out.append(Sentence(words=words))
+    return out
 
 
 def create_app(model_dir: Path, pipeline_factory=None) -> FastAPI:

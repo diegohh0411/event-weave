@@ -342,7 +342,8 @@ def test_large_gold_pairs_batch_exceeds_bind_parameter_cap(queue, started_run, c
 
 def mention_row(doc_id="fake:d1"):
     return {"id": "m" * 32, "document_id": doc_id, "start": 0, "end": 4, "tok_start": 0, "tok_end": 1,
-            "sentence": 0, "text": "text", "extractor": "gold", "extractor_version": "1", "probability": None}
+            "sentence": 0, "text": "text", "extractor": "gold", "extractor_version": "1", "deployment": None,
+            "probability": None}
 
 
 def test_complete_writes_mention_rows_once(queue, started_run, count_rows):

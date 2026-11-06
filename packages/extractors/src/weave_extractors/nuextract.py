@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from weave_core.adapters import AdapterSpec
 from weave_core.stages import Capability, Stage, UnitKind
 from weave_inference.gateway import Inference
-from weave_inference.types import ChatRequest
+from weave_inference.types import ChatRequest, LimitExceeded
 
 from .base import ExtractorBase, SpanBatch
 from .shape import Doc
@@ -53,8 +53,18 @@ class NuExtract3Extractor(ExtractorBase):
     def spans(self, doc: Doc) -> SpanBatch:
         inference = Inference.for_context(self.ctx)
         spans, unlocated, bad = [], 0, 0
-        for start, end in windows(doc, self.settings.window_sentences):
-            text = inference.chat(self.build_request(doc.text[start:end])).value.text
+        pending = windows(doc, self.settings.window_sentences)
+        while pending:
+            start, end = pending.pop(0)
+            try:
+                text = inference.chat(self.build_request(doc.text[start:end])).value.text
+            except LimitExceeded:
+                inner = [(s, e) for s, e in doc.sentence_offsets if start <= s and e <= end]
+                if len(inner) > 1:  # too big as a window: retry one sentence at a time
+                    pending[:0] = inner
+                else:
+                    bad += 1
+                continue
             try:
                 triggers = json.loads(text)["event_triggers"]
                 if not isinstance(triggers, list):

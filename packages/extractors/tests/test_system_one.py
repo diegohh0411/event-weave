@@ -67,3 +67,11 @@ def test_threshold_required():
 def test_system_one_contract(stub_inference, police):
     set_stub_script("stub", {f"c{i}": 0.7 for i in range(5)})
     run_contract(lambda d: S1(d, police[1]), [police[0]])
+
+
+def test_mention_identity_depends_on_deployment(stub_inference, police):
+    set_stub_script("stub", {f"c{i}": 0.9 for i in range(5)})
+    a = S1(*police, deployment="stub-s1").process(unit(police[0]), {})
+    b = S1(*police, deployment="stub-s1-small").process(unit(police[0]), {})
+    assert {e.id for e in a.emits}.isdisjoint({e.id for e in b.emits})
+    assert {r["deployment"] for r in a.rows["mentions"]} == {"stub-s1"}

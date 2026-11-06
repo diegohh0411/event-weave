@@ -25,15 +25,19 @@ class Mention(BaseModel):
     text: str
     extractor: str
     extractor_version: str
+    deployment: str | None = None  # the model deployment that produced it; part of its identity
     probability: float | None = None
+
+    def _suffix(self) -> str:
+        base = f"{self.start}:{self.end}:{self.extractor}:{self.extractor_version}"
+        return base if self.deployment is None else f"{base}:{self.deployment}"
 
     @property
     def id(self) -> str:
-        key = f"{self.document_id}:{self.start}:{self.end}:{self.extractor}:{self.extractor_version}"
-        return hashlib.sha256(key.encode()).hexdigest()[:32]
+        return hashlib.sha256(f"{self.document_id}:{self._suffix()}".encode()).hexdigest()[:32]
 
     def unit(self, document_content_hash: str) -> UnitRef:
-        key = f"{document_content_hash}:{self.start}:{self.end}:{self.extractor}:{self.extractor_version}"
+        key = f"{document_content_hash}:{self._suffix()}"
         return UnitRef(UnitKind.mention, self.id, hashlib.sha256(key.encode()).hexdigest())
 
     def row(self) -> dict:

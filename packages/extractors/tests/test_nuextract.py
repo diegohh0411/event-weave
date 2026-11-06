@@ -60,3 +60,14 @@ def test_nuextract_contract(stub_inference):
     doc = make_doc(TEXT)
     script(doc, [json.dumps({"event_triggers": ["said", "attack"]})], window_sentences=3)
     run_contract(lambda d: Nu(d, window_sentences=3), [doc])
+
+
+def test_oversized_window_falls_back_to_sentences(stub_inference):
+    doc = make_doc(TEXT)
+    nu = Nu(doc, window_sentences=3)
+    # Room for one short sentence's request, not for the whole three-sentence window.
+    limit = len(nu.build_request(doc.text[0:30]).text_for_context.encode()) // 4
+    stub_inference(context_tokens=limit)
+    nu.ctx = ctx(llm="stub-s1-small")
+    result = nu.process(unit(doc), {})
+    assert result.output["mentions"] == [] and result.output["unlocated_windows"] == 3  # stub replies are not JSON

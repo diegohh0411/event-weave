@@ -54,3 +54,8 @@ def test_base_overlap_longest_wins():
     result = Fixed(doc, [(5, 8, 0.4), (5, 11, 0.9), (12, 16, None)]).process(unit(doc), {})
     assert [m["text"] for m in result.output["mentions"]] == ["set up", "camp"]
     assert result.output["mentions"][0]["probability"] == 0.9
+
+
+def test_mention_id_differs_by_deployment():
+    assert mention().id != mention(deployment="x").id
+    assert mention(deployment=None).id == mention().id

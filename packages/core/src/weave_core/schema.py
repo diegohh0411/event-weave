@@ -75,7 +75,7 @@ mentions = sa.Table("mentions", metadata,
     sa.Column("document_id", T, sa.ForeignKey("documents.id"), nullable=False, index=True),
     *[sa.Column(n, sa.Integer, nullable=False) for n in ("start", "end", "tok_start", "tok_end", "sentence")],
     *[sa.Column(n, T, nullable=False) for n in ("text", "extractor", "extractor_version")],
-    sa.Column("probability", sa.Float))
+    sa.Column("deployment", T), sa.Column("probability", sa.Float))
 mention_tags = sa.Table("mention_tags", metadata,
     sa.Column("mention_id", T, sa.ForeignKey("mentions.id"), primary_key=True),
     sa.Column("tagger", T, primary_key=True), sa.Column("tagger_version", T, primary_key=True),

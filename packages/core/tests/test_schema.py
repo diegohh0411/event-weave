@@ -62,7 +62,7 @@ def test_mentions_tables_exist(database_url):
     insp = sa.inspect(make_engine(database_url))
     assert {c["name"] for c in insp.get_columns("mentions")} == {
         "id", "document_id", "start", "end", "tok_start", "tok_end", "sentence", "text",
-        "extractor", "extractor_version", "probability"}
+        "extractor", "extractor_version", "deployment", "probability"}
     assert ("document_id",) in {tuple(i["column_names"]) for i in insp.get_indexes("mentions")}
     assert {c["name"] for c in insp.get_columns("mention_tags")} == {
         "mention_id", "tagger", "tagger_version", "deployment", "significance", "event_type", "event_type_probs"}

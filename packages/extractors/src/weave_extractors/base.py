@@ -48,7 +48,14 @@ class ExtractorBase:
         tok_start, tok_end, sentence = char_to_token_span(doc, start, end)
         return Mention(document_id=doc.id, start=start, end=end, tok_start=tok_start, tok_end=tok_end,
                        sentence=sentence, text=doc.text[start:end], extractor=self.spec.name,
-                       extractor_version=self.spec.version, probability=p)
+                       extractor_version=self.spec.version, deployment=self.deployment(), probability=p)
+
+    def deployment(self) -> str | None:
+        """Deployments behind this extractor's capabilities; None for model-free extractors."""
+        caps = sorted(self.spec.capabilities)
+        if not caps or self.ctx is None:
+            return None
+        return ",".join(str(self.ctx.deployments.get(c)) for c in caps)
 
 
 def _longest_first(spans):
