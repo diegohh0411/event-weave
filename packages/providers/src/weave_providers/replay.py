@@ -26,6 +26,7 @@ class ReplayProvider:
     spec = AdapterSpec(
         name="replay", version="1", stage=Stage.provide, input_kind=UnitKind.run,
         settings_model=ReplaySettings,
+        cacheable=False,  # reads the live documents table; a rerun must see new rows
     )
 
     def __init__(self, settings: ReplaySettings, ctx: AdapterContext):

@@ -18,6 +18,7 @@ class AdapterSpec:
     settings_model: type[BaseModel]
     capabilities: frozenset[Capability] = frozenset()
     max_concurrency: int = 4
+    cacheable: bool = True  # False: output depends on state outside the inputs, so is never reused
 
 
 @dataclass(frozen=True)

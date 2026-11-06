@@ -126,3 +126,20 @@ def test_build_adapter_passes_stage_and_adapter_name(engine, registry, service, 
     with session_scope(engine) as session:
         adapter, _ = build_adapter(session, run, Stage.enrich, registry)
     assert adapter.ctx.stage == Stage.enrich and adapter.ctx.adapter == "fake-enricher"
+
+def test_non_cacheable_adapter_is_rerun_and_leaves_no_stage_output(engine, service, good_config):
+    from dataclasses import replace
+    from weave_core.registry import Registry
+    from weave_core.schema import stage_outputs
+    import sqlalchemy as sa
+    Live = type("Live", (SPECS[0],), {"calls": 0, "spec": replace(SPECS[0].spec, cacheable=False)})
+    registry = Registry()
+    registry.register(Live)
+    start(service, good_config)
+    run_worker(engine, registry, Stage.provide, "w", stop=threading.Event(), once=True)
+    start(service, good_config.model_copy(deep=True))
+    run_worker(engine, registry, Stage.provide, "w", stop=threading.Event(), once=True)
+    assert Live.calls == 2
+    with engine.connect() as c:
+        assert c.scalar(sa.select(sa.func.count()).select_from(stage_outputs)
+                        .where(stage_outputs.c.stage == Stage.provide)) == 0

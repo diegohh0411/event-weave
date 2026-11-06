@@ -96,6 +96,38 @@ def test_replay_of_unknown_provider_is_empty_not_error(engine):
     assert result.emits == [] and result.documents == [] and result.output == {"documents": 0}
 
 
+def test_second_identical_run_sees_documents_added_in_between(engine):
+    seed(engine, [("a", (1,), "crawl", "en", "x", day(1), "u1")])
+    registry = Registry()
+    registry.register(ReplayProvider)
+    cfg = RunConfig(name="t", track="realistic", seed=1, stages={
+        Stage.provide: {"adapter": "replay"}, Stage.extract: {"adapter": "x"},
+        Stage.enrich: {"adapter": "e"}, Stage.embed: {"adapter": "m"}, Stage.cluster: {"adapter": "c"}})
+    for stage, name, kind in [(Stage.extract, "x", UnitKind.document), (Stage.enrich, "e", UnitKind.mention),
+                              (Stage.embed, "m", UnitKind.mention), (Stage.cluster, "c", UnitKind.mention)]:
+        class Fake:
+            spec = AdapterSpec(name, "1", stage, kind, Empty)
+
+            def __init__(self, settings, ctx):
+                pass
+
+            def process(self, unit, upstream):
+                return StageResult({})
+        registry.register(Fake)
+    service = RunService(engine, registry, StaticCatalog())
+
+    def provided(run):
+        service.start(run)
+        run_worker(engine, registry, Stage.provide, "w", stop=threading.Event(), once=True)
+        with engine.connect() as c:
+            return {r[0] for r in c.execute(sa.select(jobs.c.unit_id).where(
+                jobs.c.run_id == run, jobs.c.stage == Stage.extract))}
+
+    assert provided(service.create(cfg).run_id) == {"crawl:a"}
+    seed(engine, [("b", (2,), "crawl", "en", "x", day(2), "u2")])
+    assert provided(service.create(cfg).run_id) == {"crawl:a", "crawl:b"}
+
+
 def test_paper_run_with_replay_fails_without_a_topic(engine):
     seed(engine, [("a", (1,), "crawl", "en", "x", day(1), "u1")])
     registry = Registry()
