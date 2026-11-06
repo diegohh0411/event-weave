@@ -15,7 +15,7 @@ def make_run(c) -> uuid.UUID:
 
 
 def add_member(c, run_id, partition, cluster_id, mention_id, vectors, order=(1,), enrichment=None,
-               language="en", published_at=None):
+               language="en", published_at=None, deployment="d"):
     """Seed one mention (own document), its cluster membership, document vectors and enrich output."""
     doc_id = "d-" + mention_id
     text = f"Sentence of {mention_id}."
@@ -31,8 +31,8 @@ def add_member(c, run_id, partition, cluster_id, mention_id, vectors, order=(1,)
                                                 partition=partition, order_key=list(order)))
     for f, vec in vectors.items():
         c.execute(sa.insert(member_vectors).values(
-            id=f"v-{mention_id}-{f}-{str(run_id)[:4]}", mention_id=mention_id,
-            enrichment_id="e-" + mention_id + str(run_id)[:4], field=f, kind="document", deployment="d",
+            id=f"v-{mention_id}-{f}-{str(run_id)[:4]}-{deployment}-{len(vec)}", mention_id=mention_id,
+            enrichment_id="e-" + mention_id + str(run_id)[:4], field=f, kind="document", deployment=deployment,
             dimension=len(vec), vector=vec))
     if enrichment is not None:
         key = f"k-{mention_id}-{run_id}"
@@ -47,3 +47,12 @@ def add_member(c, run_id, partition, cluster_id, mention_id, vectors, order=(1,)
 
 def q(**fields):
     return {f: to_literal(v) for f, v in fields.items()}
+
+
+def add_vectors(c, run_id, mention_id, vectors, deployment):
+    """A further document-vector set for an already seeded mention (another embed checkpoint)."""
+    for f, vec in vectors.items():
+        c.execute(sa.insert(member_vectors).values(
+            id=f"v-{mention_id}-{f}-{str(run_id)[:4]}-{deployment}-{len(vec)}", mention_id=mention_id,
+            enrichment_id="e-" + mention_id + str(run_id)[:4], field=f, kind="document", deployment=deployment,
+            dimension=len(vec), vector=vec))

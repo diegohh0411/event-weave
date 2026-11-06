@@ -19,8 +19,9 @@ class Member:
 
 
 class PartitionView:
-    def __init__(self, session, run_id, partition: str):
+    def __init__(self, session, run_id, partition: str, *, deployment: str, dimension: int):
         self.session, self.run_id, self.partition = session, run_id, partition
+        self.deployment, self.dimension = deployment, dimension
 
     def cluster_ids(self) -> list[str]:
         rows = self.session.execute(
@@ -47,7 +48,8 @@ class PartitionView:
         if ids:
             for v in self.session.execute(
                     sa.select(member_vectors.c.mention_id, member_vectors.c.field, member_vectors.c.vector)
-                    .where(member_vectors.c.mention_id.in_(ids), member_vectors.c.kind == "document")):
+                    .where(member_vectors.c.mention_id.in_(ids), member_vectors.c.kind == "document",
+                           member_vectors.c.deployment == self.deployment, member_vectors.c.dimension == self.dimension)):
                 vectors[v.mention_id][v.field] = v.vector
         out = []
         for r in rows:
