@@ -204,11 +204,38 @@ def test_partial_failure_keeps_accumulated_usage_and_cost(engine, run_id, monkey
     assert (row.status, row.cost, row.input_tokens, row.output_tokens) == ("error", Decimal("0.25"), 7, 2)
 
 
-def test_provider_rate_is_inherited_when_deployment_has_none(engine, run_id, monkeypatch):
+def _max_in_flight(engine, run_id, monkeypatch, concurrency):
+    import threading
     from weave_inference import http
-    p = Provider(id="ts", kind="typesafe", base_url="http://x", credential_env="X_KEY", rate=RateLimit(concurrency=7))
+    lock, state = threading.Lock(), {"now": 0, "max": 0}
     body = {"answers": {"c": {"type": "choice", "choice": "a"}}}
-    inf = _s1_inf(engine, run_id, monkeypatch, lambda r: httpx.Response(200, json=body), provider=p)
+
+    def handler(request):
+        with lock:
+            state["now"] += 1
+            state["max"] = max(state["max"], state["now"])
+        threading.Event().wait(0.1)  # time.sleep is patched out by _s1_inf
+        with lock:
+            state["now"] -= 1
+        return httpx.Response(200, json=body)
+
+    p = Provider(id="ts", kind="typesafe", base_url="http://x", credential_env="X_KEY",
+                 rate=RateLimit(concurrency=concurrency))
+    inf = _s1_inf(engine, run_id, monkeypatch, handler, provider=p)
     http._limiters.pop("s1", None)
-    inf.system_one(REQ_S1)
-    assert http._limiters["s1"]._sem._initial_value == 7
+    reqs = [SystemOneRequest(state=f"x{i}", questions=REQ_S1.questions) for i in range(3)]
+    threads = [threading.Thread(target=inf.system_one, args=(r,)) for r in reqs]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    return state["max"]
+
+
+def test_provider_rate_is_inherited_when_deployment_has_none(engine, run_id, monkeypatch):
+    assert _max_in_flight(engine, run_id, monkeypatch, concurrency=1) == 1
+
+
+def test_parallel_calls_overlap_when_provider_allows_it(engine, run_id, monkeypatch):
+    # Control: proves the in-flight measurement above can detect overlap.
+    assert _max_in_flight(engine, run_id, monkeypatch, concurrency=3) > 1
