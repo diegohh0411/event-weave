@@ -66,3 +66,12 @@ def test_context_estimate_includes_options_template_args_and_fields():
         with pytest.raises(LimitExceeded) as e:
             check_limits(d, req)
         assert e.value.limit == "context_tokens"
+
+
+def test_extraction_field_limit():
+    from weave_inference.types import ExtractionRequest
+    check_limits(dep(max_fields=2), ExtractionRequest(text="t", fields={"a": 1, "b": 2}))
+    with pytest.raises(LimitExceeded) as e:
+        check_limits(dep(max_fields=2), ExtractionRequest(text="t", fields={"a": 1, "b": 2, "c": 3}))
+    assert (e.value.limit, e.value.value, e.value.maximum) == ("fields", 3, 2)
+    assert e.value.retryable is False

@@ -34,7 +34,9 @@ deployments:
   nuextract3@openrouter: {model: nuextract3, provider: openrouter}
   nuextract3@local: {model: nuextract3, provider: llamacpp-local, local: true}
   embeddinggemma-2@openrouter: {model: embeddinggemma-2, provider: openrouter}
-  clairic@cloudflare: {model: clairic, provider: cloudflare}
+  # max_fields: 20 is UNVERIFIED (no web access when written); confirm against the Cloudflare docs
+  # for the Clairic extraction endpoint before the first real run.
+  clairic@cloudflare: {model: clairic, provider: cloudflare, limits: {max_fields: 20}}
   stub-system-one: {model: lfm2-d1, provider: stub, local: true}
 
 defaults:

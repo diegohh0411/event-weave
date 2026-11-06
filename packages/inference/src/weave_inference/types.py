@@ -23,6 +23,7 @@ class Limits(_Strict):
     context_tokens: int | None = None
     max_choice_options: int | None = None
     max_request_bytes: int | None = None
+    max_fields: int | None = None
 
 
 class Price(_Strict):

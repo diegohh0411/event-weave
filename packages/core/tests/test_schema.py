@@ -37,7 +37,7 @@ def test_migration_creates_ledger_and_run_deployments(database_url):
     assert insp.get_pk_constraint("run_deployments")["constrained_columns"] == ["run_id", "deployment"]
     cfg = Config()
     cfg.set_main_option("script_location", str(Path(weave_core.__file__).parent / "migrations"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["0004_mentions"]
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0005_enrichments"]
 
 
 def test_documents_have_order_key_and_no_gold_columns(database_url):
@@ -68,3 +68,13 @@ def test_mentions_tables_exist(database_url):
         "mention_id", "tagger", "tagger_version", "deployment", "significance", "event_type", "event_type_probs"}
     assert insp.get_pk_constraint("mention_tags")["constrained_columns"] == [
         "mention_id", "tagger", "tagger_version", "deployment"]
+
+
+def test_enrichments_table_exists(database_url):
+    insp = sa.inspect(make_engine(database_url))
+    assert {c["name"] for c in insp.get_columns("enrichments")} == {
+        "id", "mention_id", "enricher", "enricher_version", "deployment",
+        "action", "participants", "location", "time", "discarded"}
+    assert ("mention_id",) in {tuple(i["column_names"]) for i in insp.get_indexes("enrichments")}
+    assert {c["name"]: c["nullable"] for c in insp.get_columns("enrichments")}["mention_id"] is False
+    assert insp.get_foreign_keys("enrichments")[0]["referred_table"] == "mentions"

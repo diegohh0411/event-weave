@@ -324,10 +324,24 @@ def test_gold_rows_conflict_does_nothing(queue, started_run, service, count_rows
 
 def test_rows_for_non_gold_table_are_refused(queue, started_run, count_rows, job_row):
     [job] = queue.claim(Stage.provide, 1, "w")
-    with pytest.raises(ValueError, match="gold_"):
+    with pytest.raises(ValueError, match="gold_.*enrichments.*mention_tags.*mentions"):
         finish(queue, job, StageResult({}, [doc_unit("d1", 0, "t1")], [record()], {"documents": [{}]}))
     assert count_rows("documents") == 0
     assert job_row(started_run, Stage.provide).status == JobStatus.claimed
+
+
+def test_complete_writes_enrichment_rows(queue, started_run, count_rows):
+    mention = {"id": "m1", "document_id": "fake:d1", "start": 0, "end": 4, "tok_start": 0, "tok_end": 1,
+               "sentence": 0, "text": "text", "extractor": "x", "extractor_version": "1",
+               "deployment": None, "probability": None}
+    enrichment = {"id": "e1", "mention_id": "m1", "enricher": "clairic", "enricher_version": "1", "deployment": None,
+                  "action": {"text": "text", "spans": [[0, 4]], "confidence": None},
+                  "participants": {}, "location": {}, "time": {}, "discarded": {}}
+    rows = {"mentions": [mention, mention], "enrichments": [enrichment, enrichment]}  # duplicates: on conflict do nothing
+    [job] = queue.claim(Stage.provide, 1, "w")
+    assert finish(queue, job, StageResult({}, [doc_unit("d1", 0, "t1")], [record()], rows))
+    assert count_rows("enrichments") == 1
+    assert count_rows("mentions") == 1
 
 
 def test_large_gold_pairs_batch_exceeds_bind_parameter_cap(queue, started_run, count_rows):
