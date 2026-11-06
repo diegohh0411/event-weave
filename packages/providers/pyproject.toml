@@ -5,7 +5,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = ["weave-core", "pyyaml>=6.0.3"]
 
 [project.optional-dependencies]
-crawl = ["feedparser>=6"]
+crawl = ["feedparser>=6", "crawl4ai==0.9.5"]
 
 [tool.uv.sources]
 weave-core = { workspace = true }

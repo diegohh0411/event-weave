@@ -1,4 +1,4 @@
-from weave_providers.crawl.fetch import Fetched, FixtureFetcher, PoliteFetcher, USER_AGENT
+from weave_providers.crawl.fetch import Crawl4aiFetcher, Fetched, FixtureFetcher, PoliteFetcher, USER_AGENT
 
 
 def robots(body: str, status: int = 200) -> Fetched:
@@ -120,3 +120,70 @@ def test_no_sleep_when_interval_already_elapsed():
     clock.now += 5
     pf.fetch("https://ex.com/b")
     assert clock.sleeps == []
+
+
+class FakeResult:
+    def __init__(self, html="<html></html>"):
+        self.success, self.status_code, self.html, self.error_message = True, 200, html, None
+
+
+class FakeCrawler:
+    def __init__(self, fail_with: Exception | None = None):
+        self.fail_with, self.started, self.closed, self.urls = fail_with, 0, 0, []
+
+    async def start(self):
+        self.started += 1
+
+    async def arun(self, url, config):
+        self.urls.append(url)
+        if self.fail_with:
+            raise self.fail_with
+        return FakeResult()
+
+    async def close(self):
+        self.closed += 1
+
+
+def test_crawl4ai_fetcher_reuses_one_browser_and_closes_it():
+    made = []
+
+    def factory():
+        made.append(FakeCrawler())
+        return made[-1]
+
+    with Crawl4aiFetcher(crawler_factory=factory) as f:
+        assert f.fetch("https://ex.com/a") == Fetched("https://ex.com/a", 200, "<html></html>", None)
+        f.fetch("https://ex.com/b")
+    assert len(made) == 1 and made[0].started == 1 and made[0].closed == 1
+    assert made[0].urls == ["https://ex.com/a", "https://ex.com/b"]
+
+
+def test_crawl4ai_fetcher_returns_browser_errors_instead_of_raising():
+    crawler = FakeCrawler(fail_with=RuntimeError("net::ERR_NAME_NOT_RESOLVED"))
+    with Crawl4aiFetcher(crawler_factory=lambda: crawler) as f:
+        got = f.fetch("https://ex.com/a")
+    assert got == Fetched("https://ex.com/a", 0, None, "RuntimeError: net::ERR_NAME_NOT_RESOLVED")
+
+
+def test_crawl4ai_fetcher_start_failure_is_a_fetched_error():
+    class Broken(FakeCrawler):
+        async def start(self):
+            raise OSError("no browser")
+
+    with Crawl4aiFetcher(crawler_factory=Broken) as f:
+        assert f.fetch("https://ex.com/a").error == "OSError: no browser"
+
+
+def test_crawl4ai_fetcher_close_without_fetch_is_safe():
+    Crawl4aiFetcher(crawler_factory=lambda: 1 / 0).close()
+
+
+def test_origin_key_ignores_scheme_and_host_case():
+    inner = FixtureFetcher({
+        "https://ex.com/robots.txt": robots("User-agent: *\nDisallow: /private"),
+        "https://Ex.COM/ok": page("https://Ex.COM/ok"),
+    })
+    pf, _ = polite(inner)
+    assert pf.fetch("HTTPS://EX.com/private/a").error == "robots disallowed"
+    assert pf.fetch("https://Ex.COM/ok").status == 200
+    assert inner.calls == ["https://ex.com/robots.txt", "https://Ex.COM/ok"]
