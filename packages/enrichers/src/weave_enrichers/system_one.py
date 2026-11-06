@@ -10,6 +10,7 @@ from weave_core.stages import Capability, Stage, UnitKind
 from weave_inference.gateway import Inference
 from weave_inference.types import Choice, LimitExceeded, Noul, SystemOneRequest
 
+from .keylock import KeyedLocks
 from ._shared import Doc, HttpStanzaClient, Sentence, StanzaClient, check_language
 from .base import EnricherBase
 from .shape import Enrichment, Field, TimeField
@@ -40,13 +41,12 @@ LOCATIVE_MARKERS = {
 PARSE_CACHE_SIZE = 16
 _PARSES: "OrderedDict[tuple, list[Sentence]]" = OrderedDict()
 _PARSE_LOCK = threading.Lock()  # bookkeeping only: never held across a parse
-_KEY_LOCKS: dict[tuple, threading.Lock] = {}
+_KEY_LOCKS = KeyedLocks()
 
 
 def clear_cache() -> None:
     with _PARSE_LOCK:
         _PARSES.clear()
-        _KEY_LOCKS.clear()
 
 
 @dataclass
@@ -157,9 +157,7 @@ class SystemOneEnricher(EnricherBase):
     def parse(self, doc: Doc) -> list[Sentence]:
         check_language(doc.language)
         key = (doc.id, doc.content_hash, self.settings.stanza_url)
-        with _PARSE_LOCK:
-            key_lock = _KEY_LOCKS.setdefault(key, threading.Lock())
-        with key_lock:  # mentions of one document wait for a single parse; other documents run concurrently
+        with _KEY_LOCKS.hold(key):  # mentions of one document wait for a single parse; other documents run concurrently
             with _PARSE_LOCK:
                 if key in _PARSES:
                     _PARSES.move_to_end(key)
@@ -168,8 +166,7 @@ class SystemOneEnricher(EnricherBase):
             with _PARSE_LOCK:
                 _PARSES[key] = sentences
                 while len(_PARSES) > PARSE_CACHE_SIZE:
-                    old, _ = _PARSES.popitem(last=False)
-                    _KEY_LOCKS.pop(old, None)
+                    _PARSES.popitem(last=False)
         return sentences
 
     # -- deployment ----------------------------------------------------------
@@ -208,12 +205,13 @@ class SystemOneEnricher(EnricherBase):
                 if cap == 1:
                     raise AdapterFailure("deployment allows 1 choice option: a Choice needs at least 2", retryable=False)
                 size = cap or len(options)
-                count = -(-len(options) // size)  # balanced chunks, so none is left with a single option
-                bounds = [round(i * len(options) / count) for i in range(count + 1)]
-                chunks = [options[bounds[i]:bounds[i + 1]] for i in range(count)]
+                chunks = [options[i:i + size] for i in range(0, len(options), size)]
                 final = len(chunks) == 1
                 shape[kind] = []
                 for j, chunk in enumerate(chunks):
+                    if len(chunk) == 1:  # a lone option needs no Choice: it goes straight to the next round
+                        shape[kind].append((None, chunk))
+                        continue
                     qid = kind if final else f"{kind}_r{rounds[kind]}_{j}"
                     shape[kind].append((qid, chunk))
                     batch.append(Choice(id=qid, prompt=kinds[kind][0], options=chunk))
@@ -224,6 +222,9 @@ class SystemOneEnricher(EnricherBase):
             for kind in list(levels):
                 round_winners = []
                 for qid, chunk in shape[kind]:
+                    if qid is None:
+                        round_winners.append((chunk[0], None))
+                        continue
                     value, probs = got.get(qid, (None, None))
                     if value in chunk:
                         round_winners.append((value, (probs or {}).get(value)))

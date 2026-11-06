@@ -8,6 +8,7 @@ from weave_core.stages import Capability, Stage, UnitKind
 from weave_inference.gateway import Inference
 from weave_inference.types import ExtractionRequest, Span
 
+from .keylock import KeyedLocks
 from ._shared import Doc, mention_id
 from .base import FIELDS, EnricherBase
 from .shape import Enrichment, Field, TimeField
@@ -30,14 +31,13 @@ class ClairicSettings(BaseModel):
 
 _CACHE: "OrderedDict[tuple, dict[str, tuple[Enrichment, dict[str, int]]]]" = OrderedDict()
 _LOCK = threading.RLock()
-_KEY_LOCKS: dict[tuple, threading.Lock] = {}
+_KEY_LOCKS = KeyedLocks()
 _LOCAL = threading.local()
 
 
 def clear_cache() -> None:
     with _LOCK:
         _CACHE.clear()
-        _KEY_LOCKS.clear()
 
 
 def _unmark(pos: int, open_at: int, close_at: int) -> int:
@@ -122,9 +122,7 @@ class ClairicEnricher(EnricherBase):
         """Enrichments of the given mentions of one document, batched by the deployment's field limit and cached."""
         key = (doc.id, self.deployment(), self.settings.model_dump_json())
         ids = [m.get("id") or mention_id(m) for m in mentions]
-        with _LOCK:  # bookkeeping only: never held across inference
-            key_lock = _KEY_LOCKS.setdefault(key, threading.Lock())
-        with key_lock:  # jobs on the same document wait for one another; other documents run concurrently
+        with _KEY_LOCKS.hold(key):  # jobs on the same document wait for one another; other documents run concurrently
             with _LOCK:
                 cached = dict(_CACHE.get(key, {}))
             todo = [m for m, i in zip(mentions, ids) if i not in cached]
@@ -135,8 +133,7 @@ class ClairicEnricher(EnricherBase):
                     _CACHE[key] = dict(cached)
                     _CACHE.move_to_end(key)
                     while len(_CACHE) > CACHE_SIZE:
-                        old, _ = _CACHE.popitem(last=False)
-                        _KEY_LOCKS.pop(old, None)
+                        _CACHE.popitem(last=False)
             return {i: (cached[i][0].model_copy(deep=True), dict(cached[i][1])) for i in ids}
 
     # -- stage ---------------------------------------------------------------

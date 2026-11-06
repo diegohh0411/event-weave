@@ -9,6 +9,7 @@ from weave_enrichers.system_one import SystemOneEnricher, SystemOneSettings, cle
 from weave_enrichers.window import build_window
 from weave_inference.clients import stub
 from weave_inference.clients.stub import set_stub_script
+from weave_inference.gateway import Inference
 from weave_inference.types import Choice
 
 ARR = (7, 15)
@@ -136,8 +137,8 @@ def test_no_candidates_no_questions(stub_inference, tmp_path):
     assert not [i for i in ids() if i.startswith(("loc", "time"))]
 
 
-def seven_places(tmp_path):
-    names = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta"]
+def seven_places(tmp_path, names=("Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta")):
+    names = list(names)
     text = "Police arrested two men in " + ", ".join(names) + "."
     words = [w for w in _W[:4]] + [(n, "PROPN", n, "obl" if i == 0 else "conj", 2) for i, n in enumerate(names)] + [(".", "PUNCT", ".", "punct", 2)]
     client = FixtureStanzaClient(tmp_path)
@@ -150,14 +151,27 @@ def test_choice_never_exceeds_limit(stub_inference, tmp_path):
     doc, m, client, names = seven_places(tmp_path)
     set_stub_script("stub", {"loc_stated": 0.9,
                              **{f"loc_r0_{j}": {"question_id": f"loc_r0_{j}", "value": names[[0, 3, 5][j]], "probabilities": {names[[0, 3, 5][j]]: 0.6}}
-                                for j in range(3)},
+                                for j in range(2)},
                              "loc": {"question_id": "loc", "value": names[3], "probabilities": {names[3]: 0.8}}})
-    # 7 options in rounds of 3,2,2; the round winners (Alpha, Delta, Zeta) feed the final choice
+    # 7 options in chunks of 3,3,1: the lone Eta needs no Choice; winners (Alpha, Delta) and Eta feed the final
     enrichment, _ = S1(doc, client, deployment="stub-s1-3").enrich(doc, m, build_window(doc, m, 1))
     choices = [q for r in SEEN for q in r.questions if isinstance(q, Choice)]
     assert choices and all(2 <= len(c.options) <= 3 for c in choices)
-    assert [c.id for c in choices][-1] == "loc" and choices[-1].options == ["Alpha", "Delta", "Zeta"]
+    assert [c.id for c in choices][-1] == "loc" and choices[-1].options == ["Alpha", "Delta", "Eta"]
     assert enrichment.location.text == "Delta" and enrichment.location.confidence == 0.8
+
+
+def test_odd_candidates_never_single_option_choice(stub_inference, tmp_path):
+    doc, m, client, names = seven_places(tmp_path, ("Alpha", "Beta", "Gamma"))
+    Inference._catalog.deployments["stub-s1-3"].limits.max_choice_options = 2
+    set_stub_script("stub", {"loc_stated": 0.9,
+                             "loc_r0_0": {"question_id": "loc_r0_0", "value": "Beta", "probabilities": {"Beta": 0.7}},
+                             "loc": {"question_id": "loc", "value": "Gamma", "probabilities": {"Gamma": 0.6}}})
+    enrichment, _ = S1(doc, client, deployment="stub-s1-3").enrich(doc, m, build_window(doc, m, 1))
+    choices = [q for r in SEEN for q in r.questions if isinstance(q, Choice)]
+    assert [len(c.options) for c in choices] == [2, 2]
+    assert choices[-1].options == ["Beta", "Gamma"]
+    assert enrichment.location.text == "Gamma" and enrichment.location.confidence == 0.6
 
 
 def test_joint_one_request_per_mention(stub_inference, arrest):
