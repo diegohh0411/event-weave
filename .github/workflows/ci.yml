@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [core, inference, providers, api]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: weave
+          POSTGRES_PASSWORD: weave
+          POSTGRES_DB: weave
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U weave"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      WEAVE_TEST_DATABASE_URL: postgresql+psycopg://weave:weave@127.0.0.1:5432/postgres
+      WEAVE_DATABASE_URL: postgresql+psycopg://weave:weave@127.0.0.1:5432/weave
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --frozen --all-packages
+      # Run per package: the packages' conftest.py files conflict in one session.
+      # MCECR dataset tests (-m mcecr) skip here; the dataset is not in the repo.
+      - run: uv run pytest packages/${{ matrix.package }} -q
