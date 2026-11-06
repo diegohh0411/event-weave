@@ -1,0 +1,26 @@
+[project]
+name = "weave-extractors"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = ["weave-core", "weave-inference", "pydantic>=2", "httpx>=0.27", "typer"]
+
+[project.optional-dependencies]
+stanza = ["stanza==1.10.1", "fastapi", "uvicorn"]
+
+[tool.uv.sources]
+weave-core = { workspace = true }
+weave-inference = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/weave_extractors"]
+
+[project.entry-points."weave.adapters"]
+gold = "weave_extractors.gold:GoldExtractor"
+stanza-rules = "weave_extractors.rules:StanzaRulesExtractor"
+system-one = "weave_extractors.system_one:SystemOneExtractor"
+nuextract3 = "weave_extractors.nuextract:NuExtract3Extractor"
+significance = "weave_extractors.tagging.adapter:SignificanceTagger"

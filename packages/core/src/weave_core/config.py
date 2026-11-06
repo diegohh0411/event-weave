@@ -12,6 +12,7 @@ class StageChoice(BaseModel):
     adapter: str
     settings: dict = Field(default_factory=dict)
     deployments: dict[Capability, str] = Field(default_factory=dict)
+    version: str | None = None  # pinned at creation; workers refuse jobs when the installed adapter differs
 
 
 class RunConfig(BaseModel):
@@ -42,6 +43,11 @@ class ConfigError(Exception):
         super().__init__('; '.join(problems))
 
 
+def version_mismatch(choice: StageChoice, installed: str) -> str:
+    return (f"adapter '{choice.adapter}' is pinned to version '{choice.version}' "
+            f"but version '{installed}' is installed")
+
+
 def validate(cfg: RunConfig, registry: Registry, catalog: DeploymentCatalog) -> RunConfig:
     normalized = cfg.model_copy(deep=True)
     problems = [f'missing stage: {s}' for s in PIPELINE if s not in cfg.stages and s not in OPTIONAL_STAGES]
@@ -55,6 +61,10 @@ def validate(cfg: RunConfig, registry: Registry, catalog: DeploymentCatalog) -> 
         except KeyError:
             problems.append(f"{prefix} unknown adapter '{choice.adapter}'")
             continue
+        if choice.version is None:
+            choice.version = spec.version
+        elif choice.version != spec.version:
+            problems.append(version_mismatch(choice, spec.version))
         try:
             choice.settings = spec.settings_model.model_validate(choice.settings).model_dump(mode='json')
         except ValidationError as exc:

@@ -325,7 +325,7 @@ def test_gold_rows_conflict_does_nothing(queue, started_run, service, count_rows
 def test_rows_for_non_gold_table_are_refused(queue, started_run, count_rows, job_row):
     [job] = queue.claim(Stage.provide, 1, "w")
     with pytest.raises(ValueError, match="gold_"):
-        finish(queue, job, StageResult({}, [doc_unit("d1", 0, "t1")], [record()], {"mentions": [{}]}))
+        finish(queue, job, StageResult({}, [doc_unit("d1", 0, "t1")], [record()], {"documents": [{}]}))
     assert count_rows("documents") == 0
     assert job_row(started_run, Stage.provide).status == JobStatus.claimed
 
@@ -338,3 +338,16 @@ def test_large_gold_pairs_batch_exceeds_bind_parameter_cap(queue, started_run, c
              for i in range(8000)]
     assert finish(queue, job, StageResult({}, [doc_unit("d1", 0, "t1")], [record()], {"gold_pairs": pairs}))
     assert count_rows("gold_pairs") == 8000
+
+
+def mention_row(doc_id="fake:d1"):
+    return {"id": "m" * 32, "document_id": doc_id, "start": 0, "end": 4, "tok_start": 0, "tok_end": 1,
+            "sentence": 0, "text": "text", "extractor": "gold", "extractor_version": "1", "deployment": None,
+            "probability": None}
+
+
+def test_complete_writes_mention_rows_once(queue, started_run, count_rows):
+    [job] = queue.claim(Stage.provide, 1, "w")
+    rows = {"mentions": [mention_row(), mention_row()]}
+    assert finish(queue, job, StageResult({}, [doc_unit("d1", 0, "t1")], [record()], rows))
+    assert count_rows("mentions") == 1

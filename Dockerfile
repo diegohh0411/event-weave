@@ -12,6 +12,13 @@ FROM base AS crawler
 RUN uv sync --frozen --no-dev --all-packages --extra crawl && crawl4ai-setup
 COPY outlets.example.yaml /app/outlets.yaml
 
+# Stanza service: pinned stanza==1.10.1 (weave-extractors[stanza]); models live in the stanza-models volume.
+FROM base AS stanza
+RUN uv sync --frozen --no-dev --all-packages --extra stanza
+ENV STANZA_MODEL_DIR=/models
+EXPOSE 8001
+CMD ["uvicorn", "weave_extractors.stanza_service:app", "--factory", "--host", "0.0.0.0", "--port", "8001"]
+
 FROM base AS app
 EXPOSE 8000
 CMD ["uvicorn", "weave_api.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

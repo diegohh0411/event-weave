@@ -7,6 +7,7 @@ x-worker: &worker
   environment:
     WEAVE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-weave}:${POSTGRES_PASSWORD:-weave}@postgres:5432/${POSTGRES_DB:-weave}
     WEAVE_MCECR_PATH: /data/mcecr
+    WEAVE_STANZA_URL: http://stanza:8001
   volumes:
     - ${WEAVE_MCECR_PATH:-./.mcecr-unset}:/data/mcecr:ro
   depends_on:
@@ -49,6 +50,22 @@ services:
       timeout: 3s
       retries: 30
 
+  stanza:
+    build:
+      context: .
+      target: stanza
+    image: event-weave-stanza:latest
+    restart: unless-stopped
+    volumes:
+      - stanza-models:/models
+    ports:
+      - "127.0.0.1:8001:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
   worker-provide:
     <<: *worker
     command: weave worker --stage provide
@@ -87,3 +104,4 @@ services:
 
 volumes:
   pgdata:
+  stanza-models:

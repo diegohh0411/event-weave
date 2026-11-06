@@ -7,7 +7,7 @@ import sqlalchemy as sa
 from . import queue as queue_module
 from .adapters import AdapterContext, AdapterFailure
 from .cache import cache_key, lookup
-from .config import RunConfig
+from .config import RunConfig, version_mismatch
 from .db import session_scope
 from .queue import Queue
 from .registry import Registry
@@ -24,6 +24,8 @@ def build_adapter(session, run_id, stage, registry):
         sa.select(runs.c.config).where(runs.c.id == run_id)))
     choice = cfg.stages[stage]
     cls = registry.get(stage, choice.adapter)
+    if choice.version is not None and choice.version != cls.spec.version:
+        raise AdapterFailure(version_mismatch(choice, cls.spec.version), retryable=False)
     if cls.spec.max_concurrency < 1:
         raise ValueError("max_concurrency must be positive")
     adapter = cls(cls.spec.settings_model.model_validate(choice.settings),
@@ -114,6 +116,8 @@ def run_worker(engine: sa.Engine, registry: Registry, stage: Stage, worker_id: s
                             adapters[job.run_id] = (
                                 adapter, choice, threading.Semaphore(adapter.spec.max_concurrency))
                         futures.append(pool.submit(execute, job, adapters[job.run_id]))
+                    except AdapterFailure as exc:
+                        queue.fail(job, exc)
                     except Exception as exc:
                         queue.fail(job, AdapterFailure(f"{type(exc).__name__}: {exc}"))
                 for future in futures:
