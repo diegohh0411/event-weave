@@ -14,6 +14,7 @@ dev = [
     "weave-api",
     "weave-inference",
     "weave-providers",
+    "weave-extractors",
     "httpx",
     "defusedxml",
     "feedparser>=6",
@@ -29,3 +30,4 @@ weave-core = { workspace = true }
 weave-api = { workspace = true }
 weave-inference = { workspace = true }
 weave-providers = { workspace = true }
+weave-extractors = { workspace = true }
