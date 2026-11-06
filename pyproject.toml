@@ -16,6 +16,7 @@ dev = [
     "weave-providers",
     "weave-extractors",
     "weave-enrichers",
+    "weave-clusterer",
     "httpx",
     "defusedxml",
     "feedparser>=6",
@@ -33,3 +34,4 @@ weave-inference = { workspace = true }
 weave-providers = { workspace = true }
 weave-extractors = { workspace = true }
 weave-enrichers = { workspace = true }
+weave-clusterer = { workspace = true }
