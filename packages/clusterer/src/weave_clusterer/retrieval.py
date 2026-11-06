@@ -12,6 +12,12 @@ _SQL = sa.text("""
     GROUP BY cm.cluster_id""")
 
 
+_FIRST = sa.text("""
+    SELECT cluster_id, (array_agg(mention_id ORDER BY order_key, mention_id))[1] AS first_mention
+    FROM cluster_members WHERE run_id = :run AND partition = :p AND cluster_id = ANY(:ids)
+    GROUP BY cluster_id""")
+
+
 @dataclass(frozen=True)
 class Candidate:
     cluster_id: str
@@ -27,11 +33,14 @@ def retrieve(session, run_id, partition: str, query: dict[str, str], weights: di
                                    "dep": deployment, "dim": dimension}).all()
         per_field[f] = {r.cluster_id: float(r.score) for r in rows}
     clusters = {c for scores in per_field.values() for c in scores}
+    # Tie-break on the cluster's earliest member: mention ids are content-addressed, cluster ids are run-scoped.
+    first = {r.cluster_id: r.first_mention for r in session.execute(
+        _FIRST, {"run": run_id, "p": partition, "ids": sorted(clusters)})}
     out = []
     for c in clusters:
         fs = {f: scores[c] for f, scores in per_field.items() if c in scores}
         total = sum(weights.get(f, 0.0) for f in fs)
         score = sum(weights.get(f, 0.0) * s for f, s in fs.items()) / total if total > 0 else 0.0
         out.append(Candidate(c, score, fs))
-    out.sort(key=lambda x: (-x.score, x.cluster_id))
+    out.sort(key=lambda x: (-x.score, first[x.cluster_id], x.cluster_id))
     return out[:k]

@@ -5,13 +5,14 @@ import pytest
 import sqlalchemy as sa
 from weave_clusterer.decisions import cached_system_one
 from weave_clusterer.system_one import SystemOneClusterer, build_request
-from weave_core.schema import cluster_decisions, jobs, ledger
-from weave_core.stages import Capability
+from weave_core.schema import cluster_decisions, gold_documents, gold_mentions, gold_pairs, jobs, ledger
+from weave_core.stages import Capability, Stage
 from weave_core.adapters import AdapterContext
 from weave_inference.catalog import Catalog
 from weave_inference.clients import stub
 from weave_inference.clients.stub import clear_stub_scripts, set_stub_script
 from weave_inference.gateway import Inference
+from weave_inference.ledger import request_hash
 from weave_inference.limits import check_limits
 from weave_inference.probe import Readiness
 from weave_inference.types import Choice, Deployment, Limits, Model, Noul, Provider, SystemOneRequest
@@ -83,17 +84,36 @@ def build_clusters(db, run, n):
     assert len(set(membership(db, run).values())) == n
 
 
-def test_request_has_no_ids_or_gold(db, s1):
+@pytest.mark.parametrize("context_tokens", [None, 110])
+def test_request_has_no_ids_or_gold(db, s1, context_tokens):
+    """Every ledgered request (shrunk ones included) is free of ids, gold values, split names and the partition."""
+    s1(context_tokens=context_tokens)
     set_stub_script("stub", {"same": 0.95})
     run = new_run(db, n=6, partition="part-zq9")
+    with db.begin() as c:
+        for i in range(1, 7):
+            c.execute(sa.insert(gold_documents).values(
+                document_id=f"d-m{i}", language="en", topic=f"topic-quetzal-{i}", split="split-obsidian", doc_index=i))
+            c.execute(sa.insert(gold_mentions).values(
+                document_id=f"d-m{i}", mention_id=f"goldmid-{i}-zx", start=0, end=8, text="Sentence"))
+        c.execute(sa.insert(gold_pairs).values(
+            language="en", kind="within", split="split-obsidian", topic="topic-quetzal-1", source_document_id="d-m1",
+            source_mention_id="goldmid-1-zx", target_document_id="d-m2", target_mention_id="goldmid-2-zx", label=1))
     drain(db, SystemOneClusterer)
     assert SEEN
-    text = "\n".join(json.dumps(r.model_dump(mode="json")) for r in SEEN)
-    got = membership(db, run)
     with db.connect() as c:
+        ledgered = {r[0] for r in c.execute(sa.select(ledger.c.request_hash).where(
+            ledger.c.run_id == run, ledger.c.stage == "cluster", ledger.c.status == "ok"))}
         doc_ids = [r[0] for r in c.execute(sa.text("select id from documents"))]
-        topic_like = ["topic", "gold"]
-    forbidden = set(got.values()) | set(doc_ids) | {"part-zq9", *topic_like}
+        gold = [str(v) for t, cols in ((gold_documents, ("topic", "split")), (gold_mentions, ("mention_id",)),
+                                       (gold_pairs, ("topic", "split", "source_mention_id", "target_mention_id")))
+                for row in c.execute(sa.select(t)).mappings() for v in (row[k] for k in cols)]
+    # the spy sees each attempt that reaches the provider; they are exactly the requests the ledger recorded
+    assert {request_hash(r.model_dump(mode="json")) for r in SEEN} == ledgered
+    text = "\n".join(json.dumps(r.model_dump(mode="json")) for r in SEEN)
+    forbidden = (set(membership(db, run).values()) | set(doc_ids) | set(gold)
+                 | {"part-zq9", "topic-quetzal", "split-obsidian", "goldmid", "topic", "gold"})
+    assert any(g.startswith("topic-quetzal") for g in gold)
     for needle in forbidden:
         assert needle not in text, needle
     assert not re.search(r"\b(train|dev|test)\b", text)
@@ -263,3 +283,72 @@ def test_cache_hit_makes_no_call_and_no_ledger_row(db, s1):
         n = len(SEEN)
         b = cached_system_one(inference, session, req)
     assert a == b and len(SEEN) == n == 1
+
+
+def test_non_numeric_noul_is_invalid_not_a_crash(db, s1):
+    run = new_run(db, n=2)
+    build_clusters(db, run, 2)
+    set_stub_script("stub", {"same": "probably", "which": "c1"})
+    add_mention(db, run, "m3", 3, 0.5)
+    drain(db, SystemOneClusterer)
+    got, d = membership(db, run), decisions(db, run)["m3"]
+    assert (d.outcome, d.reason) == ("new", "invalid_noul")
+    assert got["m3"] not in {got["m1"], got["m2"]}
+
+
+def test_shown_card_hash_is_that_of_the_shrunk_card(db, s1):
+    run = new_run(db, n=5)
+    drain(db, SystemOneClusterer)
+    s1(context_tokens=110)
+    set_stub_script("stub", {"same": 0.95})
+    add_mention(db, run, "m6", 6, 0.5)
+    drain(db, SystemOneClusterer)
+    offered = [c for c in decisions(db, run)["m6"].candidates if c["label"]]
+    assert offered and all(re.fullmatch(r"[0-9a-f]{64}", c["shown_card_hash"]) for c in offered)
+    assert any(c["shown_card_hash"] != c["card_hash"] for c in offered)
+    dropped = [c for c in decisions(db, run)["m6"].candidates if not c["label"]]
+    assert all(c["shown_card_hash"] is None for c in dropped)
+
+
+def test_score_ties_give_run_independent_candidate_order(db, s1):
+    """Identical vectors tie every score; labels must not depend on the run-scoped cluster ids."""
+    run1 = new_run(db, n=0)
+    with db.begin() as c:
+        for i in (1, 2, 3, 4):
+            seed_unit(c, run1, f"m{i}", (i,), {"action": unit(0.3)}, partition="part-x")
+    build_clusters(db, run1, 4)
+    set_stub_script("stub", {"same": 0.95, "which": "c2"})
+    add_mention(db, run1, "m5", 5, 0.3)
+    drain(db, SystemOneClusterer)
+    with db.begin() as c:
+        run2 = make_pipeline_run(c, SETTINGS, "system-one", {"system_one": "stub-s1"})
+        ids = {}
+        for r in c.execute(sa.select(jobs).where(jobs.c.run_id == run1).order_by(jobs.c.id)).mappings():
+            ids[r["id"]] = c.execute(sa.insert(jobs).values(
+                run_id=run2, stage=r["stage"], unit_kind=r["unit_kind"], unit_id=r["unit_id"],
+                unit_content_hash=r["unit_content_hash"], parent_job_id=ids.get(r["parent_job_id"]),
+                partition=r["partition"], order_key=r["order_key"], input_hash=r["input_hash"],
+                status="pending" if r["stage"] == "cluster" else "done", attempts=0,
+                available_at=r["available_at"], cache_key=r["cache_key"]).returning(jobs.c.id)).scalar_one()
+    drain(db, SystemOneClusterer)
+
+    def first_members(run):
+        by_cluster = {cid: mid for mid, cid in membership(db, run).items() if mid != "m5"}
+        d = decisions(db, run)["m5"]
+        return [by_cluster[c["cluster_id"]] for c in d.candidates], d
+
+    order1, d1 = first_members(run1)
+    order2, d2 = first_members(run2)
+    assert len(order1) == 4
+    assert order1 == order2 == sorted(order1)  # ties fall back to the earliest member's (run-independent) id
+    assert [c["label"] for c in d1.candidates] == [c["label"] for c in d2.candidates]
+    assert d1.cluster_id != d2.cluster_id and d1.outcome == d2.outcome == "join"
+    assert ledger_rows(db, run2) == 0
+
+
+def test_entry_points_register_under_stage_names():
+    from importlib.metadata import entry_points
+    eps = [ep for ep in entry_points(group="weave.adapters") if ep.value.startswith("weave_clusterer.")]
+    assert sorted(ep.name for ep in eps) == ["embedding-gemma", "system-one", "threshold"]
+    specs = {(ep.name, ep.load().spec.name, ep.load().spec.stage) for ep in eps}
+    assert ("system-one", "system-one", Stage.cluster) in specs and ("threshold", "threshold", Stage.cluster) in specs

@@ -1,4 +1,6 @@
 """System One clusterer: one request asks whether any candidate is the same event and which one."""
+import math
+
 from weave_core.adapters import AdapterFailure, AdapterSpec
 from weave_core.stages import Capability, Stage, UnitKind
 from weave_inference.gateway import Inference
@@ -43,7 +45,7 @@ class SystemOneClusterer(ClustererBase):
             request = build_request(mention, [use[c.cluster_id] for c in kept])
             try:
                 check_limits(deployment, request)
-                return request, kept, trimmed
+                return request, kept, trimmed, {c.cluster_id: use[c.cluster_id] for c in kept}
             except LimitExceeded as exc:
                 if exc.limit != "context_tokens":
                     raise
@@ -60,18 +62,28 @@ class SystemOneClusterer(ClustererBase):
     def decide(self, mention, candidates, cards):
         inference = Inference.for_context(self.ctx)
         deployment = inference.deployment(Capability.system_one)
-        request, kept, trimmed = self._fit(deployment, mention, candidates, cards)
+        request, kept, trimmed, shown = self._fit(deployment, mention, candidates, cards)
         answers = {a.question_id: a for a in cached_system_one(inference, self._session, request).answers}
         suffix = "+trimmed" if trimmed else ""
         labels = {c.cluster_id: f"c{i}" for i, c in enumerate(kept, start=1)}
         noul_answer = answers.get("same")
-        noul = float(noul_answer.value) if noul_answer is not None and noul_answer.value is not None else 0.0
+        noul, invalid_noul = 0.0, False
+        if noul_answer is not None and noul_answer.value is not None:
+            try:
+                noul = float(noul_answer.value)
+                invalid_noul = not math.isfinite(noul)
+            except (TypeError, ValueError):
+                invalid_noul = True
+            if invalid_noul:
+                noul = 0.0
         which = answers.get("which")
         probabilities = which.probabilities if which is not None else None
 
         def result(outcome, cluster_id, reason):
-            return Decision(outcome, cluster_id, reason + suffix, noul, probabilities, deployment.id, labels)
+            return Decision(outcome, cluster_id, reason + suffix, noul, probabilities, deployment.id, labels, shown)
 
+        if invalid_noul:
+            return result("new", None, "invalid_noul")
         if noul < self.settings.threshold:
             return result("new", None, "noul_below_threshold")
         if len(kept) == 1:

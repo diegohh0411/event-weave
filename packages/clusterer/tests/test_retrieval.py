@@ -88,3 +88,12 @@ def test_vectors_scoped_to_deployment_and_dimension(session):
     assert m.vectors == {"action": [pytest.approx(x) for x in unit(0.0)]}
     (m,) = PartitionView(session, run, "p", deployment="other-checkpoint", dimension=2).members("A")
     assert m.vectors == {"action": [0.0, 1.0]}
+
+
+def test_score_ties_break_on_earliest_member_not_cluster_id(session):
+    run = make_run(session)
+    add_member(session, run, "p", "A", "z-late", {"action": unit(0.2)}, order=(1,))
+    add_member(session, run, "p", "B", "a-early", {"action": unit(0.2)}, order=(2,))
+    add_member(session, run, "p", "C", "m-mid", {"action": unit(0.2)}, order=(3,))
+    got = retrieve(session, run, "p", q(action=unit(0.2)), W, 5, **DD)
+    assert [c.cluster_id for c in got] == ["B", "C", "A"]

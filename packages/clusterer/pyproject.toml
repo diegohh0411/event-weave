@@ -18,4 +18,4 @@ packages = ["src/weave_clusterer"]
 [project.entry-points."weave.adapters"]
 embedding-gemma = "weave_clusterer.embed:EmbeddingGemmaEmbedder"
 threshold = "weave_clusterer.threshold:ThresholdClusterer"
-system-one-clusterer = "weave_clusterer.system_one:SystemOneClusterer"
+system-one = "weave_clusterer.system_one:SystemOneClusterer"

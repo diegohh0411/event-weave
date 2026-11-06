@@ -1,6 +1,6 @@
 """Ordered cluster stage: shared flow for every clusterer. Adapters only implement `decide`."""
 import hashlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Mapping
 
@@ -58,6 +58,7 @@ class Decision:
     probabilities: dict | None = None
     deployment: str | None = None
     labels: dict[str, str] | None = None  # cluster id -> the label the model saw, for candidates actually offered
+    shown_cards: dict[str, Card] | None = None  # cluster id -> the card as shown to the model (after any shrinking)
 
 
 def cluster_id_for(run_id, partition: str, first_mention_id: str) -> str:
@@ -127,8 +128,7 @@ class ClustererBase:
                          for c in candidates}
                 decision = self.decide(mention, candidates, cards)
                 if decision.outcome == "join" and decision.cluster_id not in cards:
-                    decision = Decision("new", None, "invalid_choice", decision.noul, decision.probabilities,
-                                        decision.deployment, decision.labels)
+                    decision = replace(decision, outcome="new", cluster_id=None, reason="invalid_choice")
         if decision.outcome == "join":
             cluster_id = decision.cluster_id
             members = view.members(cluster_id) + [member]
@@ -147,6 +147,8 @@ class ClustererBase:
                 "adapter_version": self.spec.version, "deployment": decision.deployment,
                 "candidates": [{"cluster_id": c.cluster_id, "score": c.score, "field_scores": c.field_scores,
                                 "card_hash": card_hash(cards[c.cluster_id]),
+                                "shown_card_hash": (card_hash(decision.shown_cards[c.cluster_id])
+                                                    if c.cluster_id in (decision.shown_cards or {}) else None),
                                 "label": (decision.labels or {}).get(c.cluster_id)} for c in candidates],
                 "noul": decision.noul, "probabilities": decision.probabilities, "outcome": decision.outcome,
                 "reason": decision.reason, "cluster_id": cluster_id}]}
