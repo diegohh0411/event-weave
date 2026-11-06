@@ -219,19 +219,17 @@ def test_redirect_within_origin_to_allowed_path_is_kept():
     assert got.status == 200 and got.html == "<html>secret</html>"
 
 
-def test_http_fetcher_sends_user_agent_and_follows_redirects():
+def test_http_fetcher_sends_user_agent_and_exposes_redirects_without_following():
     seen = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(request.headers["user-agent"])
-        if request.url.path == "/old":
-            return httpx.Response(301, headers={"location": "https://ex.com/new"})
-        return httpx.Response(200, text="User-agent: *\nDisallow: /x")
+        seen.append((request.url.path, request.headers["user-agent"]))
+        return httpx.Response(301, headers={"location": "/new"})
 
     with HttpFetcher(transport=httpx.MockTransport(handler)) as f:
         got = f.fetch("https://ex.com/old")
-    assert got == Fetched("https://ex.com/old", 200, "User-agent: *\nDisallow: /x", None, "https://ex.com/new")
-    assert seen == [USER_AGENT, USER_AGENT]
+    assert got.status == 301 and got.redirect_to == "https://ex.com/new"
+    assert seen == [("/old", USER_AGENT)]
 
 
 def test_http_fetcher_returns_errors_and_statuses():
@@ -262,10 +260,85 @@ def test_meta_view_uses_meta_fetcher_but_same_politeness():
     meta = FixtureFetcher({
         "https://ex.com/robots.txt": robots("User-agent: *\nDisallow: /private"),
         "https://ex.com/sitemap.xml": page("https://ex.com/sitemap.xml"),
+        "https://ex.com/a": page("https://ex.com/a"),
     })
     pf, clock = polite(inner, meta=meta)
     assert pf.meta_view().fetch("https://ex.com/sitemap.xml").status == 200
     assert pf.meta_view().fetch("https://ex.com/private/feed").error == "robots disallowed"
     pf.fetch("https://ex.com/a")
     assert inner.calls == ["https://ex.com/a"]
-    assert clock.sleeps == [2.0, 2.0]
+    assert clock.sleeps == [2.0, 2.0, 2.0]
+
+
+def redirect(url, to):
+    return Fetched(url, 302, None, None, url, to)
+
+
+ROBOTS = robots("User-agent: *\nDisallow: /private")
+
+
+def test_redirect_into_disallowed_path_never_requests_it():
+    inner = FixtureFetcher({"https://ex.com/robots.txt": ROBOTS,
+                            "https://ex.com/a": redirect("https://ex.com/a", "https://ex.com/private/x")})
+    pf, _ = polite(inner)
+    assert pf.fetch("https://ex.com/a") == Fetched("https://ex.com/a", 0, None, "robots disallowed")
+    assert "https://ex.com/private/x" not in inner.calls
+
+
+def test_redirect_chain_stops_at_disallowed_middle_hop():
+    inner = FixtureFetcher({
+        "https://ex.com/robots.txt": ROBOTS,
+        "https://ex.com/a": redirect("https://ex.com/a", "https://ex.com/private/b"),
+        "https://ex.com/private/b": redirect("https://ex.com/private/b", "https://ex.com/c"),
+        "https://ex.com/c": page("https://ex.com/c"),
+    })
+    pf, _ = polite(inner)
+    assert pf.fetch("https://ex.com/a").error == "robots disallowed"
+    assert inner.calls == ["https://ex.com/robots.txt", "https://ex.com/a"]
+
+
+def test_allowed_redirect_chain_reaches_article_and_browser_gets_final_url():
+    meta = FixtureFetcher({
+        "https://ex.com/robots.txt": ROBOTS,
+        "https://ex.com/a": redirect("https://ex.com/a", "https://ex.com/b"),
+        "https://ex.com/b": redirect("https://ex.com/b", "https://ex.com/c"),
+        "https://ex.com/c": page("https://ex.com/c"),
+    })
+    inner = FixtureFetcher({"https://ex.com/c": page("https://ex.com/c")})
+    pf, _ = polite(inner, meta=meta)
+    got = pf.fetch("https://ex.com/a")
+    assert got.status == 200 and got.url == "https://ex.com/a" and got.final_url == "https://ex.com/c"
+    assert inner.calls == ["https://ex.com/c"]
+
+
+def test_redirect_chain_to_disallowed_never_reaches_browser():
+    meta = FixtureFetcher({
+        "https://ex.com/robots.txt": ROBOTS,
+        "https://ex.com/a": redirect("https://ex.com/a", "https://ex.com/private/b"),
+    })
+    inner = FixtureFetcher({})
+    pf, _ = polite(inner, meta=meta)
+    assert pf.fetch("https://ex.com/a").error == "robots disallowed"
+    assert inner.calls == [] and "https://ex.com/private/b" not in meta.calls
+
+
+def test_more_than_five_redirects_is_an_error():
+    routes = {"https://ex.com/robots.txt": ROBOTS}
+    for i in range(8):
+        routes[f"https://ex.com/{i}"] = redirect(f"https://ex.com/{i}", f"https://ex.com/{i + 1}")
+    inner = FixtureFetcher(routes)
+    pf, _ = polite(inner)
+    got = pf.fetch("https://ex.com/0")
+    assert got.status == 0 and "too many redirects" in got.error
+    assert "https://ex.com/6" not in inner.calls
+
+
+def test_robots_txt_redirect_is_followed():
+    inner = FixtureFetcher({
+        "https://ex.com/robots.txt": redirect("https://ex.com/robots.txt", "https://ex.com/r2.txt"),
+        "https://ex.com/r2.txt": robots("User-agent: *\nDisallow: /private"),
+        "https://ex.com/ok": page("https://ex.com/ok"),
+    })
+    pf, _ = polite(inner)
+    assert pf.fetch("https://ex.com/private/a").error == "robots disallowed"
+    assert pf.fetch("https://ex.com/ok").status == 200

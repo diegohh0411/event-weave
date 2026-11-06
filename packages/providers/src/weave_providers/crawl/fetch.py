@@ -1,16 +1,17 @@
 """Fetching seam for the crawler: a Fetcher returns a page or a reason it failed."""
 import asyncio
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Protocol
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 from urllib.robotparser import RobotFileParser
 
 import httpx
 
 USER_AGENT = "EventWeaveBot/0.1 (+https://github.com/diegohh0411/event-weave)"
 _PRODUCT_TOKEN = USER_AGENT.split("/")[0]
+MAX_REDIRECTS = 5
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,7 @@ class Fetched:
     html: str | None
     error: str | None
     final_url: str | None = None  # where redirects ended up, when known
+    redirect_to: str | None = None  # absolute Location of an unfollowed 3xx
 
 
 class Fetcher(Protocol):
@@ -44,10 +46,13 @@ class FixtureFetcher:
 
 
 class HttpFetcher:
-    """Plain HTTP fetcher for robots.txt, sitemaps and feeds, which a browser would mangle."""
+    """Plain HTTP fetcher for robots.txt, sitemaps and feeds, which a browser would mangle.
+
+    Never follows redirects itself: a 3xx comes back with `redirect_to` so PoliteFetcher can
+    check each hop against robots.txt before requesting it."""
 
     def __init__(self, transport: httpx.BaseTransport | None = None, timeout: float = 20.0):
-        self._client = httpx.Client(headers={"User-Agent": USER_AGENT}, follow_redirects=True,
+        self._client = httpx.Client(headers={"User-Agent": USER_AGENT}, follow_redirects=False,
                                     timeout=timeout, transport=transport)
 
     def __enter__(self) -> "HttpFetcher":
@@ -61,7 +66,10 @@ class HttpFetcher:
             response = self._client.get(url)
         except httpx.HTTPError as exc:
             return Fetched(url, 0, None, f"{type(exc).__name__}: {exc}")
-        return Fetched(url, response.status_code, response.text, None, str(response.url))
+        location = response.headers.get("location") if response.is_redirect else None
+        redirect_to = urljoin(str(response.url), location) if location else None
+        return Fetched(url, response.status_code, response.text, None, str(response.url),
+                       redirect_to)
 
     def close(self) -> None:
         self._client.close()
@@ -133,7 +141,9 @@ class PoliteFetcher:
 
     robots.txt policy: 4xx means no restrictions; 5xx or an unreachable file means
     everything on that domain is disallowed. A redirect to another origin, or to a
-    disallowed URL, discards the response.
+    disallowed URL, discards the response. Redirects are followed here (max 5 hops), each hop
+    checked and throttled before it is requested; fetchers must not follow them on their own,
+    except a browser fetcher's JS redirects, which are discarded after the fact.
     """
 
     def __init__(
@@ -159,16 +169,38 @@ class PoliteFetcher:
         return rules.can_fetch(_PRODUCT_TOKEN, url)
 
     def fetch(self, url: str) -> Fetched:
-        return self._guarded(self.inner, url)
+        if self.meta is self.inner:
+            return self._guarded(self.inner, url)
+        # Resolve the redirect chain with the plain HTTP fetcher, then give only the final,
+        # allowed URL to the browser fetcher.
+        probe = self._guarded(self.meta, url)
+        if probe.error or probe.status == 0 or probe.status >= 400:
+            return probe
+        final = probe.final_url or url
+        got = self._guarded(self.inner, final)
+        if got.error == "robots disallowed" or got.final_url is None and final == url:
+            return replace(got, url=url)
+        return replace(got, url=url, final_url=got.final_url or final)
 
     def meta_view(self) -> Fetcher:
         """A Fetcher for sitemaps and feeds: same politeness, routed to `meta`."""
         return _MetaView(self)
 
     def _guarded(self, fetcher: Fetcher, url: str) -> Fetched:
-        if not self.allowed(url):
-            return Fetched(url, 0, None, "robots disallowed")
-        got = self._throttled_fetch(fetcher, url)
+        current = url
+        for hop in range(MAX_REDIRECTS + 1):
+            if hop and _origin(current) != _origin(url):
+                return Fetched(url, 0, None, "robots disallowed")
+            if not self.allowed(current):
+                return Fetched(url, 0, None, "robots disallowed")
+            got = self._throttled_fetch(fetcher, current)
+            if not got.redirect_to:
+                break
+            current = got.redirect_to
+        else:
+            return Fetched(url, 0, None, f"too many redirects (> {MAX_REDIRECTS})")
+        if current != url:
+            got = replace(got, url=url, final_url=current)
         final = got.final_url
         if final and final != url:
             if _origin(final) != _origin(url) or not self.allowed(final):
@@ -178,7 +210,7 @@ class PoliteFetcher:
     def _rules_for(self, url: str) -> "RobotFileParser | bool":
         origin = _origin(url)
         if origin not in self._robots:
-            got = self._throttled_fetch(self.meta, f"{origin}/robots.txt")
+            got = self._fetch_robots(f"{origin}/robots.txt")
             if got.html is not None and got.status == 200:
                 parser = RobotFileParser()
                 parser.parse(got.html.splitlines())
@@ -186,6 +218,15 @@ class PoliteFetcher:
             else:
                 self._robots[origin] = 400 <= got.status < 500
         return self._robots[origin]
+
+    def _fetch_robots(self, url: str) -> Fetched:
+        """robots.txt itself is not subject to robots rules; follow its redirects (max 5 hops)."""
+        got = self._throttled_fetch(self.meta, url)
+        for _ in range(MAX_REDIRECTS):
+            if not got.redirect_to:
+                return got
+            got = self._throttled_fetch(self.meta, got.redirect_to)
+        return got if not got.redirect_to else Fetched(url, 0, None, "too many redirects")
 
     def _throttled_fetch(self, fetcher: Fetcher, url: str) -> Fetched:
         domain = urlsplit(url).netloc.lower()

@@ -247,12 +247,14 @@ def test_meta_urls_go_to_meta_fetcher_and_articles_to_article_fetcher(engine):
     wrapped = "<html><body><pre>User-agent: *\nDisallow: /private/</pre></body></html>"
     r = routes()
     meta_routes = {u: r.pop(u) for u in (f"{BASE}/robots.txt", f"{BASE}/sitemap.xml")}
+    meta_routes.update(r)  # the HTTP fetcher resolves each article's redirect chain first
     browser_routes = dict(r)
     browser_routes[f"{BASE}/robots.txt"] = Fetched("x", 200, wrapped, None)  # traps a wrong path
     browser, meta = FixtureFetcher(browser_routes), FixtureFetcher(meta_routes)
     report = crawl(engine, OUTLETS, PoliteFetcher(browser, meta=meta, min_interval=0,
                    clock=lambda: 0.0, sleep=lambda s: None), NOW)
-    assert meta.calls == [f"{BASE}/robots.txt", f"{BASE}/sitemap.xml"]
+    assert meta.calls[:2] == [f"{BASE}/robots.txt", f"{BASE}/sitemap.xml"]
+    assert meta.calls.count(f"{BASE}/robots.txt") == 1  # article probes follow, one per page
     assert all("/a/" in u for u in browser.calls) and f"{BASE}/robots.txt" not in browser.calls
     assert f"{BASE}/private/secret" not in browser.calls
     assert report.stored == 2
@@ -260,7 +262,8 @@ def test_meta_urls_go_to_meta_fetcher_and_articles_to_article_fetcher(engine):
 
 def test_crawl_builds_polite_fetcher_with_meta(engine):
     r = routes()
-    meta = FixtureFetcher({u: r.pop(u) for u in (f"{BASE}/robots.txt", f"{BASE}/sitemap.xml")})
+    meta_routes = {u: r.pop(u) for u in (f"{BASE}/robots.txt", f"{BASE}/sitemap.xml")}
+    meta = FixtureFetcher({**meta_routes, **r})
     article = FixtureFetcher(r)
     report = crawl(engine, OUTLETS, article, NOW, meta_fetcher=meta)
     assert report.stored == 2 and f"{BASE}/robots.txt" not in article.calls
