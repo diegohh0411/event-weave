@@ -207,23 +207,27 @@ def test_equal_timestamps_replay_in_url_order(engine, monkeypatch):
     crawl(engine, OUTLETS, polite(r)[0], NOW)
     keys = {tuple(k) for _, k in rows(engine, "select url, order_key from documents")}
     assert len(keys) == 1  # same page timestamp
-    # ids sort opposite to URLs here (alpha > beta), so only the url tie-break gives this order
+    # ids sort opposite to URLs here (the id of alpha sorts after beta's), so only the url tie-break gives this order
     assert replay_urls(engine, monkeypatch) == [f"{BASE}/a/alpha", f"{BASE}/a/beta"]
 
 
-def test_empty_200_response_is_a_fetch_error(engine):
+@pytest.mark.parametrize("body", [None, ""])
+def test_empty_200_response_is_a_fetch_error(engine, body):
     r = routes([("/a/blank", "2026-11-03T10:00:00Z")])
-    r[f"{BASE}/a/blank"] = Fetched("x", 200, None, None)
+    r[f"{BASE}/a/blank"] = Fetched("x", 200, body, None)
     crawl(engine, OUTLETS, polite(r)[0], NOW)
     assert rows(engine, "select reason from crawled_pages") == [("fetch error: empty response",)]
 
 
 def test_weave_crawl_explains_missing_extra(monkeypatch):
+    import importlib
     import sys
-    from weave_core.cli import app
 
-    monkeypatch.setitem(sys.modules, "feedparser", None)
-    monkeypatch.setitem(sys.modules, "crawl4ai", None)
-    result = CliRunner().invoke(app, ["crawl", "outlets.yaml"])
-    assert result.exit_code == 1
+    for name in ("feedparser", "crawl4ai"):
+        monkeypatch.setitem(sys.modules, name, None)
+    for name in [m for m in sys.modules if m == "weave_core.cli" or m.startswith("weave_providers.crawl")]:
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    cli_module = importlib.import_module("weave_core.cli")  # fresh import, extras blocked
+    result = CliRunner().invoke(cli_module.app, ["crawl", "outlets.yaml"])
+    assert result.exit_code == 1, result.output
     assert "install weave-providers[crawl]" in result.output
