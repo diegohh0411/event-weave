@@ -6,7 +6,7 @@ import pytest
 import sqlalchemy as sa
 from typer.testing import CliRunner
 
-from helpers import seed_corpus
+from helpers import MENTION_STAGE, seed_corpus
 from weave_core.cli import app
 from weave_core.schema import evaluation_scores, evaluations, jobs, runs
 from weave_eval import SCORER_VERSION
@@ -172,11 +172,110 @@ def test_track2_unmatched_system_counted_by_track2(db):
     with db.begin() as c:
         c.execute(sa.text("insert into mentions (id, document_id, start, \"end\", tok_start, tok_end, sentence, text, extractor, extractor_version) "
                           "values ('x1','d1',0,3,0,1,0,'x','e','1')"))
+        c.execute(sa.insert(jobs).values(
+            run_id=run_id, stage=MENTION_STAGE, unit_kind="mention", unit_id="x1", unit_content_hash="h",
+            partition="*", order_key=[50], input_hash="h", status="done", available_at=T0))
         c.execute(sa.text("insert into cluster_members (run_id, mention_id, cluster_id, partition, order_key) "
                           "values (:r,'x1','c1','p','{9}')"), {"r": run_id})
     with db.connect() as c:
         gold = load_gold(c, split="test")
-        r = track2(gold, load_system(c, run_id, gold.documents))
+        r = track2(gold, load_system(c, run_id, gold.documents, MENTION_STAGE))
     assert r.unmatched_system == 1  # a clustered duplicate of a matched span is spurious
     ev = evaluate(db, run_id, resamples=5, workers=1)
     assert ev.report["unmatched_system"] == {"all": 1}
+
+
+def add_foreign_mentions(db, doc_id="d1"):
+    """Mentions of another run/extractor on the same document (no jobs in the run under test)."""
+    with db.begin() as c:
+        for i, (st, en, ts, te) in enumerate([(0, 3, 0, 1), (4, 7, 1, 2), (8, 11, 2, 3)]):
+            c.execute(sa.text("insert into mentions (id, document_id, start, \"end\", tok_start, tok_end, sentence, "
+                              "text, extractor, extractor_version) values (:i,:d,:s,:e,:ts,:te,0,'x','gold','1')"),
+                      dict(i=f"o{i}", d=doc_id, s=st, e=en, ts=ts, te=te))
+        c.execute(sa.text("insert into mentions (id, document_id, start, \"end\", tok_start, tok_end, sentence, "
+                          "text, extractor, extractor_version) values ('o9',:d,0,7,0,2,0,'x','gold','1')"), dict(d=doc_id))
+
+
+def test_other_runs_mentions_are_ignored(db):
+    from weave_eval.gold import load_gold
+    from weave_eval.system import load_system
+    from weave_eval.tracks import trigger_scores, track2
+    run_id = corpus(db, track="realistic")
+    add_foreign_mentions(db)
+    with db.connect() as c:
+        gold = load_gold(c, split="test")
+        system = load_system(c, run_id, gold.documents, MENTION_STAGE)
+        assert not {m.mention_id for m in system} & {"o0", "o1", "o2", "o9"}
+        assert track2(gold, system).unmatched_system == 0
+        assert trigger_scores(gold, system)["en"].precision == pytest.approx(100)
+    ev = evaluate(db, run_id, resamples=5, workers=1)
+    assert ev.report["unmatched_system"] == {"all": 0}
+    assert all(t["precision"] == pytest.approx(100) and t["recall"] == pytest.approx(100)
+               for t in ev.report["triggers"].values())
+
+
+def test_other_runs_mentions_ignored_in_track1(db):
+    run_id = corpus(db)
+    add_foreign_mentions(db)
+    ev = evaluate(db, run_id, resamples=5, workers=1)
+    assert ev.report["unmatched_system"]["en"] == 0
+
+
+def test_failed_cluster_mention_is_a_predicted_trigger_not_coreferent(db):
+    from weave_eval.gold import load_gold
+    from weave_eval.system import load_system
+    run_id = corpus(db, track="realistic", clusters={"c1": ["s1", "s2", "s4"], "c3": ["s5", "s6"], "c4": ["s7", "s8"]})
+    with db.connect() as c:  # s3 (d1) has a mention job in this run but never joined a cluster
+        system = {m.mention_id: m for m in load_system(c, run_id, load_gold(c, split="test").documents, MENTION_STAGE)}
+    assert "s3" in system and system["s3"].cluster_id is None
+    ev = evaluate(db, run_id, resamples=5, workers=1)
+    assert ev.report["triggers"]["en"]["precision"] == pytest.approx(100)  # s3 is a true trigger
+    assert ev.report["triggers"]["en"]["recall"] == pytest.approx(100)
+    en = next(s for s in ev.scores if s.language == "en" and s.metric == "conll")
+    assert en.f1 < 100  # but its gold chain m3 is missed by coreference (not clustered)
+
+
+def test_track2_gold_equals_system_scores_100(db):
+    docs = [
+        {"id": "d1", "language": "en", "topic": "1", "gold": {"m1": [0, 3], "m2": [4, 7], "m3": [8, 11]},
+         "mentions": {"s1": [0, 3, 0, 1], "s2": [4, 7, 1, 2], "s3": [8, 11, 2, 3]}},
+        {"id": "d2", "language": "en", "topic": "1", "gold": {"m4": [0, 3]}, "mentions": {"s4": [0, 3, 0, 1]}},
+        {"id": "d3", "language": "es", "topic": "2", "gold": {"m5": [0, 3], "m6": [4, 7]},
+         "mentions": {"s5": [0, 3, 0, 1], "s6": [4, 7, 1, 2]}},
+        {"id": "d4", "language": "tr", "topic": "3", "gold": {"m7": [0, 3], "m8": [4, 7]},
+         "mentions": {"s7": [0, 3, 0, 1], "s8": [4, 7, 1, 2]}}]
+    pairs = [["d1", "m1", "d1", "m2"], ["d1", "m1", "d2", "m4"], ["d1", "m2", "d2", "m4"], ["d3", "m5", "d3", "m6"],
+             ["d4", "m7", "d4", "m8"]]
+    clusters = {"c1": ["s1", "s2", "s4"], "c2": ["s3"], "c3": ["s5", "s6"], "c4": ["s7", "s8"]}
+    ev = evaluate(db, corpus(db, track="realistic", docs=docs, pairs=pairs, clusters=clusters), resamples=20, workers=1)
+    assert {s.language for s in ev.scores} == {"en", "es", "tr", "all"}
+    assert [(s.language, s.metric, s.f1) for s in ev.scores if s.f1 != pytest.approx(100)] == []
+    for lang, t in ev.report["triggers"].items():
+        assert (t["precision"], t["recall"], t["f1"]) == pytest.approx((100, 100, 100)), lang
+    assert ev.report["unmatched_system"] == {"all": 0} and ev.report["unaligned_gold"] == 0
+
+
+def test_load_latest_selects_split(db):
+    run_id = corpus(db)
+    test_ev = evaluate(db, run_id, resamples=5, workers=1)
+    dev_docs = [{"id": "d9", "language": "en", "topic": "9", "split": "dev", "gold": {"m9": [0, 3]},
+                 "mentions": {"s9": [0, 3, 0, 1]}}]
+    dev_run = corpus(db, docs=dev_docs, pairs=[], clusters={"c9": ["s9"]})
+    assert load_latest(db, run_id) is None
+    save(db, test_ev)
+    dev_ev = evaluate(db, dev_run, split="dev", resamples=5, workers=1)
+    save(db, dev_ev)
+    assert load_latest(db, run_id).id == test_ev.id and load_latest(db, run_id, "dev") is None
+    assert load_latest(db, dev_run) is None and load_latest(db, dev_run, "dev").id == dev_ev.id
+    later = evaluate(db, run_id, split="test", resamples=5, workers=1)
+    save(db, later)
+    assert load_latest(db, run_id).id == later.id
+
+
+def test_links_columns_not_compared_when_paper_defines_no_links(db):
+    text = render(evaluate(db, corpus(db), resamples=5, workers=1), load_paper())
+    en = next(l for l in text.splitlines() if l.startswith("en ") and "22445" in l)
+    assert "/ 482 n/c" in en and "/ 2229 n/c" in en
+    assert "/ 482 ≠" not in en and "/ 2229 ≠" not in en
+    assert "4 / 22445 ≠" in en  # mentions still compared
+    assert "not comparable (paper does not define links" in text

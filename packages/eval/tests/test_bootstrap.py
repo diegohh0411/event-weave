@@ -39,6 +39,13 @@ def test_draw_sorts_units_and_is_seeded():
     assert not (draw(["a", "b", "c"], 50, 2) == a).all()
 
 
+def test_negative_seed_accepted_and_deterministic():
+    a = draw(["a", "b", "c"], 30, -5)
+    assert (a == draw(["a", "b", "c"], 30, -5)).all()
+    assert not (a == draw(["a", "b", "c"], 30, 5)).all()
+    assert draw(["a"], 3, -(2**70)).shape == (3, 1)
+
+
 def test_same_seed_same_intervals():
     inp = random_inputs()
     a = interval_pooled(inp, "en", 40, 3, workers=1)

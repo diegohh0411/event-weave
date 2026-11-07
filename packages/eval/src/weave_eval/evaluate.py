@@ -9,6 +9,7 @@ from decimal import Decimal
 import sqlalchemy as sa
 
 from weave_core.config import RunConfig
+from weave_core.pipeline import next_stage
 from weave_core.schema import jobs, runs
 from weave_core.stages import PIPELINE, Stage, UnitKind
 from weave_eval import SCORER_VERSION
@@ -92,7 +93,7 @@ def evaluate(engine, run_id, *, split: str = "test", resamples: int = 10_000,
         # the paper's annotation statistics cover the whole dataset, so chain stats do too
         run_langs = {lang for lang, _ in load_gold(c, document_ids=doc_ids).documents.values()}  # every split
         whole = load_gold(c, languages=run_langs)
-        system = load_system(c, run_id, gold.documents)
+        system = load_system(c, run_id, gold.documents, next_stage(cfg, Stage.extract))
 
     seed = cfg.seed
     rows: list[ScoreRow] = []

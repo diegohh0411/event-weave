@@ -15,9 +15,11 @@ Interval = dict[str, tuple[float, float]]
 
 
 def draw(units: list, resamples: int, seed: int) -> np.ndarray:
-    """Indices into sorted(units), shape (resamples, len(units)); all drawn up front from one seeded generator."""
+    """Indices into sorted(units), shape (resamples, len(units)); all drawn up front from one seeded generator.
+
+    numpy rejects negative seeds but RunConfig.seed is any int, so the seed is taken mod 2**64 (deterministic)."""
     n = len(units)
-    return np.random.default_rng(seed).integers(0, n, size=(resamples, n))
+    return np.random.default_rng(seed % 2**64).integers(0, n, size=(resamples, n))
 
 
 def _interval(sums: np.ndarray) -> Interval:

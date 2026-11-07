@@ -4,8 +4,9 @@ from datetime import datetime, timezone
 import sqlalchemy as sa
 
 from weave_core.schema import (cluster_members, clusters, documents, gold_documents, gold_mentions, gold_pairs,
-                               mentions, runs)
+                               jobs, mentions, runs)
 
+MENTION_STAGE = "enrich"  # the stage after extract in the tests' run configs
 NAMES = {"en": "english", "es": "spanish", "hi": "hindi", "tr": "turkish", "uk": "ukrainian"}
 
 
@@ -52,6 +53,10 @@ def seed_corpus(engine, spec: dict) -> dict:
                 c.execute(sa.insert(mentions).values(
                     id=mid, document_id=d["id"], start=s, end=e, tok_start=ts, tok_end=te, sentence=0,
                     text=text[s:e], extractor="e", extractor_version="1"))
+                c.execute(sa.insert(jobs).values(
+                    run_id=run_id, stage=MENTION_STAGE, unit_kind="mention", unit_id=mid, unit_content_hash="h",
+                    partition="*", order_key=[i, 1], input_hash="h", status="done",
+                    available_at=datetime.now(timezone.utc)))
         for p in spec.get("pairs", []):
             sd, sm, td, tm, *rest = p
             label = rest[0] if rest else 1

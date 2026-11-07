@@ -7,6 +7,7 @@ from weave_eval.metrics import PRF
 from weave_eval.paper import PaperNumbers
 from weave_eval.tracks import SKIPPED
 
+LINK_FIELDS = ("within_links", "cross_links")
 CHAIN_FIELDS = ("mentions", "chains", "non_singleton", "within_links", "cross_links")
 
 
@@ -60,11 +61,16 @@ def _chain_stats(ev: Evaluation, paper: PaperNumbers) -> list[str]:
         cells = []
         for f in CHAIN_FIELDS:
             o, p = ours[f], theirs.get(f)
-            cells.append(f"{o} / {'-' if p is None else p}" + (" ≠" if p is not None and o != p else ""))
+            if f in LINK_FIELDS and theirs.get("links_definition") is None:
+                mark = " n/c" if p is not None else ""  # the paper does not define links: not comparable
+            else:
+                mark = " ≠" if p is not None and o != p else ""
+            cells.append(f"{o} / {'-' if p is None else p}{mark}")
         body.append([lang, *cells, str(ours["skipped_pairs"])])
         if ours.get("note"):
             notes.append(f"{lang}: {ours['note']}")
     out = ["whole dataset (all splits, every document of these languages); ours / paper; ≠ marks a mismatch"]
+    out.append("n/c: not comparable (paper does not define links; ours are coreferent mention pairs of the transitive closure)")
     out += _table(["language", *CHAIN_FIELDS, "skipped pairs"], body)
     return out + notes
 

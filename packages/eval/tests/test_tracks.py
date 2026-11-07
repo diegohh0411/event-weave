@@ -1,4 +1,4 @@
-from helpers import seed_corpus
+from helpers import MENTION_STAGE, seed_corpus
 from weave_eval.gold import load_gold
 from weave_eval.system import load_system
 from weave_eval.tracks import (SKIPPED, TRACK2_MENTION_POLICY, cluster_spread, track1, track2, trigger_scores)
@@ -20,7 +20,7 @@ def run(engine, spec, split=None):
     seeded = seed_corpus(engine, spec)
     with engine.connect() as c:
         gold = load_gold(c, split=split)
-        system = load_system(c, seeded["run_id"], list(seeded["docs"]))
+        system = load_system(c, seeded["run_id"], list(seeded["docs"]), MENTION_STAGE)
     return gold, system
 
 

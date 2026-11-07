@@ -26,9 +26,9 @@ def save(engine, ev: Evaluation) -> uuid.UUID:
     return ev.id
 
 
-def load_latest(engine, run_id) -> Evaluation | None:
+def load_latest(engine, run_id, split: str = "test") -> Evaluation | None:
     with engine.connect() as c:
-        row = c.execute(sa.select(evaluations).where(evaluations.c.run_id == run_id)
+        row = c.execute(sa.select(evaluations).where(evaluations.c.run_id == run_id, evaluations.c.split == split)
                         .order_by(evaluations.c.created_at.desc()).limit(1)).one_or_none()
         if row is None:
             return None

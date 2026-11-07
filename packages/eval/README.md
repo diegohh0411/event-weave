@@ -31,14 +31,33 @@ Sections, in order:
    runs) has `within` and `cross`; Track 2 (`realistic` runs) has `pooled` per language and `all`, then trigger
    scores. CoNLL F1 has no P/R. Hindi cross-document is not scored; its reason is printed in its place.
 2. **Failures**: failed jobs per configured stage, zero-filled. Mentions whose cluster job failed count as missed gold.
-3. **Chain statistics**: ours / paper's annotation statistics, `≠` marking each mismatch, with the notes
-   (Hindi gold chains are within-document only).
+3. **Chain statistics**: ours / paper's annotation statistics, `≠` marking each mismatch of mentions, chains and
+   non-singleton chains, with the notes. See "Chain statistics" below.
 4. **Comparison with the paper** (Track 1): the paper prints F1 only, and "monolingual" rows are harder for us
    (we tune on English dev only), "transfer" rows are like for like. Numbers are never merged or subtracted.
    `UNCHECKED` heads the report until `mcecr_paper_v1.yaml` has two distinct `checked_by` names.
 5. **Track 2 mention policy** (Track 2) and cluster spread.
 6. **Significance**: the paper published no outputs, so there is no paired test.
 7. **Cost**: per stage and deployment; `*` marks estimated dollars.
+
+## Chain statistics
+
+Counted from the gold of every split (not just the scored one) for the languages of the run's documents. A
+`topic_limit` run therefore covers only the ingested documents, so its counts are smaller than the paper's and
+differ by construction. Mentions, chains and non-singleton chains are compared with the paper and marked `≠` on a
+mismatch. "Links" (within/cross) are printed beside the paper's but marked `n/c` (not comparable) instead: Table 2
+never defines what a link is (`links_definition: null` in `mcecr_paper_v1.yaml`), and ours are the coreferent
+mention pairs of the transitive closure of the gold chains, which need not be the paper's unit. Hindi gold chains are
+within-document only (the dataset's Hindi crossDoc pairs carry no topic or mention ids).
+
+## Track 2 notes
+
+Trigger rule: a predicted mention is a true trigger only on an exact token-span match with a gold mention. Extractors
+return token-covered spans; a gold span that does not fall on token boundaries cannot be matched, so it counts as an
+unaligned miss (reported as `unaligned gold mentions`). Trigger scores and cluster spread include Hindi; Track 2
+coreference scores exclude Hindi (cross-document Hindi is not scored). Only the run's own mentions are scored: those
+with a job in the stage after `extract` in that run, so mentions other runs left on the same documents are ignored,
+and a mention whose cluster job failed still counts as a predicted trigger but not as coreferent.
 
 ## English dev tuning loop
 
@@ -47,4 +66,6 @@ Run the clusterer grid (see `packages/clusterer/README.md`), then for each grid 
     weave eval <run> --split dev --resamples 200
 
 and compare the English `within`/`cross` CoNLL F1 across the runs. Keep the best K, weights and thresholds, then
-report once on `--split test` with the default resamples.
+report once on `--split test` with the default resamples. Stored evaluations are per split: the programmatic
+`load_latest(engine, run_id, split="test")` returns the latest one of the given split, so a dev evaluation never
+shadows the test one.
