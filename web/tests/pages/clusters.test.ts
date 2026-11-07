@@ -109,10 +109,12 @@ describe('clusters browser', () => {
       return undefined
     })
     await w.find('[data-test=language]').setValue('es')
+    await vi.waitFor(() => expect(listCalls().some(u => u.searchParams.get('language') === 'es')).toBe(true))
     await w.find('[data-test=language]').setValue('hi')
     await vi.waitFor(() => expect(listCalls().filter(u => u.searchParams.get('language') === 'hi').length).toBe(1))
     await flushPromises()
     releaseSlow()
+    await new Promise(r => setTimeout(r, 100))
     await flushPromises()
     expect(w.text()).not.toContain('Szeged, Hungary')
     expect(w.findAll(`a[href^="/runs/${RUN_LLM}/clusters/c1"]`).length).toBe(1)
