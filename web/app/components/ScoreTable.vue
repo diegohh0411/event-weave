@@ -16,9 +16,11 @@ const METRICS = [
   { key: 'blanc', label: 'BLANC' }, { key: 'conll', label: 'CoNLL F1' }
 ] as const
 
-const pct = (v: number | null | undefined) => (v === null || v === undefined ? '–' : (v * 100).toFixed(1))
+const pct = (v: number | null | undefined) => (v === null || v === undefined ? '–' : v.toFixed(1))
 const one = (v: number | null | undefined) => (v === null || v === undefined ? '–' : v.toFixed(1))
 const dollars = (v: string | null | undefined) => (v === null || v === undefined ? '–' : `$${Number(v).toFixed(2)}`)
+// The scorer writes trigger scores keyed by language.
+const trig = (r: Run) => (r.trigger?.[props.language] ?? null) as { precision?: number, recall?: number, f1?: number } | null
 const failureCount = (r: Run) => Object.values(r.failures).reduce((a, byKey) => a + Object.values(byKey).reduce((x, y) => x + y, 0), 0)
 const failureTitle = (r: Run) => Object.entries(r.failures).map(([stage, byKey]) => `${stage}: ${Object.values(byKey).reduce((x, y) => x + y, 0)}`).join(', ')
 
@@ -51,14 +53,15 @@ const blocks = computed(() => settings.value.map((setting) => {
     return [{ run, setting, skipped: has ? undefined : skipped }]
   })
   const rows = (props.paper ?? []).filter(p => p.setting === setting)
-  const models = [...new Set(rows.flatMap(p => Object.keys(p.paper)))]
-  const paperRows = models.map((model) => {
-    const mine = rows.filter(p => model in p.paper)
+  const keys = [...new Set(rows.flatMap(p => Object.keys(p.paper).map(model => `${p.regime}\u0000${model}`)))]
+  const paperRows = keys.map((key) => {
+    const [regime, model] = key.split('\u0000') as [string, string]
+    const mine = rows.filter(p => p.regime === regime && model in p.paper)
     const f1 = (metric: string) => {
       const v = mine.find(p => p.metric === metric)?.paper[model]
       return typeof v === 'number' ? v : v?.f1
     }
-    return { model, setting, regime: mine[0]!.regime, label: mine[0]!.label, f1 }
+    return { model, setting, regime, label: mine[0]!.label, f1 }
   })
   return { setting, runRows, paperRows }
 }))
@@ -106,18 +109,18 @@ const blocks = computed(() => settings.value.map((setting) => {
             <td v-if="r.skipped" :colspan="METRICS.length" data-test="skipped" class="px-3 py-2 text-muted">
               {{ r.skipped }}
             </td>
-            <td v-for="m in r.skipped ? [] : METRICS" v-else :key="m.key" class="whitespace-nowrap px-3 py-2">
+            <td v-for="m in METRICS" v-else :key="m.key" class="whitespace-nowrap px-3 py-2">
               {{ cell(r.run, b.setting, m.key) }}
             </td>
             <template v-if="track === '2'">
               <td class="px-3 py-2">
-                {{ pct(r.run.trigger?.precision as number | undefined) }}
+                {{ pct(trig(r.run)?.precision) }}
               </td>
               <td class="px-3 py-2">
-                {{ pct(r.run.trigger?.recall as number | undefined) }}
+                {{ pct(trig(r.run)?.recall) }}
               </td>
               <td class="px-3 py-2">
-                {{ pct(r.run.trigger?.f1 as number | undefined) }}
+                {{ pct(trig(r.run)?.f1) }}
               </td>
             </template>
             <td class="px-3 py-2">
@@ -130,7 +133,7 @@ const blocks = computed(() => settings.value.map((setting) => {
               {{ failureCount(r.run) }}
             </td>
           </tr>
-          <tr v-for="p in b.paperRows" :key="b.setting + p.model" data-test="paper-row" class="border-t border-default text-muted">
+          <tr v-for="p in b.paperRows" :key="b.setting + p.regime + p.model" data-test="paper-row" class="border-t border-default text-muted">
             <th scope="row" class="px-3 py-2 text-left font-normal">
               <div>MCECR paper ({{ p.model }}) <span>({{ b.setting }})</span></div>
               <div class="text-xs">

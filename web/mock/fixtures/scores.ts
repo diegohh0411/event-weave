@@ -6,20 +6,20 @@ type Score = ScoresOut['scores'][number]
 type Compare = Ok<'/compare', 'get'>
 type Row = NonNullable<Compare['paper']>[number]
 
-const prf = (f1: number, precision: number | null = f1 + 0.02, recall: number | null = f1 - 0.02) => ({ f1, precision, recall })
+const prf = (f1: number, precision: number | null = f1 + 2, recall: number | null = f1 - 2) => ({ f1, precision, recall })
 
 const score = (language: string, setting: string, metric: string, f1: number, ci = true): Score => ({
-  track: 'paper', setting, language, metric, f1, precision: f1 + 0.02, recall: f1 - 0.02,
-  f1_low: ci ? f1 - 0.03 : null, f1_high: ci ? f1 + 0.03 : null
+  track: 'paper', setting, language, metric, f1, precision: f1 + 2, recall: f1 - 2,
+  f1_low: ci ? f1 - 3 : null, f1_high: ci ? f1 + 3 : null
 })
 
 // Hindi has no cross-document score: the Track 1 scorer skips it (see SKIPPED in weave_eval.tracks).
 export const paperScores: Score[] = [
-  score('en', 'within', 'muc', 0.71), score('en', 'within', 'conll', 0.64),
-  score('en', 'cross', 'muc', 0.58), score('en', 'cross', 'conll', 0.52),
-  score('es', 'within', 'muc', 0.66), score('es', 'within', 'conll', 0.6),
-  score('es', 'cross', 'muc', 0.49, false), score('es', 'cross', 'conll', 0.44, false),
-  score('hi', 'within', 'muc', 0.55), score('hi', 'within', 'conll', 0.5)
+  score('en', 'within', 'muc', 71), score('en', 'within', 'conll', 64),
+  score('en', 'cross', 'muc', 58), score('en', 'cross', 'conll', 52),
+  score('es', 'within', 'muc', 66), score('es', 'within', 'conll', 60),
+  score('es', 'cross', 'muc', 49, false), score('es', 'cross', 'conll', 44, false),
+  score('hi', 'within', 'muc', 55), score('hi', 'within', 'conll', 50)
 ]
 
 export const scoresPaper: ScoresOut = {
@@ -46,9 +46,9 @@ const paperRun: Compare['runs'][number] = {
 const llmRun: Compare['runs'][number] = {
   run_id: RUN_LLM, name: 'realistic-llm-judge', track: 'realistic', evaluated: true,
   scores: [
-    { track: 'realistic', setting: 'pooled', language: 'en', metric: 'muc', f1: 0.62, precision: 0.7, recall: 0.56, f1_low: 0.58, f1_high: 0.66 }
+    { track: 'realistic', setting: 'pooled', language: 'en', metric: 'muc', f1: 62, precision: 70, recall: 56, f1_low: 58, f1_high: 66 }
   ],
-  trigger: { f1: 0.81, precision: 0.84, recall: 0.78 },
+  trigger: { en: { f1: 81, precision: 84, recall: 78 }, es: { f1: 70, precision: 72, recall: 68 } },
   cost: cost('3.4172', '0.5485', 912.25, true),
   failures: { cluster: { 'mention': 6 } },
   skipped
@@ -58,23 +58,23 @@ const llmRun: Compare['runs'][number] = {
 const paperRows: Row[] = [
   {
     language: 'en', setting: 'within', metric: 'muc', regime: 'monolingual', label: 'our setting is harder (we are tuned on English dev only)',
-    ours: prf(0.71), ours_ci: [0.68, 0.74], skipped: null,
-    paper: { hierarchical: prf(0.74, 0.77, 0.72), joint: prf(0.69, 0.7, 0.68) }
+    ours: prf(71), ours_ci: [68, 74], skipped: null,
+    paper: { hierarchical: prf(74, 77, 72), joint: prf(69, 70, 68) }
   },
   {
     language: 'en', setting: 'cross', metric: 'conll', regime: 'monolingual', label: 'our setting is harder (we are tuned on English dev only)',
-    ours: prf(0.52), ours_ci: [0.49, 0.55], skipped: null,
-    paper: { hierarchical: 0.55 }
+    ours: prf(52), ours_ci: [49, 55], skipped: null,
+    paper: { hierarchical: 55 }
   },
   {
     language: 'es', setting: 'within', metric: 'muc', regime: 'transfer', label: 'like for like (both tuned on English only)',
-    ours: prf(0.66), ours_ci: [0.63, 0.69], skipped: null,
-    paper: { xlmr: 0.61, synonym: 0.64 }
+    ours: prf(66), ours_ci: [63, 69], skipped: null,
+    paper: { xlmr: 61, synonym: 64 }
   },
   {
     language: 'hi', setting: 'cross', metric: 'conll', regime: 'transfer', label: 'like for like (both tuned on English only)',
     ours: null, ours_ci: null, skipped: HINDI_CROSS_SKIPPED,
-    paper: { xlmr: 0.47 }
+    paper: { xlmr: 47 }
   },
   {
     language: 'hi', setting: 'cross', metric: 'muc', regime: 'monolingual', label: 'our setting is harder (we are tuned on English dev only)',

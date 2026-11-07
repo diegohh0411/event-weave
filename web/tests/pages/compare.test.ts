@@ -64,7 +64,7 @@ describe('compare page', () => {
     expect(row.classes()).toContain('text-muted')
     expect(row.text()).toContain('monolingual')
     expect(row.text()).toContain('our setting is harder')
-    expect(row.text()).toContain('74.0') // paper MUC F1, one decimal
+    expect(row.text()).toContain('74.0') // paper MUC F1, already a percentage
     expect(en.text()).toContain('MCECR paper (joint)')
   })
 
@@ -84,8 +84,46 @@ describe('compare page', () => {
   it('unevaluated_run_message', async () => {
     const w = await mountCompare([RUN_NEW])
     expect(w.text()).toContain(`Not evaluated (run weave eval ${RUN_NEW})`)
-    expect(w.text()).not.toContain('MCECR paper')
     expect(w.text()).not.toMatch(/\b0\.0\b/)
+  })
+
+  it('shows paper rows even when no Track 1 run is evaluated', async () => {
+    const w = await mountCompare([RUN_NEW])
+    const en = tables(w, '1').find(t => t.attributes('data-language') === 'en')!
+    expect(en.findAll('[data-test=run-row]')).toHaveLength(0)
+    expect(en.text()).toContain('MCECR paper (hierarchical)')
+  })
+
+  it('keeps monolingual and transfer paper rows apart', async () => {
+    const handler = createMockHandler()
+    overrides.push(async (req) => {
+      if (new URL(req.url).pathname !== '/compare') return handler(req)
+      const body = await (await handler(req)).json()
+      body.paper.push({ ...body.paper[0], regime: 'transfer', label: 'like for like (both tuned on English only)', metric: 'muc', paper: { hierarchical: { f1: 50, precision: 51, recall: 49 } } })
+      return json(body)
+    })
+    const w = await mountCompare([RUN_PAPER])
+    const en = tables(w, '1').find(t => t.attributes('data-language') === 'en')!
+    const rows = en.findAll('[data-test=paper-row]').filter(r => r.text().includes('MCECR paper (hierarchical)') && r.text().includes('within'))
+    expect(rows).toHaveLength(2)
+    expect(rows.map(r => /monolingual|transfer/.exec(r.text())![0]).sort()).toEqual(['monolingual', 'transfer'])
+    expect(rows.find(r => r.text().includes('transfer'))!.text()).toContain('50.0')
+    expect(rows.find(r => r.text().includes('monolingual'))!.text()).toContain('74.0')
+  })
+
+  it('reads the trigger entry for the table language', async () => {
+    const handler = createMockHandler()
+    overrides.push(async (req) => {
+      if (new URL(req.url).pathname !== '/compare') return handler(req)
+      const body = await (await handler(req)).json()
+      body.runs[0].scores.push({ ...body.runs[0].scores[0], language: 'es' })
+      return json(body)
+    })
+    const w = await mountCompare([RUN_LLM])
+    const row = (lang: string) => tables(w, '2').find(t => t.attributes('data-language') === lang)!.find('[data-test=run-row]').text()
+    expect(row('en')).toContain('84.0')
+    expect(row('es')).toContain('72.0')
+    expect(row('es')).not.toContain('84.0')
   })
 
   it('formats scores, intervals, trigger and cost columns', async () => {

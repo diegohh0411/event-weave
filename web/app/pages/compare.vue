@@ -80,6 +80,8 @@ const groups = computed(() => {
       r.scores.forEach(s => langs.add(s.language))
       if (track === '1') Object.keys(r.skipped).forEach(k => langs.add(k.split('/')[0]!))
     }
+    // Paper rows stand on their own: they show even when no Track 1 run has been evaluated.
+    if (track === '1') d.paper?.forEach(p => langs.add(p.language))
     for (const language of [...langs].sort()) {
       out.push({ track, language, runs: rs, paper: track === '1' && d.paper ? d.paper.filter(p => p.language === language) : undefined })
     }
