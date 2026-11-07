@@ -30,4 +30,14 @@ def test_cache_coverage_counts_cached_keys(engine):
                                                        adapter=spec.name, adapter_version="1", output={}, emits=[], created_at=sa.func.now()))
     coverage = cache_coverage(engine, registry, cfg)
     assert coverage[Stage.enrich] == (2, 4)
-    assert Stage.embed not in coverage  # the prior run has no embed jobs
+    assert coverage[Stage.embed] == (0, 0)  # the prior run has no embed jobs
+
+
+def test_cached_count_batches_lookups(engine, monkeypatch):
+    import weave_inference.estimate as est
+    monkeypatch.setattr(est, "LOOKUP_BATCH", 3)
+    keys = [f"k{i}" for i in range(10)]
+    with engine.begin() as conn:
+        for k in keys[::2]:
+            conn.execute(stage_outputs.insert().values(cache_key=k, stage="enrich", adapter="a", adapter_version="1", output={}, emits=[], created_at=sa.func.now()))
+        assert est._cached_count(conn, keys) == 5

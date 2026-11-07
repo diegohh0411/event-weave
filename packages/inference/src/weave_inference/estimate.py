@@ -64,13 +64,21 @@ def _stage_keys(conn, registry, prior, stage, choice) -> list[str]:
     return [cache_key(h, spec, choice.settings, choice.deployments) for h in hashes]
 
 
+LOOKUP_BATCH = 10_000
+
+
 def _cached_count(conn, keys: list[str]) -> int:
-    cached = set(conn.scalars(sa.select(stage_outputs.c.cache_key).where(stage_outputs.c.cache_key.in_(keys))))
+    cached = set()
+    for i in range(0, len(keys), LOOKUP_BATCH):  # Postgres caps a statement at 65,535 bind parameters
+        batch = keys[i:i + LOOKUP_BATCH]
+        cached.update(conn.scalars(sa.select(stage_outputs.c.cache_key).where(stage_outputs.c.cache_key.in_(batch))))
     return sum(1 for k in keys if k in cached)
 
 
 def cache_coverage(engine, registry, cfg: RunConfig) -> dict[Stage, tuple[int, int]] | None:
-    """(cached, total) units per cacheable stage, from the last run with the same provider; None when there is none."""
+    """(cached, total) units per configured stage, from the last run with the same provider; None when there is none.
+
+    A non-cacheable stage reports 0 cached of the prior run's job count; a stage the prior run has no jobs for reports (0, 0)."""
     with engine.connect() as conn:
         prior = _prior_run(conn, cfg)
         if prior is None:
@@ -78,11 +86,11 @@ def cache_coverage(engine, registry, cfg: RunConfig) -> dict[Stage, tuple[int, i
         coverage = {}
         for stage in PIPELINE:
             choice = cfg.stages.get(stage)
-            if choice is None or not registry.get(stage, choice.adapter).spec.cacheable:
+            if choice is None:
                 continue
             keys = _stage_keys(conn, registry, prior, stage, choice)
-            if keys:
-                coverage[stage] = (_cached_count(conn, keys), len(keys))
+            cacheable = registry.get(stage, choice.adapter).spec.cacheable
+            coverage[stage] = (_cached_count(conn, keys) if cacheable and keys else 0, len(keys))
         return coverage
 
 

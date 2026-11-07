@@ -96,6 +96,11 @@ def _detail(service: RunService, run_id: UUID) -> RunOut:
                       mentions_per_hour=q.mentions_per_hour(conn, run_id, row.config, row.started_at, row.finished_at))
 
 
+def _require(service: RunService, run_id: UUID) -> None:
+    with service.engine.connect() as conn:
+        q.run_row(conn, run_id)  # raises NoResultFound -> 404
+
+
 @router.post("/runs/validate")
 def validate_run(cfg: RunConfig, service: Service) -> ValidatedOut:
     normalized = validate(cfg, service.registry, service.catalog)
@@ -129,18 +134,21 @@ def get_run(run_id: UUID, service: Service) -> RunOut:
 
 @router.post("/runs/{run_id}/start")
 def start_run(run_id: UUID, service: Service) -> RunOut:
+    _require(service, run_id)
     service.start(run_id)
     return _detail(service, run_id)
 
 
 @router.post("/runs/{run_id}/cancel")
 def cancel_run(run_id: UUID, service: Service) -> RunOut:
+    _require(service, run_id)
     service.cancel(run_id)
     return _detail(service, run_id)
 
 
 @router.post("/runs/{run_id}/resume")
 def resume_run(run_id: UUID, service: Service) -> RunOut:
+    _require(service, run_id)
     service.resume(run_id)
     return _detail(service, run_id)
 

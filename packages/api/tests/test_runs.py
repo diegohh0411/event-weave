@@ -183,3 +183,18 @@ def test_cache_coverage_counts_cached_keys(client, engine):
     assert body["cached"]["enrich"] == {"cached": 1, "total": 3}
     created = client.post("/runs", json=config_json()).json()
     assert created["estimate"]["cached"]["enrich"] == {"cached": 1, "total": 3}
+
+
+def test_transitions_on_unknown_run_are_404(client):
+    for action in ("start", "cancel", "resume"):
+        assert client.post(f"/runs/{uuid4()}/{action}").status_code == 404
+
+
+def test_coverage_reports_every_configured_stage(client, engine):
+    prior = create(client)
+    client.post(f"/runs/{prior}/start")
+    seed_jobs(engine, prior, Stage.cluster, "done", 2)  # threshold clusterer is not cacheable
+    cached = client.post("/runs/estimate", json=config_json()).json()["cached"]
+    assert cached["cluster"] == {"cached": 0, "total": 2}
+    assert cached["enrich"] == {"cached": 0, "total": 0}
+    assert set(cached) == {"provide", "extract", "enrich", "embed", "cluster"}
