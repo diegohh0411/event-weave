@@ -53,4 +53,30 @@ describe('mock server', () => {
     expect(r.status).toBeLessThan(300)
     expect(r.headers.get('access-control-allow-origin')).toBeTruthy()
   })
+
+  describe('enrichment sample', () => {
+    const url = (q = '') => `/runs/0b8f6c1e-5d1a-4f3e-9a52-3c1d2e4f5a01/enrichments/sample${q}`
+
+    it('reports total as the rows returned, not the fixture size', async () => {
+      const body = await (await call(url('?limit=1'))).json()
+      expect(body.items).toHaveLength(1)
+      expect(body.total).toBe(1)
+      expect(body.limit).toBe(1)
+    })
+
+    it('orders deterministically by seed and slices by offset', async () => {
+      const all = (await (await call(url('?seed=3&limit=3'))).json()).items.map((i: any) => i.id)
+      expect(all).toHaveLength(3)
+      expect((await (await call(url('?seed=3&limit=3'))).json()).items.map((i: any) => i.id)).toEqual(all)
+      const tail = (await (await call(url('?seed=3&offset=1&limit=3'))).json()).items.map((i: any) => i.id)
+      expect(tail).toEqual(all.slice(1))
+    })
+
+    it('filters by enricher', async () => {
+      const none = await (await call(url('?enricher=nope'))).json()
+      expect(none).toMatchObject({ items: [], total: 0 })
+      const some = await (await call(url('?enricher=clairic'))).json()
+      expect(some.items.every((i: any) => i.enricher === 'clairic')).toBe(true)
+    })
+  })
 })

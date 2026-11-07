@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import NoResultFound
 
@@ -10,6 +11,9 @@ from weave_core.runs import RunService, RunStateError
 from weave_core.service import build_service
 
 from .routers import adapters, clusters, deployments, documents, enrichments, runs, scores
+
+# The web app is served from these origins and calls the API from the browser.
+WEB_ORIGINS = ["http://127.0.0.1:3000", "http://localhost:3000"]
 
 
 def create_app(service: RunService | None = None) -> FastAPI:
@@ -25,6 +29,7 @@ def create_app(service: RunService | None = None) -> FastAPI:
                 app.state.service.engine.dispose()
 
     app = FastAPI(title="Event Weave", lifespan=lifespan)
+    app.add_middleware(CORSMiddleware, allow_origins=WEB_ORIGINS, allow_methods=["*"], allow_headers=["*"])
 
     @app.exception_handler(ConfigError)
     async def config_error(request: Request, exc: ConfigError):

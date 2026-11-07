@@ -30,6 +30,13 @@ const knownRunIds = new Set(
 )
 
 type Row = Record<string, unknown>
+
+// Small stable string hash (FNV-1a) so the seeded sample order is deterministic.
+function seedHash(text: string) {
+  let h = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193)
+  return h >>> 0
+}
 // Query filters the real routes support, applied to the fixture rows before paging.
 const filters: Record<string, (item: Row, q: URLSearchParams) => boolean> = {
   'GET /adapters': (i, q) => !q.get('stage') || i.stage === q.get('stage'),
@@ -99,6 +106,18 @@ export function respond(method: string, pathname: string, query: URLSearchParams
       if (bad) return { status: 422, body: bad }
       const offset = Number(query.get('offset') ?? 0)
       const limit = Number(query.get('limit') ?? DEFAULT_LIMIT)
+      if (route.template === '/runs/{run_id}/enrichments/sample') {
+        // Like the API: `total` counts the rows returned after filtering, seeded ordering and slicing.
+        const seed = query.get('seed') ?? '0'
+        const wanted = query.get('enricher')
+        const ordered = data.items
+          .filter(i => !wanted || i.enricher === wanted)
+          .map(i => [seedHash(`${seed}:${i.id}`), i] as const)
+          .sort((a, b) => a[0] - b[0] || String(a[1].id).localeCompare(String(b[1].id)))
+          .map(([, i]) => i)
+        const items = ordered.slice(offset, offset + limit)
+        return { status: fixture.status, body: { items, total: items.length, offset, limit } }
+      }
       const keep = filters[`${method} ${route.template}`]
       const rows = keep ? data.items.filter(i => keep(i, query)) : data.items
       return { status: fixture.status, body: { items: rows.slice(offset, offset + limit), total: rows.length, offset, limit } }

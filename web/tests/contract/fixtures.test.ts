@@ -46,6 +46,17 @@ describe('fixtures vs openapi.json', () => {
     expect(Object.keys(fixtures).filter(k => !known.has(k))).toEqual([])
   })
 
+  it('only has fixtures for documented success statuses', () => {
+    const documented = new Map<string, Set<string>>()
+    for (const o of operations) {
+      const k = routeKey(o.method, o.path)
+      documented.set(k, (documented.get(k) ?? new Set()).add(o.status))
+    }
+    const undocumented = Object.entries(fixtures).flatMap(([k, list]) =>
+      list.filter(f => !documented.get(k)?.has(String(f.status))).map(f => `${k} -> ${f.status}`))
+    expect(undocumented).toEqual([])
+  })
+
   for (const op of operations) {
     it(`${op.method} ${op.path} fixtures match the ${op.status} schema`, () => {
       const validate = ajv.compile({ $ref: `openapi#${op.pointer}` })
