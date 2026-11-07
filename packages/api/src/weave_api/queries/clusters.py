@@ -55,8 +55,8 @@ def members(run_id: UUID, cluster_id: str):
            .ext(distinct_on(mention_tags.c.mention_id))
            .order_by(mention_tags.c.mention_id, mention_tags.c.significance.desc().nulls_last(), mention_tags.c.tagger,
                      mention_tags.c.tagger_version, mention_tags.c.deployment).subquery("tag"))
-    s_start = sa.cast(documents.c.sentence_offsets[mentions.c.sentence][0].astext, sa.Integer)
-    s_end = sa.cast(documents.c.sentence_offsets[mentions.c.sentence][1].astext, sa.Integer)
+    s_start = sa.func.coalesce(sa.cast(documents.c.sentence_offsets[mentions.c.sentence][0].astext, sa.Integer), 0)
+    s_end = sa.func.coalesce(sa.cast(documents.c.sentence_offsets[mentions.c.sentence][1].astext, sa.Integer), sa.func.length(documents.c.text))
     return (sa.select(mentions.c.id.label("mention_id"), mentions.c.document_id, documents.c.title.label("document_title"),
                       documents.c.language, mentions.c.text,
                       sa.func.substr(documents.c.text, s_start + 1, s_end - s_start).label("sentence"),

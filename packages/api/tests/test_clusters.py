@@ -143,3 +143,21 @@ def test_members_paged(api, engine):
     tail = api.get(f"/runs/{run}/clusters/big/members", params={"limit": 200, "offset": 200}).json()
     assert len(tail["items"]) == 50
     assert api.get(f"/runs/{run}/clusters/big/members", params={"limit": 500}).status_code == 422
+
+
+def test_members_without_sentence_offsets_fall_back_to_document(api, engine):
+    run = uuid4()
+    with engine.begin() as conn:
+        conn.execute(runs.insert().values(id=run, config={}, config_hash="h", state="done", created_at=datetime.now(timezone.utc)))
+        _doc(conn, "d", "en")
+        conn.execute(documents.update().where(documents.c.id == "d").values(sentence_offsets=[]))
+        _mention(conn, "a", "d", "en", 1, "Troops")
+        _mention(conn, "b", "d", "en", 0, "Rebels")
+        conn.execute(mentions.update().where(mentions.c.id == "b").values(sentence=7))
+        _cluster(conn, run, "c", 2, 0, {}, ["a", "b"])
+    items = api.get(f"/runs/{run}/clusters/c/members").json()["items"]
+    assert len(items) == 2
+    for m in items:
+        assert m["sentence"] == TEXTS["en"]
+        a, b = m["trigger"]
+        assert m["sentence"][a:b] == m["text"]
