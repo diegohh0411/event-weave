@@ -1,0 +1,12 @@
+{
+  "name": "builder-fixture",
+  "track": "paper",
+  "seed": 7,
+  "stages": {
+    "provide": {"adapter": "mcecr", "settings": {"languages": ["english"], "splits": ["dev"]}, "deployments": {}},
+    "extract": {"adapter": "gold", "settings": {}, "deployments": {}},
+    "enrich": {"adapter": "clairic", "settings": {"window_sentences": 2}, "deployments": {"extraction": "stub-extraction"}},
+    "embed": {"adapter": "embedding-gemma", "settings": {"dimension": 8}, "deployments": {"embeddings": "stub-embeddings"}},
+    "cluster": {"adapter": "threshold", "settings": {"k": 5, "threshold": 0.8, "weights": {"action": 0.4, "participants": 0.3, "location": 0.2, "time": 0.1}}, "deployments": {}}
+  }
+}
