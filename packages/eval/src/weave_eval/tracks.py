@@ -77,6 +77,7 @@ class Track2Result:
     pooled: Counts
     inputs: Track2Inputs
     unaligned_gold: int
+    unmatched_system: int = 0  # clustered system mentions with no gold mention on their token span
 
 
 def track2(gold: Gold, system: list[SystemMention]) -> Track2Result:
@@ -108,9 +109,11 @@ def track2(gold: Gold, system: list[SystemMention]) -> Track2Result:
                 inp.response[kid] = s.cluster_id
         inp.key[kid] = gold.cluster[k]
         inp.group[kid] = (m.language, m.topic)
+    unmatched = 0
     for v in spans.values():
         for s in v:
             if s.mention_id not in taken:
+                unmatched += 1
                 kid = ("sys", s.mention_id)
                 inp.response[kid] = s.cluster_id
                 inp.group[kid] = doc_info[s.document_id]
@@ -120,7 +123,7 @@ def track2(gold: Gold, system: list[SystemMention]) -> Track2Result:
         ks = {i: c for i, c in inp.key.items() if inp.group[i][0] == lang}
         rs = {i: c for i, c in inp.response.items() if inp.group[i][0] == lang}
         per_language[lang] = counts(ks, rs)
-    return Track2Result(per_language, counts(inp.key, inp.response), inp, unaligned)
+    return Track2Result(per_language, counts(inp.key, inp.response), inp, unaligned, unmatched)
 
 
 def trigger_scores(gold: Gold, system: list[SystemMention]) -> dict[str, PRF]:

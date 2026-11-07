@@ -89,6 +89,8 @@ def evaluate(engine, run_id, *, split: str = "test", resamples: int = 10_000,
         gold = load_gold(c, split=split, document_ids=doc_ids)
         if not gold.documents:
             raise NoGold(f"run {run_id} has no gold documents in split {split}")
+        # the paper's annotation statistics cover the whole dataset, so chain stats do too
+        whole = load_gold(c, languages={lang for lang, _ in gold.documents.values()})
         system = load_system(c, run_id, gold.documents)
 
     seed = cfg.seed
@@ -114,10 +116,10 @@ def evaluate(engine, run_id, *, split: str = "test", resamples: int = 10_000,
                       interval_pooled(result2.inputs, None, resamples, seed, workers))
         report["track2_mention_policy"] = TRACK2_MENTION_POLICY
         report["unaligned_gold"] = result2.unaligned_gold
-        report["unmatched_system"] = {"all": sum(1 for k in result2.inputs.response if len(k) == 2 and k[0] == "sys")}
+        report["unmatched_system"] = {"all": result2.unmatched_system}
         report["triggers"] = _json(trigger_scores(gold, system))
         report["spread"] = _json(cluster_spread(system, gold))
-    report.update(chain_stats=_json(chain_stats(gold)), failures=failures(engine, run_id),
+    report.update(chain_stats=_json(chain_stats(whole)), failures=failures(engine, run_id),
                   cost=_json(cost_report(engine, run_id)), gold_hash=gold_hash(gold),
                   config_hash=run.config_hash, scorer_version=SCORER_VERSION, seed=seed, resamples=resamples)
     return Evaluation(uuid.uuid4(), run_id, cfg.track.value, split, rows, report)

@@ -64,7 +64,7 @@ def _chain_stats(ev: Evaluation, paper: PaperNumbers) -> list[str]:
         body.append([lang, *cells, str(ours["skipped_pairs"])])
         if ours.get("note"):
             notes.append(f"{lang}: {ours['note']}")
-    out = ["ours / paper; ≠ marks a mismatch"]
+    out = ["whole dataset (all splits, every document of these languages); ours / paper; ≠ marks a mismatch"]
     out += _table(["language", *CHAIN_FIELDS, "skipped pairs"], body)
     return out + notes
 
@@ -104,7 +104,7 @@ def render(ev: Evaluation, paper: PaperNumbers) -> str:
              f"seed {r['seed']}  resamples {r['resamples']}"]
     if not paper.checked:
         lines.append("paper numbers: UNCHECKED (the transcription needs two distinct checkers)")
-    sections = [("Scores", _scores(ev)), ("Failures", _failures(ev)),
+    sections = [("Scores", _scores(ev)), ("Failures (run-wide, not limited to the scored split)", _failures(ev)),
                 ("Chain statistics", _chain_stats(ev, paper))]
     if ev.track == "paper":
         sections.append(("Comparison with the paper", _compare(ev, paper)))

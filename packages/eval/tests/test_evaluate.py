@@ -140,3 +140,42 @@ def test_cli_mounted(db):
     assert result.exit_code == 0, result.output
     assert result.output.rstrip().splitlines()[-1].startswith("evaluation ")
     assert load_latest(db, run_id) is not None
+
+
+def test_chain_stats_cover_whole_dataset_not_split(db):
+    docs = [
+        {"id": "d1", "language": "en", "topic": "1", "split": "test", "gold": {"m1": [0, 3], "m2": [4, 7]},
+         "mentions": {"s1": [0, 3, 0, 1], "s2": [4, 7, 1, 2]}},
+        {"id": "d2", "language": "en", "topic": "2", "split": "dev", "gold": {"m3": [0, 3], "m4": [4, 7]}},
+        {"id": "d3", "language": "es", "topic": "1", "split": "dev", "gold": {"m5": [0, 3]}}]
+    run_id = corpus(db, docs=docs, pairs=[["d1", "m1", "d1", "m2"], ["d2", "m3", "d2", "m4"]],
+                    clusters={"c1": ["s1", "s2"]})
+    ev = evaluate(db, run_id, resamples=5, workers=1)
+    stats = ev.report["chain_stats"]
+    assert stats["en"]["mentions"] == 4 and stats["en"]["chains"] == 2 and stats["en"]["non_singleton"] == 2
+    assert "es" not in stats  # only languages present in the scored scope
+    assert {s.language for s in ev.scores} == {"en"}
+    assert "whole dataset" in render(ev, load_paper())
+
+
+def test_failures_labelled_run_wide(db):
+    text = render(evaluate(db, corpus(db), resamples=5, workers=1), load_paper())
+    assert "run-wide" in text
+
+
+def test_track2_unmatched_system_counted_by_track2(db):
+    from weave_eval.gold import load_gold
+    from weave_eval.system import load_system
+    from weave_eval.tracks import track2
+    run_id = corpus(db, track="realistic")
+    with db.begin() as c:
+        c.execute(sa.text("insert into mentions (id, document_id, start, \"end\", tok_start, tok_end, sentence, text, extractor, extractor_version) "
+                          "values ('x1','d1',0,3,0,1,0,'x','e','1')"))
+        c.execute(sa.text("insert into cluster_members (run_id, mention_id, cluster_id, partition, order_key) "
+                          "values (:r,'x1','c1','p','{9}')"), {"r": run_id})
+    with db.connect() as c:
+        gold = load_gold(c, split="test")
+        r = track2(gold, load_system(c, run_id, gold.documents))
+    assert r.unmatched_system == 1  # a clustered duplicate of a matched span is spurious
+    ev = evaluate(db, run_id, resamples=5, workers=1)
+    assert ev.report["unmatched_system"] == {"all": 1}
