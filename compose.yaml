@@ -39,6 +39,9 @@ services:
     restart: unless-stopped
     environment:
       WEAVE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-weave}:${POSTGRES_PASSWORD:-weave}@postgres:5432/${POSTGRES_DB:-weave}
+      WEAVE_INFERENCE_FILE: /app/inference.yaml
+    volumes:
+      - ./inference.yaml:/app/inference.yaml:ro
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
