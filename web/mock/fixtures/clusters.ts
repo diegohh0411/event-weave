@@ -21,18 +21,18 @@ export const clusterSummaries: Summary[] = [
 const floodMembers: Member[] = [
   {
     mention_id: 'm0000000-0000-4000-8000-000000000001', document_id: DOC_EN, document_title: 'Tisza floods Szeged streets', language: 'en',
-    text: 'flooded', sentence: 'The river Tisza flooded the lower streets of Szeged on Friday.', trigger: [21, 28],
+    text: 'flooded', sentence: 'The river Tisza flooded the lower streets of Szeged on Friday.', trigger: [16, 23],
     event_type: 'natural_disaster', significance: 0.92,
     // The first mention seeds the cluster: no decision was taken for it.
     decision: null
   },
   {
     mention_id: 'm0000000-0000-4000-8000-000000000002', document_id: DOC_EN, document_title: 'Tisza floods Szeged streets', language: 'en',
-    text: 'evacuated', sentence: 'Hundreds of residents were evacuated before dawn.', trigger: [29, 38],
+    text: 'evacuated', sentence: 'Hundreds of residents were evacuated before dawn.', trigger: [27, 36],
     event_type: 'natural_disaster', significance: 0.74,
     decision: {
       outcome: 'join', adapter: 'llm-judge', deployment: 'claude-sonnet', noul: 0.04, reason: 'Same flood, same morning.',
-      probabilities: { join: 0.93, new: 0.07 },
+      probabilities: { A: 0.93, B: 0.05, NEW: 0.02 },
       candidates: [
         {
           cluster_id: CLUSTER_FLOOD, score: 0.88, label: 'A', field_scores: { action: 0.9, participants: 0.8, location: 1, time: 1 }
@@ -43,7 +43,7 @@ const floodMembers: Member[] = [
   },
   {
     mention_id: 'm0000000-0000-4000-8000-000000000003', document_id: DOC_ES, document_title: 'El Tisza inunda Szeged', language: 'es',
-    text: 'inundó', sentence: 'El río Tisza inundó las calles bajas de Szeged el viernes.', trigger: [14, 20],
+    text: 'inundó', sentence: 'El río Tisza inundó las calles bajas de Szeged el viernes.', trigger: [13, 19],
     event_type: 'natural_disaster', significance: null,
     decision: {
       outcome: 'join', adapter: 'threshold', deployment: null, noul: null, reason: null, probabilities: null,
@@ -57,7 +57,7 @@ const floodMembers: Member[] = [
 const strikeMembers: Member[] = [
   {
     mention_id: 'm0000000-0000-4000-8000-000000000004', document_id: DOC_EN, document_title: 'Tisza floods Szeged streets', language: 'en',
-    text: 'walked out', sentence: 'Meanwhile, dockworkers in Rotterdam walked out over pay.', trigger: [34, 44],
+    text: 'walked out', sentence: 'Meanwhile, dockworkers in Rotterdam walked out over pay.', trigger: [36, 46],
     event_type: 'labor_action', significance: 0.61, decision: null
   },
   {
@@ -71,7 +71,7 @@ const strikeMembers: Member[] = [
 const singleMembers: Member[] = [
   {
     mention_id: 'm0000000-0000-4000-8000-000000000006', document_id: DOC_HI, document_title: 'तिस्ज़ा नदी में बाढ़', language: 'hi',
-    text: 'बाढ़', sentence: 'तिस्ज़ा नदी में बाढ़ आ गई।', trigger: [14, 18], event_type: null, significance: null, decision: null
+    text: 'बाढ़', sentence: 'तिस्ज़ा नदी में बाढ़ आ गई।', trigger: [16, 20], event_type: null, significance: null, decision: null
   }
 ]
 
