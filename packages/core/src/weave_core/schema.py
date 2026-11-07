@@ -25,7 +25,9 @@ jobs = sa.Table("jobs", metadata,
     sa.Column("input_hash", T, nullable=False), sa.Column("status", T, nullable=False),
     sa.Column("attempts", sa.Integer, nullable=False, server_default="0"), sa.Column("available_at", TZ, nullable=False),
     sa.Column("claimed_by", T), sa.Column("claim_token", UUID(as_uuid=True)), sa.Column("heartbeat_at", TZ),
-    sa.Column("error", T), sa.Column("cache_key", T), sa.UniqueConstraint("run_id", "stage", "unit_id"))
+    sa.Column("error", T), sa.Column("cache_key", T),
+    sa.Column("cache_hit", sa.Boolean, nullable=False, server_default=sa.false()),
+    sa.UniqueConstraint("run_id", "stage", "unit_id"))
 sa.Index("ix_jobs_stage_status_available_at", jobs.c.stage, jobs.c.status, jobs.c.available_at)
 sa.Index("ix_jobs_run_id_partition_order_key", jobs.c.run_id, jobs.c.partition, jobs.c.order_key)
 stage_outputs = sa.Table("stage_outputs", metadata,
@@ -114,3 +116,19 @@ cluster_decisions = sa.Table("cluster_decisions", metadata,
 decision_cache = sa.Table("decision_cache", metadata,
     sa.Column("key", T, primary_key=True), sa.Column("deployment", T), sa.Column("response", JSONB),
     sa.Column("created_at", TZ, server_default=sa.func.now()))
+evaluations = sa.Table("evaluations", metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("run_id", UUID(as_uuid=True), sa.ForeignKey("runs.id"), nullable=False),
+    *[sa.Column(n, T, nullable=False) for n in ("config_hash", "gold_hash", "scorer_version", "split")],
+    sa.Column("seed", sa.BigInteger, nullable=False), sa.Column("resamples", sa.Integer, nullable=False),
+    sa.Column("created_at", TZ, nullable=False), sa.Column("report", JSONB, nullable=False))
+sa.Index("ix_evaluations_run_id_created_at", evaluations.c.run_id, evaluations.c.created_at)
+evaluation_scores = sa.Table("evaluation_scores", metadata,
+    sa.Column("evaluation_id", UUID(as_uuid=True), sa.ForeignKey("evaluations.id"), primary_key=True),
+    sa.Column("track", T, primary_key=True), sa.Column("setting", T, primary_key=True),
+    sa.Column("language", T, primary_key=True), sa.Column("metric", T, primary_key=True),
+    sa.Column("precision", sa.Float), sa.Column("recall", sa.Float), sa.Column("f1", sa.Float, nullable=False),
+    sa.Column("f1_low", sa.Float), sa.Column("f1_high", sa.Float),
+    sa.CheckConstraint("track in ('paper', 'realistic')", name="ck_evaluation_scores_track"),
+    sa.CheckConstraint("setting in ('within', 'cross', 'pooled')", name="ck_evaluation_scores_setting"),
+    sa.CheckConstraint("metric in ('muc', 'b3', 'ceafe', 'blanc', 'conll')", name="ck_evaluation_scores_metric"))

@@ -37,7 +37,7 @@ def test_migration_creates_ledger_and_run_deployments(database_url):
     assert insp.get_pk_constraint("run_deployments")["constrained_columns"] == ["run_id", "deployment"]
     cfg = Config()
     cfg.set_main_option("script_location", str(Path(weave_core.__file__).parent / "migrations"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["0006_clusters"]
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0007_evaluations"]
 
 
 def test_documents_have_order_key_and_no_gold_columns(database_url):
@@ -104,3 +104,16 @@ def test_member_vector_roundtrip(database_url):
                                                  deployment="d", dimension=3, vector=[1, 0, 0]))
         assert c.scalar(sa.text("select vector <=> '[1,0,0]'::vector from member_vectors")) == 0
         assert c.scalar(sa.select(member_vectors.c.vector)) == [1.0, 0.0, 0.0]
+
+def test_evaluation_tables_exist(database_url):
+    insp = sa.inspect(make_engine(database_url))
+    assert {"evaluations", "evaluation_scores"} <= set(insp.get_table_names())
+    assert {c["name"] for c in insp.get_columns("evaluations")} == {
+        "id", "run_id", "config_hash", "gold_hash", "scorer_version", "split", "seed", "resamples", "created_at", "report"}
+    assert {c["name"] for c in insp.get_columns("evaluation_scores")} == {
+        "evaluation_id", "track", "setting", "language", "metric", "precision", "recall", "f1", "f1_low", "f1_high"}
+    assert insp.get_pk_constraint("evaluation_scores")["constrained_columns"] == [
+        "evaluation_id", "track", "setting", "language", "metric"]
+    assert ("run_id", "created_at") in {tuple(i["column_names"]) for i in insp.get_indexes("evaluations")}
+    jobs_cols = {c["name"]: c for c in insp.get_columns("jobs")}
+    assert jobs_cols["cache_hit"]["nullable"] is False

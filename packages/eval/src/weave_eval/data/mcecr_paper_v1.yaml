@@ -1,0 +1,524 @@
+# MCECR paper numbers, transcribed from the PDF (Pouran Ben Veyseh et al., Findings of NAACL 2024).
+# `page` is the 1-based PDF page index of mcecr.pdf (printed page number = page + 3868).
+# Tables 4-7 print F1 only: precision and recall are null, as is conll (no CoNLL average is printed).
+# All values are percentages exactly as printed.
+version: 1
+source:
+  citation: "Amir Pouran Ben Veyseh, Viet Dac Lai, Chien Van Nguyen, Franck Dernoncourt, Thien Huu Nguyen. MCECR: A Novel Dataset for Multilingual Cross-Document Event Coreference Resolution. Findings of NAACL 2024."
+  url: "https://aclanthology.org/2024.findings-naacl.245.pdf"
+  anthology_id: "2024.findings-naacl.245"
+transcribed_by: "Claude (Sonnet subagent), 2026-11-06"
+checked_by:
+  - "Claude (Sonnet subagent, second pass against PDF), 2026-11-06"
+annotation_stats:
+  en:
+    page: 3
+    mentions: 22445
+    chains: 20040
+    non_singleton: 1280
+    within_links: 482
+    cross_links: 2229
+    links_definition: null
+  es:
+    page: 3
+    mentions: 1662
+    chains: 401
+    non_singleton: 352
+    within_links: 973
+    cross_links: 61
+    links_definition: null
+  tr:
+    page: 3
+    mentions: 8431
+    chains: 8004
+    non_singleton: 268
+    within_links: 128
+    cross_links: 339
+    links_definition: null
+  uk:
+    page: 3
+    mentions: 24229
+    chains: 20731
+    non_singleton: 1620
+    within_links: 410
+    cross_links: 4054
+    links_definition: null
+  hi:
+    page: 3
+    mentions: 7089
+    chains: 5615
+    non_singleton: 746
+    within_links: 889
+    cross_links: 591
+    links_definition: null
+tables:
+  - table: 4
+    page: 5
+    setting: within
+    regime: monolingual
+    rows:
+      - language: en
+        model: synonym
+        muc: {p: null, r: null, f1: 44.9}
+        b3: {p: null, r: null, f1: 89.5}
+        ceafe: {p: null, r: null, f1: 89.4}
+        blanc: {p: null, r: null, f1: 55.9}
+        conll: null
+      - language: en
+        model: xlmr
+        muc: {p: null, r: null, f1: 33.7}
+        b3: {p: null, r: null, f1: 98.3}
+        ceafe: {p: null, r: null, f1: 98.0}
+        blanc: {p: null, r: null, f1: 61.7}
+        conll: null
+      - language: en
+        model: hierarchical
+        muc: {p: null, r: null, f1: 42.6}
+        b3: {p: null, r: null, f1: 96.4}
+        ceafe: {p: null, r: null, f1: 97.8}
+        blanc: {p: null, r: null, f1: 58.8}
+        conll: null
+      - language: en
+        model: joint
+        muc: {p: null, r: null, f1: 45.4}
+        b3: {p: null, r: null, f1: 98.0}
+        ceafe: {p: null, r: null, f1: 95.3}
+        blanc: {p: null, r: null, f1: 57.9}
+        conll: null
+      - language: es
+        model: synonym
+        muc: {p: null, r: null, f1: 15.2}
+        b3: {p: null, r: null, f1: 38.5}
+        ceafe: {p: null, r: null, f1: 18.7}
+        blanc: {p: null, r: null, f1: 19.1}
+        conll: null
+      - language: es
+        model: xlmr
+        muc: {p: null, r: null, f1: 85.0}
+        b3: {p: null, r: null, f1: 86.7}
+        ceafe: {p: null, r: null, f1: 71.2}
+        blanc: {p: null, r: null, f1: 42.3}
+        conll: null
+      - language: es
+        model: hierarchical
+        muc: {p: null, r: null, f1: 76.2}
+        b3: {p: null, r: null, f1: 75.1}
+        ceafe: {p: null, r: null, f1: 62.2}
+        blanc: {p: null, r: null, f1: 41.2}
+        conll: null
+      - language: es
+        model: joint
+        muc: {p: null, r: null, f1: 70.1}
+        b3: {p: null, r: null, f1: 75.3}
+        ceafe: {p: null, r: null, f1: 59.8}
+        blanc: {p: null, r: null, f1: 35.8}
+        conll: null
+      - language: tr
+        model: synonym
+        muc: {p: null, r: null, f1: 18.9}
+        b3: {p: null, r: null, f1: 88.2}
+        ceafe: {p: null, r: null, f1: 89.0}
+        blanc: {p: null, r: null, f1: 52.0}
+        conll: null
+      - language: tr
+        model: xlmr
+        muc: {p: null, r: null, f1: 32.0}
+        b3: {p: null, r: null, f1: 98.5}
+        ceafe: {p: null, r: null, f1: 97.6}
+        blanc: {p: null, r: null, f1: 62.5}
+        conll: null
+      - language: tr
+        model: hierarchical
+        muc: {p: null, r: null, f1: 40.8}
+        b3: {p: null, r: null, f1: 97.3}
+        ceafe: {p: null, r: null, f1: 97.0}
+        blanc: {p: null, r: null, f1: 65.2}
+        conll: null
+      - language: tr
+        model: joint
+        muc: {p: null, r: null, f1: 39.8}
+        b3: {p: null, r: null, f1: 95.2}
+        ceafe: {p: null, r: null, f1: 98.2}
+        blanc: {p: null, r: null, f1: 60.8}
+        conll: null
+      - language: uk
+        model: synonym
+        muc: {p: null, r: null, f1: 65.1}
+        b3: {p: null, r: null, f1: 76.3}
+        ceafe: {p: null, r: null, f1: 76.7}
+        blanc: {p: null, r: null, f1: 45.6}
+        conll: null
+      - language: uk
+        model: xlmr
+        muc: {p: null, r: null, f1: 72.8}
+        b3: {p: null, r: null, f1: 98.9}
+        ceafe: {p: null, r: null, f1: 98.3}
+        blanc: {p: null, r: null, f1: 75.6}
+        conll: null
+      - language: uk
+        model: hierarchical
+        muc: {p: null, r: null, f1: 73.1}
+        b3: {p: null, r: null, f1: 96.2}
+        ceafe: {p: null, r: null, f1: 97.2}
+        blanc: {p: null, r: null, f1: 74.4}
+        conll: null
+      - language: uk
+        model: joint
+        muc: {p: null, r: null, f1: 70.6}
+        b3: {p: null, r: null, f1: 90.2}
+        ceafe: {p: null, r: null, f1: 97.9}
+        blanc: {p: null, r: null, f1: 71.3}
+        conll: null
+      - language: hi
+        model: synonym
+        muc: {p: null, r: null, f1: 55.1}
+        b3: {p: null, r: null, f1: 92.5}
+        ceafe: {p: null, r: null, f1: 88.6}
+        blanc: {p: null, r: null, f1: 67.7}
+        conll: null
+      - language: hi
+        model: xlmr
+        muc: {p: null, r: null, f1: 37.5}
+        b3: {p: null, r: null, f1: 89.7}
+        ceafe: {p: null, r: null, f1: 86.0}
+        blanc: {p: null, r: null, f1: 59.0}
+        conll: null
+      - language: hi
+        model: hierarchical
+        muc: {p: null, r: null, f1: 35.1}
+        b3: {p: null, r: null, f1: 87.2}
+        ceafe: {p: null, r: null, f1: 86.0}
+        blanc: {p: null, r: null, f1: 57.2}
+        conll: null
+      - language: hi
+        model: joint
+        muc: {p: null, r: null, f1: 36.2}
+        b3: {p: null, r: null, f1: 89.1}
+        ceafe: {p: null, r: null, f1: 85.3}
+        blanc: {p: null, r: null, f1: 60.2}
+        conll: null
+  - table: 5
+    page: 5
+    setting: cross
+    regime: monolingual
+    rows:
+      - language: en
+        model: synonym
+        muc: {p: null, r: null, f1: 65.4}
+        b3: {p: null, r: null, f1: 87.9}
+        ceafe: {p: null, r: null, f1: 87.3}
+        blanc: {p: null, r: null, f1: 63.3}
+        conll: null
+      - language: en
+        model: xlmr
+        muc: {p: null, r: null, f1: 59.7}
+        b3: {p: null, r: null, f1: 94.8}
+        ceafe: {p: null, r: null, f1: 93.6}
+        blanc: {p: null, r: null, f1: 65.8}
+        conll: null
+      - language: en
+        model: hierarchical
+        muc: {p: null, r: null, f1: 61.7}
+        b3: {p: null, r: null, f1: 95.1}
+        ceafe: {p: null, r: null, f1: 94.1}
+        blanc: {p: null, r: null, f1: 67.2}
+        conll: null
+      - language: en
+        model: joint
+        muc: {p: null, r: null, f1: 57.9}
+        b3: {p: null, r: null, f1: 93.2}
+        ceafe: {p: null, r: null, f1: 94.2}
+        blanc: {p: null, r: null, f1: 64.7}
+        conll: null
+      - language: es
+        model: synonym
+        muc: {p: null, r: null, f1: 5.0}
+        b3: {p: null, r: null, f1: 24.2}
+        ceafe: {p: null, r: null, f1: 2.8}
+        blanc: {p: null, r: null, f1: 12.2}
+        conll: null
+      - language: es
+        model: xlmr
+        muc: {p: null, r: null, f1: 13.5}
+        b3: {p: null, r: null, f1: 41.4}
+        ceafe: {p: null, r: null, f1: 20.9}
+        blanc: {p: null, r: null, f1: 20.6}
+        conll: null
+      - language: es
+        model: hierarchical
+        muc: {p: null, r: null, f1: 12.6}
+        b3: {p: null, r: null, f1: 40.2}
+        ceafe: {p: null, r: null, f1: 19.8}
+        blanc: {p: null, r: null, f1: 18.5}
+        conll: null
+      - language: es
+        model: joint
+        muc: {p: null, r: null, f1: 12.0}
+        b3: {p: null, r: null, f1: 38.0}
+        ceafe: {p: null, r: null, f1: 17.8}
+        blanc: {p: null, r: null, f1: 19.2}
+        conll: null
+      - language: tr
+        model: synonym
+        muc: {p: null, r: null, f1: 72.0}
+        b3: {p: null, r: null, f1: 79.6}
+        ceafe: {p: null, r: null, f1: 79.3}
+        blanc: {p: null, r: null, f1: 62.7}
+        conll: null
+      - language: tr
+        model: xlmr
+        muc: {p: null, r: null, f1: 75.4}
+        b3: {p: null, r: null, f1: 98.4}
+        ceafe: {p: null, r: null, f1: 97.8}
+        blanc: {p: null, r: null, f1: 75.6}
+        conll: null
+      - language: tr
+        model: hierarchical
+        muc: {p: null, r: null, f1: 78.9}
+        b3: {p: null, r: null, f1: 98.1}
+        ceafe: {p: null, r: null, f1: 97.1}
+        blanc: {p: null, r: null, f1: 75.2}
+        conll: null
+      - language: tr
+        model: joint
+        muc: {p: null, r: null, f1: 76.5}
+        b3: {p: null, r: null, f1: 97.9}
+        ceafe: {p: null, r: null, f1: 98.0}
+        blanc: {p: null, r: null, f1: 75.3}
+        conll: null
+      - language: uk
+        model: synonym
+        muc: {p: null, r: null, f1: 44.1}
+        b3: {p: null, r: null, f1: 89.6}
+        ceafe: {p: null, r: null, f1: 89.3}
+        blanc: {p: null, r: null, f1: 57.6}
+        conll: null
+      - language: uk
+        model: xlmr
+        muc: {p: null, r: null, f1: 70.0}
+        b3: {p: null, r: null, f1: 92.3}
+        ceafe: {p: null, r: null, f1: 91.5}
+        blanc: {p: null, r: null, f1: 68.4}
+        conll: null
+      - language: uk
+        model: hierarchical
+        muc: {p: null, r: null, f1: 69.3}
+        b3: {p: null, r: null, f1: 91.2}
+        ceafe: {p: null, r: null, f1: 90.5}
+        blanc: {p: null, r: null, f1: 67.3}
+        conll: null
+      - language: uk
+        model: joint
+        muc: {p: null, r: null, f1: 70.1}
+        b3: {p: null, r: null, f1: 91.8}
+        ceafe: {p: null, r: null, f1: 90.7}
+        blanc: {p: null, r: null, f1: 70.6}
+        conll: null
+      - language: hi
+        model: synonym
+        muc: {p: null, r: null, f1: 41.3}
+        b3: {p: null, r: null, f1: 81.1}
+        ceafe: {p: null, r: null, f1: 73.7}
+        blanc: {p: null, r: null, f1: 65.0}
+        conll: null
+      - language: hi
+        model: xlmr
+        muc: {p: null, r: null, f1: 23.5}
+        b3: {p: null, r: null, f1: 85.8}
+        ceafe: {p: null, r: null, f1: 80.6}
+        blanc: {p: null, r: null, f1: 54.5}
+        conll: null
+      - language: hi
+        model: hierarchical
+        muc: {p: null, r: null, f1: 21.8}
+        b3: {p: null, r: null, f1: 85.0}
+        ceafe: {p: null, r: null, f1: 79.5}
+        blanc: {p: null, r: null, f1: 53.1}
+        conll: null
+      - language: hi
+        model: joint
+        muc: {p: null, r: null, f1: 24.0}
+        b3: {p: null, r: null, f1: 83.6}
+        ceafe: {p: null, r: null, f1: 79.2}
+        blanc: {p: null, r: null, f1: 54.0}
+        conll: null
+  # Table 6 printed caption repeats "trained on the training set of the corresponding language" (copied from
+  # Table 4); the body text and Table 7 say Tables 6-7 are trained on English, so this is the transfer regime.
+  - table: 6
+    page: 7
+    setting: within
+    regime: transfer
+    rows:
+      - language: es
+        model: xlmr
+        muc: {p: null, r: null, f1: 68.2}
+        b3: {p: null, r: null, f1: 72.3}
+        ceafe: {p: null, r: null, f1: 48.9}
+        blanc: {p: null, r: null, f1: 30.0}
+        conll: null
+      - language: es
+        model: hierarchical
+        muc: {p: null, r: null, f1: 60.2}
+        b3: {p: null, r: null, f1: 70.2}
+        ceafe: {p: null, r: null, f1: 50.6}
+        blanc: {p: null, r: null, f1: 31.2}
+        conll: null
+      - language: es
+        model: joint
+        muc: {p: null, r: null, f1: 66.5}
+        b3: {p: null, r: null, f1: 71.2}
+        ceafe: {p: null, r: null, f1: 41.3}
+        blanc: {p: null, r: null, f1: 27.3}
+        conll: null
+      - language: tr
+        model: xlmr
+        muc: {p: null, r: null, f1: 29.8}
+        b3: {p: null, r: null, f1: 90.6}
+        ceafe: {p: null, r: null, f1: 89.3}
+        blanc: {p: null, r: null, f1: 57.2}
+        conll: null
+      - language: tr
+        model: hierarchical
+        muc: {p: null, r: null, f1: 27.3}
+        b3: {p: null, r: null, f1: 88.0}
+        ceafe: {p: null, r: null, f1: 86.4}
+        blanc: {p: null, r: null, f1: 55.3}
+        conll: null
+      - language: tr
+        model: joint
+        muc: {p: null, r: null, f1: 28.2}
+        b3: {p: null, r: null, f1: 87.3}
+        ceafe: {p: null, r: null, f1: 85.1}
+        blanc: {p: null, r: null, f1: 56.3}
+        conll: null
+      - language: uk
+        model: xlmr
+        muc: {p: null, r: null, f1: 65.4}
+        b3: {p: null, r: null, f1: 87.3}
+        ceafe: {p: null, r: null, f1: 89.4}
+        blanc: {p: null, r: null, f1: 66.4}
+        conll: null
+      - language: uk
+        model: hierarchical
+        muc: {p: null, r: null, f1: 61.1}
+        b3: {p: null, r: null, f1: 85.2}
+        ceafe: {p: null, r: null, f1: 87.9}
+        blanc: {p: null, r: null, f1: 62.4}
+        conll: null
+      - language: uk
+        model: joint
+        muc: {p: null, r: null, f1: 63.3}
+        b3: {p: null, r: null, f1: 85.4}
+        ceafe: {p: null, r: null, f1: 82.0}
+        blanc: {p: null, r: null, f1: 62.5}
+        conll: null
+      - language: hi
+        model: xlmr
+        muc: {p: null, r: null, f1: 29.3}
+        b3: {p: null, r: null, f1: 75.3}
+        ceafe: {p: null, r: null, f1: 71.3}
+        blanc: {p: null, r: null, f1: 50.7}
+        conll: null
+      - language: hi
+        model: hierarchical
+        muc: {p: null, r: null, f1: 30.2}
+        b3: {p: null, r: null, f1: 71.8}
+        ceafe: {p: null, r: null, f1: 70.0}
+        blanc: {p: null, r: null, f1: 52.0}
+        conll: null
+      - language: hi
+        model: joint
+        muc: {p: null, r: null, f1: 30.3}
+        b3: {p: null, r: null, f1: 74.1}
+        ceafe: {p: null, r: null, f1: 70.9}
+        blanc: {p: null, r: null, f1: 50.4}
+        conll: null
+  - table: 7
+    page: 7
+    setting: cross
+    regime: transfer
+    rows:
+      - language: es
+        model: xlmr
+        muc: {p: null, r: null, f1: 10.2}
+        b3: {p: null, r: null, f1: 32.3}
+        ceafe: {p: null, r: null, f1: 18.7}
+        blanc: {p: null, r: null, f1: 15.3}
+        conll: null
+      - language: es
+        model: hierarchical
+        muc: {p: null, r: null, f1: 9.9}
+        b3: {p: null, r: null, f1: 31.4}
+        ceafe: {p: null, r: null, f1: 17.6}
+        blanc: {p: null, r: null, f1: 15.0}
+        conll: null
+      - language: es
+        model: joint
+        muc: {p: null, r: null, f1: 9.0}
+        b3: {p: null, r: null, f1: 31.8}
+        ceafe: {p: null, r: null, f1: 17.7}
+        blanc: {p: null, r: null, f1: 14.8}
+        conll: null
+      - language: tr
+        model: xlmr
+        muc: {p: null, r: null, f1: 68.2}
+        b3: {p: null, r: null, f1: 90.8}
+        ceafe: {p: null, r: null, f1: 89.3}
+        blanc: {p: null, r: null, f1: 71.8}
+        conll: null
+      - language: tr
+        model: hierarchical
+        muc: {p: null, r: null, f1: 65.1}
+        b3: {p: null, r: null, f1: 87.9}
+        ceafe: {p: null, r: null, f1: 88.3}
+        blanc: {p: null, r: null, f1: 70.2}
+        conll: null
+      - language: tr
+        model: joint
+        muc: {p: null, r: null, f1: 65.4}
+        b3: {p: null, r: null, f1: 85.4}
+        ceafe: {p: null, r: null, f1: 86.1}
+        blanc: {p: null, r: null, f1: 71.9}
+        conll: null
+      - language: uk
+        model: xlmr
+        muc: {p: null, r: null, f1: 63.0}
+        b3: {p: null, r: null, f1: 83.3}
+        ceafe: {p: null, r: null, f1: 89.7}
+        blanc: {p: null, r: null, f1: 60.2}
+        conll: null
+      - language: uk
+        model: hierarchical
+        muc: {p: null, r: null, f1: 60.3}
+        b3: {p: null, r: null, f1: 80.9}
+        ceafe: {p: null, r: null, f1: 88.2}
+        blanc: {p: null, r: null, f1: 59.7}
+        conll: null
+      - language: uk
+        model: joint
+        muc: {p: null, r: null, f1: 60.4}
+        b3: {p: null, r: null, f1: 83.0}
+        ceafe: {p: null, r: null, f1: 88.2}
+        blanc: {p: null, r: null, f1: 57.2}
+        conll: null
+      - language: hi
+        model: xlmr
+        muc: {p: null, r: null, f1: 16.7}
+        b3: {p: null, r: null, f1: 80.9}
+        ceafe: {p: null, r: null, f1: 71.2}
+        blanc: {p: null, r: null, f1: 50.3}
+        conll: null
+      - language: hi
+        model: hierarchical
+        muc: {p: null, r: null, f1: 17.0}
+        b3: {p: null, r: null, f1: 72.2}
+        ceafe: {p: null, r: null, f1: 71.0}
+        blanc: {p: null, r: null, f1: 49.3}
+        conll: null
+      - language: hi
+        model: joint
+        muc: {p: null, r: null, f1: 15.1}
+        b3: {p: null, r: null, f1: 71.9}
+        ceafe: {p: null, r: null, f1: 70.1}
+        blanc: {p: null, r: null, f1: 46.2}
+        conll: null

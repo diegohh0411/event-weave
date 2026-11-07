@@ -9,6 +9,7 @@ members = [
     "weave-clusterer",
     "weave-core",
     "weave-enrichers",
+    "weave-eval",
     "weave-extractors",
     "weave-inference",
     "weave-providers",
@@ -534,6 +535,7 @@ dev = [
     { name = "weave-clusterer" },
     { name = "weave-core" },
     { name = "weave-enrichers" },
+    { name = "weave-eval" },
     { name = "weave-extractors" },
     { name = "weave-inference" },
     { name = "weave-providers" },
@@ -553,6 +555,7 @@ dev = [
     { name = "weave-clusterer", editable = "packages/clusterer" },
     { name = "weave-core", editable = "packages/core" },
     { name = "weave-enrichers", editable = "packages/enrichers" },
+    { name = "weave-eval", editable = "packages/eval" },
     { name = "weave-extractors", editable = "packages/extractors" },
     { name = "weave-inference", editable = "packages/inference" },
     { name = "weave-providers", editable = "packages/providers" },
@@ -2203,6 +2206,29 @@ requires-dist = [
     { name = "typer" },
     { name = "weave-core", editable = "packages/core" },
     { name = "weave-inference", editable = "packages/inference" },
+]
+
+[[package]]
+name = "weave-eval"
+version = "0.1.0"
+source = { editable = "packages/eval" }
+dependencies = [
+    { name = "numpy" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "scipy" },
+    { name = "typer" },
+    { name = "weave-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy" },
+    { name = "pydantic", specifier = ">=2" },
+    { name = "pyyaml" },
+    { name = "scipy" },
+    { name = "typer" },
+    { name = "weave-core", editable = "packages/core" },
 ]
 
 [[package]]

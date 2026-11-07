@@ -56,6 +56,19 @@ if _crawl_command is not None:
     app.command('crawl')(_crawl_command)
 
 
+def _eval():
+    try:
+        from weave_eval.cli import eval_command
+    except ImportError:  # weave-eval is not installed
+        return None
+    return eval_command
+
+
+_eval_command = _eval()
+if _eval_command is not None:
+    app.command('eval')(_eval_command)
+
+
 def _extractors():
     try:
         from weave_extractors.cli import app as extractors_app

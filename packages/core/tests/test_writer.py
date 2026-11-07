@@ -491,3 +491,11 @@ def test_shared_finalization_waits_for_job_before_locking_run(
                 canceller.join(10)
     assert not finalizer.is_alive() and not canceller.is_alive() and not errors
     assert service.status(run).state == RunState.done
+
+
+def test_writer_jobs_never_cache_hit(engine, registry, service, good_config):
+    start(service, good_config)
+    run_all(engine, registry)
+    with engine.connect() as conn:
+        rows = conn.execute(sa.select(jobs.c.cache_hit).where(jobs.c.stage == Stage.cluster)).scalars().all()
+    assert rows and not any(rows)

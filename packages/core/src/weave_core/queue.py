@@ -73,14 +73,16 @@ class Queue:
                 claimed.append(_claimed(updated))
             return claimed
 
-    def complete(self, job: ClaimedJob, result: StageResult, cache_key: str | None, *, spec: AdapterSpec) -> bool:
+    def complete(self, job: ClaimedJob, result: StageResult, cache_key: str | None, *, spec: AdapterSpec,
+                 cache_hit: bool = False) -> bool:
         if spec.stage != job.stage:
             raise ValueError(f"spec stage {spec.stage} does not match job stage {job.stage}")
         with session_scope(self.engine) as session:
-            return self.complete_in_session(session, job, result, cache_key, spec=spec)
+            return self.complete_in_session(session, job, result, cache_key, spec=spec, cache_hit=cache_hit)
 
     def complete_in_session(self, session, job: ClaimedJob, result: StageResult,
-                            cache_key: str | None, *, spec: AdapterSpec) -> bool:
+                            cache_key: str | None, *, spec: AdapterSpec,
+                            cache_hit: bool = False) -> bool:
         """Complete within the caller's transaction; never commit this session."""
         if spec.stage != job.stage:
             raise ValueError(f"spec stage {spec.stage} does not match job stage {job.stage}")
@@ -126,7 +128,7 @@ class Queue:
                 output=result.output, emits=None if result.emits is None else [asdict(u) for u in result.emits],
                 created_at=sa.func.now(),
             ).on_conflict_do_nothing(index_elements=[stage_outputs.c.cache_key]))
-        session.execute(jobs.update().where(_owns(job)).values(status=JobStatus.done, cache_key=cache_key))
+        session.execute(jobs.update().where(_owns(job)).values(status=JobStatus.done, cache_key=cache_key, cache_hit=cache_hit))
         following = next_stage(cfg, job.stage)
         if following is not None:
             for unit in child_units(job, result):
