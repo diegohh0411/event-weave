@@ -9,7 +9,7 @@ from weave_core.db import migrate
 from weave_core.runs import RunService, RunStateError
 from weave_core.service import build_service
 
-from .routers import adapters, clusters, deployments, documents, enrichments, runs
+from .routers import adapters, clusters, deployments, documents, enrichments, runs, scores
 
 
 def create_app(service: RunService | None = None) -> FastAPI:
@@ -44,6 +44,7 @@ def create_app(service: RunService | None = None) -> FastAPI:
     app.include_router(clusters.router)
     app.include_router(documents.router)
     app.include_router(enrichments.router)
+    app.include_router(scores.router)
 
     @app.get("/health")
     def health() -> dict[str, str]:
