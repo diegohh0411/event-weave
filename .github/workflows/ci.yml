@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [core, inference, providers, extractors, enrichers, clusterer, api]
+        package: [core, inference, providers, extractors, enrichers, clusterer, eval, api]
     services:
       postgres:
         image: pgvector/pgvector:pg17
