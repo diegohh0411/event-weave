@@ -79,10 +79,11 @@ def run_worker(engine: sa.Engine, registry: Registry, stage: Stage, worker_id: s
                 key = cache_key(job.input_hash, adapter.spec, choice.settings, choice.deployments)
                 with session_scope(engine) as session:
                     result = lookup(session, key)
+            hit = result is not None
             if result is None:
                 with semaphore:
                     result = adapter.process(job.unit, queue.upstream(job))
-            queue.complete(job, result, key, spec=adapter.spec)
+            queue.complete(job, result, key, spec=adapter.spec, cache_hit=hit)
         except AdapterFailure as exc:
             queue.fail(job, exc)
         except Exception as exc:

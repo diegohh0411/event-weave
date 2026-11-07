@@ -157,3 +157,15 @@ def test_worker_refuses_job_when_installed_version_differs(engine, registry, ser
     with engine.connect() as c:
         row = c.execute(sa.select(jobs.c.status, jobs.c.attempts, jobs.c.error).where(jobs.c.run_id == run)).one()
     assert row.status == JobStatus.failed and "pinned to version '0'" in row.error
+
+def test_cache_hit_set_only_on_lookup_hit(engine, registry, service, good_config):
+    import sqlalchemy as sa
+    from weave_core.schema import jobs
+    run1 = start(service, good_config); drain(engine, registry, PARALLEL)
+    run2 = start(service, good_config.model_copy(deep=True)); drain(engine, registry, PARALLEL)
+    def hits(run):
+        with engine.connect() as c:
+            return {(r.stage, r.cache_hit) for r in c.execute(sa.select(jobs.c.stage, jobs.c.cache_hit)
+                                                              .where(jobs.c.run_id == run, jobs.c.status == JobStatus.done))}
+    assert hits(run1) == {(st, False) for st in PARALLEL}
+    assert hits(run2) == {(st, True) for st in PARALLEL}
