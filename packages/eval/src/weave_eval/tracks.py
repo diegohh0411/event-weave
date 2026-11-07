@@ -10,7 +10,9 @@ from weave_eval.system import SystemMention
 
 TRACK2_MENTION_POLICY = (
     "Mentions present on only one side are kept as the reference CoNLL scorer (v8.01) keeps them: "
-    "a missed gold mention lowers recall, a spurious system mention lowers precision.")
+    "a missed gold mention lowers recall, a spurious system mention lowers precision. "
+    "A mention whose cluster job failed has no coreference output, so it is left out of the response: "
+    "it still counts in the trigger scores and in the failure counts.")
 
 SKIPPED = {("hi", "cross"): "not scored: the dataset's Hindi crossDoc pairs have no topic or mention ids"}
 

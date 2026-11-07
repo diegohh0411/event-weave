@@ -135,3 +135,16 @@ def test_track1_prefers_clustered_duplicate(db):
     gold, system = run(db, spec)
     from weave_eval.metrics import scores
     assert scores(track1(gold, system)["en"].within[("en", "t")]).b3.recall == 100
+
+
+def test_track2_failed_cluster_job_leaves_mention_out_of_response(db):
+    # Gold m1~m2; the system clusters both and extracts a spurious a3 whose cluster job failed.
+    spec = {"docs": [doc("a", gold={"m1": [0, 3], "m2": [4, 7]})],
+            "pairs": [["a", "m1", "a", "m2"]], "clusters": {"c1": ["a1", "a2"]}}
+    gold, system = run(db, spec)
+    assert any(s.mention_id == "a3" and s.cluster_id is None for s in system)
+    r = track2(gold, system)
+    assert ("sys", "a3") not in r.inputs.response and r.unmatched_system == 0
+    assert r.pooled.b3_pd == 2  # no coreference output, no precision penalty; see TRACK2_MENTION_POLICY
+    assert "cluster job failed" in TRACK2_MENTION_POLICY
+    assert trigger_scores(gold, system)["all"].precision < 100  # but it is a spurious trigger
