@@ -1,0 +1,43 @@
+{
+  "name": "event-weave-web",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.15.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "gen:api": "openapi-typescript openapi.json -o app/api/schema.d.ts",
+    "mock": "tsx mock/server.ts",
+    "dev:mock": "concurrently -k -n mock,nuxt \"pnpm mock\" \"NUXT_PUBLIC_API_BASE=http://127.0.0.1:4010 nuxt dev --host 127.0.0.1\"",
+    "test": "vitest run",
+    "typecheck": "nuxt typecheck"
+  },
+  "dependencies": {
+    "@nuxt/ui": "4.12.0",
+    "nuxt": "4.6.4",
+    "tailwindcss": "4.3.5",
+    "vue": "3.5.45",
+    "vue-router": "5.4.0"
+  },
+  "devDependencies": {
+    "@nuxt/test-utils": "4.3.4",
+    "@types/node": "26.6.6",
+    "@vue/test-utils": "2.5.1",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "concurrently": "10.0.6",
+    "h3": "1.15.11",
+    "happy-dom": "21.0.4",
+    "openapi-fetch": "0.17.0",
+    "openapi-typescript": "7.13.0",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "5.1.0",
+    "vue-tsc": "3.3.14"
+  }
+}

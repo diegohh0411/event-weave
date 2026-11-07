@@ -41,3 +41,24 @@ jobs:
       # Run per package: the packages' conftest.py files conflict in one session.
       # MCECR dataset tests (-m mcecr) skip here; the dataset is not in the repo.
       - run: uv run pytest packages/${{ matrix.package }} -q
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Generated API types are current
+        run: pnpm gen:api && git diff --exit-code app/api/schema.d.ts
+      - run: pnpm typecheck
+      - run: pnpm test

@@ -53,6 +53,20 @@ services:
       timeout: 3s
       retries: 30
 
+  web:
+    build:
+      context: web
+    image: event-weave-web:latest
+    restart: unless-stopped
+    environment:
+      # The browser, not the container, calls the API.
+      NUXT_PUBLIC_API_BASE: http://127.0.0.1:8000
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
   stanza:
     build:
       context: .
