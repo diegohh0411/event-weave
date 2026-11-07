@@ -1,0 +1,32 @@
+"""System output: the mentions a run extracted and the cluster each one joined."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import sqlalchemy as sa
+
+from weave_core.schema import cluster_members, mentions
+
+
+@dataclass(frozen=True)
+class SystemMention:
+    mention_id: str
+    document_id: str
+    start: int
+    end: int
+    tok_start: int
+    tok_end: int  # end exclusive
+    cluster_id: str | None  # None: no membership (a failed cluster job)
+
+
+def load_system(conn, run_id, document_ids) -> list[SystemMention]:
+    ids = list(document_ids)
+    if not ids:
+        return []
+    q = (sa.select(mentions.c.id, mentions.c.document_id, mentions.c.start, mentions.c.end,
+                   mentions.c.tok_start, mentions.c.tok_end, cluster_members.c.cluster_id)
+         .select_from(mentions.outerjoin(cluster_members, sa.and_(cluster_members.c.mention_id == mentions.c.id,
+                                                                  cluster_members.c.run_id == run_id)))
+         .where(mentions.c.document_id.in_(ids)).order_by(mentions.c.id))
+    return [SystemMention(r.id, r.document_id, r.start, r.end, r.tok_start, r.tok_end, r.cluster_id)
+            for r in conn.execute(q)]
