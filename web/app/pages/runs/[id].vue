@@ -33,7 +33,7 @@ function startPolling() {
   timer = setInterval(async () => {
     if (polling) return
     polling = true
-    try { await refresh() } catch { /* keep the last good state; the next tick retries */ } finally { polling = false }
+    try { await Promise.all([refresh(), loadFailures()]) } catch { /* keep the last good state; the next tick retries */ } finally { polling = false }
   }, POLL_MS)
 }
 watch(() => run.value?.state, (s) => { if (s === 'running') startPolling(); else stopPolling() })
@@ -48,9 +48,21 @@ onMounted(async () => {
 const failures = ref<Failure[]>([])
 const failureTotal = ref(0)
 const failurePage = ref(1)
+const failuresError = ref<string>()
 async function loadFailures() {
-  const r = await api.GET('/runs/{run_id}/failures', { params: { path: { run_id: id }, query: { offset: (failurePage.value - 1) * PER_PAGE, limit: PER_PAGE } } })
-  if (r.data) { failures.value = r.data.items; failureTotal.value = r.data.total }
+  try {
+    const r = await api.GET('/runs/{run_id}/failures', { params: { path: { run_id: id }, query: { offset: (failurePage.value - 1) * PER_PAGE, limit: PER_PAGE } } })
+    if (r.data) {
+      failures.value = r.data.items
+      failureTotal.value = r.data.total
+      failuresError.value = undefined
+    } else {
+      const detail = (r.error as { detail?: unknown } | undefined)?.detail
+      failuresError.value = typeof detail === 'string' ? detail : 'the API rejected the request'
+    }
+  } catch (e) {
+    failuresError.value = e instanceof Error ? e.message : String(e)
+  }
 }
 watch(failurePage, loadFailures)
 watch(() => run.value?.state, loadFailures)
@@ -134,7 +146,7 @@ async function act() {
         <NuxtLink :to="`/runs/${id}/spot-check`" class="text-primary hover:underline">
           Spot check
         </NuxtLink>
-        <NuxtLink :to="`/runs/${id}/scores`" class="text-primary hover:underline">
+        <NuxtLink :to="`/compare?run_id=${id}`" class="text-primary hover:underline">
           Scores
         </NuxtLink>
       </nav>
@@ -154,10 +166,11 @@ async function act() {
             Failures ({{ failureTotal }})
           </h2>
         </template>
-        <p v-if="!failures.length" class="text-muted">
+        <UAlert v-if="failuresError" color="error" variant="subtle" :title="`Could not load failures: ${failuresError}`" />
+        <p v-else-if="!failures.length" class="text-muted">
           No failed jobs.
         </p>
-        <div v-else class="overflow-x-auto">
+        <div v-if="failures.length" class="overflow-x-auto">
           <UTable :data="failures" :columns="failureColumns">
             <template #error-cell="{ row }">
               <span class="whitespace-normal break-words">{{ row.original.error ?? 'No error recorded' }}</span>

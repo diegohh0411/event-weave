@@ -84,7 +84,10 @@ describe('run page', () => {
 
   it('links to clusters, spot check and scores', async () => {
     const w = await mountRun(runPaper.id)
-    for (const p of ['clusters', 'spot-check', 'scores']) expect(w.find(`a[href="/runs/${runPaper.id}/${p}"]`).exists()).toBe(true)
+    for (const p of ['clusters', 'spot-check']) expect(w.find(`a[href="/runs/${runPaper.id}/${p}"]`).exists()).toBe(true)
+    const scores = w.find(`a[href="/compare?run_id=${runPaper.id}"]`)
+    expect(scores.exists()).toBe(true)
+    expect(scores.text()).toBe('Scores')
   })
 
   it('shows the detail of a 409 in a toast', async () => {
@@ -129,6 +132,29 @@ describe('run page', () => {
     expect(labels(w)).toEqual([])
     await vi.advanceTimersByTimeAsync(20000)
     expect(gets()).toBe(after)
+  })
+
+  it('refreshes the failures page on each poll', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    await mountRun(runLlm.id)
+    const fails = () => calls.filter(c => c.endsWith('/failures')).length
+    const before = fails()
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(fails()).toBe(before + 1)
+  })
+
+  it('shows an error, not "No failed jobs", when failures cannot load', async () => {
+    overrides.push(r => new URL(r.url).pathname.endsWith('/failures') ? json({ detail: 'database is down' }, 500) : undefined)
+    const w = await mountRun(runLlm.id)
+    await vi.waitFor(() => expect(w.text()).toContain('Could not load failures: database is down'))
+    expect(w.text()).not.toContain('No failed jobs')
+  })
+
+  it('shows an error when the failures request throws', async () => {
+    overrides.push((r) => { if (new URL(r.url).pathname.endsWith('/failures')) throw new Error('network down'); return undefined })
+    const w = await mountRun(runLlm.id)
+    await vi.waitFor(() => expect(w.text()).toContain('Could not load failures: network down'))
+    expect(w.text()).not.toContain('No failed jobs')
   })
 
   it('stops polling on unmount', async () => {
