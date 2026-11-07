@@ -31,7 +31,9 @@ class Track1Result:
 def track1(gold: Gold, system: list[SystemMention]) -> dict[str, Track1Result]:
     """A gold mention with no clustered system mention is absent from the response (a miss)."""
     skip = _cross_skipped()
-    by_key = {(s.document_id, s.start, s.end): s for s in system}
+    by_key: dict[MentionKey, SystemMention] = {}
+    for s in sorted(system, key=lambda s: (s.cluster_id is None, s.mention_id)):
+        by_key.setdefault((s.document_id, s.start, s.end), s)
     doc_keys: dict[str, list[MentionKey]] = defaultdict(list)
     for k in gold.mentions:
         doc_keys[k[0]].append(k)
@@ -57,8 +59,8 @@ def track1(gold: Gold, system: list[SystemMention]) -> dict[str, Track1Result]:
         if lang not in skip:
             res.cross[(lang, topic)] = score(topic_keys[(lang, topic)])
     for s in system:
-        if (s.document_id, s.start, s.end) not in gold.mentions and s.document_id in doc_topic:
-            out[doc_topic[s.document_id][0]].unmatched_system += 1
+        if (s.document_id, s.start, s.end) not in gold.mentions and s.document_id in gold.documents:
+            out.setdefault(gold.documents[s.document_id][0], Track1Result()).unmatched_system += 1
     return out
 
 
@@ -79,7 +81,7 @@ class Track2Result:
 
 def track2(gold: Gold, system: list[SystemMention]) -> Track2Result:
     skip = _cross_skipped()
-    doc_info = {k[0]: (m.language, m.topic) for k, m in gold.mentions.items()}
+    doc_info = gold.documents
     scored = {d for d, (lang, _) in doc_info.items() if lang not in skip}
 
     spans: dict[tuple, list[SystemMention]] = defaultdict(list)  # clustered system mentions by token span
@@ -123,7 +125,7 @@ def track2(gold: Gold, system: list[SystemMention]) -> Track2Result:
 
 def trigger_scores(gold: Gold, system: list[SystemMention]) -> dict[str, PRF]:
     """Exact token span, one-to-one: duplicates of a span beyond the first are false positives."""
-    doc_lang = {k[0]: m.language for k, m in gold.mentions.items()}
+    doc_lang = {d: lang for d, (lang, _) in gold.documents.items()}
     avail: dict[tuple, int] = defaultdict(int)
     n_sys: dict[str, int] = defaultdict(int)
     for s in system:
@@ -157,7 +159,7 @@ class Spread:
 
 def cluster_spread(system: list[SystemMention], gold: Gold) -> Spread:
     """Clusters with a member in a scored document; topic and language come from that document's gold row."""
-    doc_info = {k[0]: (m.language, m.topic) for k, m in gold.mentions.items()}
+    doc_info = gold.documents
     members: dict[str, set[Topic]] = defaultdict(set)
     for s in system:
         if s.cluster_id is not None and s.document_id in doc_info:

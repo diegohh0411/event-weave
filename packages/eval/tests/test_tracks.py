@@ -115,3 +115,23 @@ def test_hindi_cross_not_scored(db):
 
 def test_policy_text():
     assert TRACK2_MENTION_POLICY.startswith("Mentions present on only one side are kept as the reference CoNLL")
+
+
+def test_gold_empty_document_is_scored(db):
+    spec = {"docs": [doc("a"), doc("e", topic="t2", gold={}, mentions=sysm("e"))],
+            "clusters": {"c1": ["a1", "a2", "a3"], "c2": ["e1", "e2", "e3"]}}
+    gold, system = run(db, spec)
+    assert gold.documents["e"] == ("en", "t2")
+    r = track2(gold, system)
+    assert r.pooled.b3_pd == 6 and r.pooled.b3_rd == 3 and r.pooled.b3_pn < r.pooled.b3_pd
+    assert round(trigger_scores(gold, system)["all"].precision, 3) == 50.0
+    assert cluster_spread(system, gold).multi_topic == 0 and cluster_spread(system, gold).clusters == 2
+    assert track1(gold, system)["en"].unmatched_system == 3
+
+
+def test_track1_prefers_clustered_duplicate(db):
+    spec = {"docs": [doc("a", mentions={**sysm("a"), "a0": [0, 3, 0, 1]})],
+            "clusters": {"c1": ["a1", "a2", "a3"]}}  # a0 (smallest id) is unclustered
+    gold, system = run(db, spec)
+    from weave_eval.metrics import scores
+    assert scores(track1(gold, system)["en"].within[("en", "t")]).b3.recall == 100

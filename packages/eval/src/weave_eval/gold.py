@@ -46,6 +46,7 @@ class Gold:
     cluster: dict[MentionKey, str] = field(default_factory=dict)
     skipped_pairs: int = 0
     skipped_by_language: dict[str, int] = field(default_factory=dict)  # by the pair's own language
+    documents: dict[str, tuple[str, str]] = field(default_factory=dict)  # doc id -> (ISO language, topic)
 
 
 @dataclass(frozen=True)
@@ -82,7 +83,7 @@ def load_gold(conn, *, languages: set[str] | None = None, split: str | None = No
         q = q.where(gold_documents.c.document_id.in_(document_ids))
     docs = {r.document_id: r for r in conn.execute(q)
             if languages is None or iso(r.language) in languages}
-    gold = Gold()
+    gold = Gold(documents={i: (iso(d.language), d.topic) for i, d in docs.items()})
     if not docs:
         return gold
 
