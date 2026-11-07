@@ -43,13 +43,17 @@ def interval_additive(rows: dict[Hashable, Counts], resamples: int, seed: int) -
 def _score_chunk(unit_data: list, idx: np.ndarray) -> np.ndarray:
     """Summed-count matrix for each resample in idx. unit_data[u] = [(mention id, key label, response label|None)].
 
-    Occurrence j of a unit gets labels tagged with j, so repeated draws of one topic never merge with each other.
+    Occurrence j of a unit is its j-th repeat in the resample: copies with the same j stay together across topics,
+    and repeats of one topic never merge with each other.
     """
     out = []
     for row in idx:
         key: dict = {}
         resp: dict = {}
-        for j, u in enumerate(row):
+        seen: dict = {}
+        for u in row:
+            j = seen.get(u, 0)  # j-th repeat of this topic in the resample
+            seen[u] = j + 1
             for mid, k, r in unit_data[u]:
                 key_id = (mid, j)
                 if k is not None:

@@ -105,3 +105,26 @@ def test_pooled_duplicate_topic_does_not_self_merge():
                        group={m: ("en", "1") for m in "abcd"})
     for iv in interval_pooled(one, "en", 20, 0, workers=1).values():
         assert iv == (100.0, 100.0)
+
+
+def cross_topic_inputs():
+    # two topics, one system cluster S spanning all four mentions
+    key = {"a": "g1", "b": "g1", "c": "g2", "d": "g2"}
+    return Track2Inputs(key=key, response={m: "S" for m in key},
+                        group={"a": ("en", "1"), "b": ("en", "1"), "c": ("en", "2"), "d": ("en", "2")})
+
+
+def test_cross_topic_cluster_stays_together_in_all_topics_once_resample():
+    from weave_eval.bootstrap import _score_chunk
+    inp = cross_topic_inputs()
+    unit_data = [[(m, inp.key[m], inp.response[m]) for m in "ab"], [(m, inp.key[m], inp.response[m]) for m in "cd"]]
+    got = _score_chunk(unit_data, np.array([[0, 1]]))
+    assert (got == to_matrix([counts(inp.key, inp.response)])).all()
+
+
+def test_pooled_interval_contains_point_estimate_with_cross_topic_clusters():
+    inp = cross_topic_inputs()
+    point = scores(counts(inp.key, inp.response))
+    assert point.b3.precision == 50
+    iv = interval_pooled(inp, "en", 200, 0, workers=1)
+    assert iv["b3"][0] <= point.b3.f1 <= iv["b3"][1]
