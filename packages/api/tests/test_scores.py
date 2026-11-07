@@ -37,7 +37,7 @@ def evaluate(engine, run_id, track, rows, report=None, split="test"):
     save(engine, Evaluation(uuid4(), run_id, track, split, rows, {**base, **(report or {})}))
 
 
-EN_WITHIN = ScoreRow("paper", "within", "en", "conll", 80.0, 70.0, 74.5, 70.0, 79.0)
+EN_WITHIN = ScoreRow("paper", "within", "en", "conll", None, None, 74.5, 70.0, 79.0)
 POOLED = ScoreRow("realistic", "pooled", "all", "conll", 60.0, 50.0, 54.5, 50.0, 58.0)
 
 

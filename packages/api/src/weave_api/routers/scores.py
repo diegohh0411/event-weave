@@ -44,8 +44,8 @@ class ScoresOut(BaseModel):
 
 
 class PRFOut(BaseModel):
-    precision: float
-    recall: float
+    precision: float | None
+    recall: float | None
     f1: float
 
 
