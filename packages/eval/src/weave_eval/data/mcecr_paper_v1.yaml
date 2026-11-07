@@ -342,6 +342,8 @@ tables:
         ceafe: {p: null, r: null, f1: 79.2}
         blanc: {p: null, r: null, f1: 54.0}
         conll: null
+  # Table 6 printed caption repeats "trained on the training set of the corresponding language" (copied from
+  # Table 4); the body text and Table 7 say Tables 6-7 are trained on English, so this is the transfer regime.
   - table: 6
     page: 7
     setting: within
