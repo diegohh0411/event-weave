@@ -90,7 +90,8 @@ def evaluate(engine, run_id, *, split: str = "test", resamples: int = 10_000,
         if not gold.documents:
             raise NoGold(f"run {run_id} has no gold documents in split {split}")
         # the paper's annotation statistics cover the whole dataset, so chain stats do too
-        whole = load_gold(c, languages={lang for lang, _ in gold.documents.values()})
+        run_langs = {lang for lang, _ in load_gold(c, document_ids=doc_ids).documents.values()}  # every split
+        whole = load_gold(c, languages=run_langs)
         system = load_system(c, run_id, gold.documents)
 
     seed = cfg.seed

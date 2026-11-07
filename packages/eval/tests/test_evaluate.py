@@ -153,8 +153,9 @@ def test_chain_stats_cover_whole_dataset_not_split(db):
     ev = evaluate(db, run_id, resamples=5, workers=1)
     stats = ev.report["chain_stats"]
     assert stats["en"]["mentions"] == 4 and stats["en"]["chains"] == 2 and stats["en"]["non_singleton"] == 2
-    assert "es" not in stats  # only languages present in the scored scope
-    assert {s.language for s in ev.scores} == {"en"}
+    assert stats["es"]["mentions"] == 1  # d3 is a dev-only Spanish document of the run: language still reported
+    assert {s.language for s in ev.scores} == {"en"}  # but scores use test gold only
+    assert all(s.f1 == pytest.approx(100) for s in ev.scores)  # the dev docs have no system mentions; not counted
     assert "whole dataset" in render(ev, load_paper())
 
 
