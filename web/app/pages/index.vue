@@ -84,6 +84,8 @@ const config = computed(() => buildRunConfig(state.value))
 const problems = ref<string[]>([])
 const estimate = ref<EstimateOut | null>(null)
 const busy = ref(false)
+// Set only by launch() itself, so a config change cannot re-enable a second Launch.
+const launching = ref(false)
 const validated = ref(false)
 
 // Bumped on every config change; a response for an older config is dropped.
@@ -128,6 +130,8 @@ async function validate() {
 }
 
 async function launch() {
+  if (launching.value) return
+  launching.value = true
   busy.value = true
   problems.value = []
   try {
@@ -139,11 +143,12 @@ async function launch() {
   } catch (e) {
     problems.value = [e instanceof Error ? e.message : String(e)]
   } finally {
+    launching.value = false
     busy.value = false
   }
 }
 
-const blocked = computed(() => busy.value || problems.value.length > 0 || missing.value.length > 0
+const blocked = computed(() => launching.value || busy.value || problems.value.length > 0 || missing.value.length > 0
   || Object.values(jsonInvalid).some(Boolean) || !name.value.trim())
 </script>
 
@@ -159,6 +164,7 @@ const blocked = computed(() => busy.value || problems.value.length > 0 || missin
     <UAlert v-else-if="loadError" color="error" variant="subtle" title="Could not reach the API" :description="loadError" />
 
     <form v-else class="space-y-6" @submit.prevent="validate">
+      <fieldset :disabled="launching" class="min-w-0 space-y-6 border-0 p-0">
       <UCard>
         <template #header>
           <h2 class="font-semibold">
@@ -251,13 +257,14 @@ const blocked = computed(() => busy.value || problems.value.length > 0 || missin
       </UAlert>
 
       <div class="flex flex-wrap gap-3">
-        <UButton type="button" variant="outline" :loading="busy" :disabled="busy || Object.values(jsonInvalid).some(Boolean)" @click="validate">
+        <UButton type="button" variant="outline" :loading="busy" :disabled="launching || busy || Object.values(jsonInvalid).some(Boolean)" @click="validate">
           Validate
         </UButton>
         <UButton type="button" :disabled="blocked" @click="launch">
           Launch
         </UButton>
       </div>
+    </fieldset>
     </form>
   </div>
 </template>

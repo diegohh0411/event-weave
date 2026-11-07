@@ -143,4 +143,23 @@ describe('builder page', () => {
     expect(w.text()).not.toContain('Must be valid JSON')
     expect(button(w, 'Launch').attributes('disabled')).toBeUndefined()
   })
+
+  it('keeps Launch disabled while a launch is in flight, even after a setting changes', async () => {
+    let release!: () => void
+    const gate = new Promise<void>(r => (release = r))
+    const handler = createMockHandler()
+    overrides.push((r) => {
+      if (r.method !== 'POST' || new URL(r.url).pathname !== '/runs') return undefined
+      return gate.then(() => handler(r)) as unknown as Response
+    })
+    const w = await mountBuilder()
+    await button(w, 'Launch').trigger('click')
+    await w.find('input[type=number]').setValue('9')
+    await flushPromises()
+    expect(button(w, 'Launch').attributes('disabled')).toBeDefined()
+    expect(w.find('fieldset').attributes('disabled')).toBeDefined()
+    release()
+    await vi.waitFor(() => expect(navigateTo).toHaveBeenCalled())
+    expect(calls.filter(c => c === 'POST /runs')).toHaveLength(1)
+  })
 })
