@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useApi } from '../../../../api/client'
 import type { components } from '../../../../api/schema'
+import { LANGUAGES } from '../../../../utils/languages'
 
 type Summary = components['schemas']['ClusterSummary']
 
@@ -31,7 +32,9 @@ function setQuery(patch: Record<string, string | number | undefined>, resetPage 
 
 const search = ref(q('q'))
 let debounce: ReturnType<typeof setTimeout> | undefined
+watch(() => q('q'), (v) => { if (v !== search.value.trim()) search.value = v })
 watch(search, (v) => {
+  if (v.trim() === q('q')) return
   clearTimeout(debounce)
   debounce = setTimeout(() => setQuery({ q: v.trim() }), 300)
 })
@@ -81,7 +84,6 @@ async function load() {
 }
 watch(() => route.fullPath, load, { immediate: true })
 
-const LANGUAGES = ['en', 'es', 'hi', 'de', 'fr', 'ru', 'zh']
 const field = 'w-full rounded-md border border-default bg-default px-2 py-1.5 text-sm'
 const cardLine = (c: Summary['card']) => (c ? [c.action, (c.participants as string[] | undefined)?.join(', '), c.location, c.time].filter(Boolean).join(' · ') : 'No card')
 </script>

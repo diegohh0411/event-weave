@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { highlightSegments } from '../../app/utils/highlight'
+import { highlightSegments, sliceCodePoints } from '../../app/utils/highlight'
 import { membersByCluster } from '../../mock/fixtures/clusters'
 
 const join = (s: { text: string, mark: boolean }[]) => s.map(x => x.text).join('')
@@ -31,8 +31,21 @@ describe('highlightSegments', () => {
   })
 })
 
+describe('code-point offsets', () => {
+  it('counts an emoji before the trigger as one position', () => {
+    const s = highlightSegments('😀 flooded now', [[2, 9]])
+    expect(s.filter(x => x.mark).map(x => x.text)).toEqual(['flooded'])
+    expect(join(s)).toBe('😀 flooded now')
+  })
+  it('keeps an emoji inside the trigger whole', () => {
+    const s = highlightSegments('a 🔥fire🔥 b', [[2, 8]])
+    expect(s.filter(x => x.mark).map(x => x.text)).toEqual(['🔥fire🔥'])
+    expect(sliceCodePoints('😀 flooded', 2, 9)).toBe('flooded')
+  })
+})
+
 describe('member fixtures', () => {
   it('have trigger offsets that slice the sentence to the mention text', () => {
-    for (const m of Object.values(membersByCluster).flat()) expect(m.sentence.slice(m.trigger[0], m.trigger[1])).toBe(m.text)
+    for (const m of Object.values(membersByCluster).flat()) expect(sliceCodePoints(m.sentence, m.trigger[0], m.trigger[1])).toBe(m.text)
   })
 })
