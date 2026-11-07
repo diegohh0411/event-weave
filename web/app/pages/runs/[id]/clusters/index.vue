@@ -32,10 +32,13 @@ function setQuery(patch: Record<string, string | number | undefined>, resetPage 
 
 const search = ref(q('q'))
 let debounce: ReturnType<typeof setTimeout> | undefined
-watch(() => q('q'), (v) => { if (v !== search.value.trim()) search.value = v })
+watch(() => q('q'), (v) => {
+  clearTimeout(debounce) // a pending search is stale once the route's q changed
+  if (v !== search.value.trim()) search.value = v
+})
 watch(search, (v) => {
-  if (v.trim() === q('q')) return
   clearTimeout(debounce)
+  if (v.trim() === q('q')) return
   debounce = setTimeout(() => setQuery({ q: v.trim() }), 300)
 })
 onBeforeUnmount(() => clearTimeout(debounce))

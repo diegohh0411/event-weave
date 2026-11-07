@@ -82,6 +82,18 @@ describe('clusters browser', () => {
     expect(useRoute().query.q).toBe('flood')
   })
 
+  it('drops a pending search when the route q changes', async () => {
+    const w = await mountList()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    await w.find('input[data-test=search]').setValue('old')
+    const nav = useRouter().replace({ query: { q: 'new' } })
+    await vi.advanceTimersByTimeAsync(100)
+    await nav
+    await vi.advanceTimersByTimeAsync(400)
+    expect(useRoute().query.q).toBe('new')
+    expect((w.find('input[data-test=search]').element as HTMLInputElement).value).toBe('new')
+  })
+
   it('lists clusters with links and card fields', async () => {
     const w = await mountList()
     expect(w.find(`a[href="/runs/${RUN_LLM}/clusters/${CLUSTER_FLOOD}"]`).exists()).toBe(true)
