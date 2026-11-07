@@ -32,7 +32,6 @@ def test_gold_against_itself_is_100():
     docs = load("identical") + load("pradhan2014")
     s = corpus(docs, side="key")
     for m in METRICS:
-        # MUC has no links to find in singleton-only data, but this corpus has multi-member chains
         assert ours(s, m) == pytest.approx({"precision": 100, "recall": 100, "f1": 100}), m
     assert s.conll == pytest.approx(100)
 

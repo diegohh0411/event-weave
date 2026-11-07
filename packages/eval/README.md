@@ -5,7 +5,7 @@
 `tests/fixtures/reference/*.json` are small key/response clusterings (`{"documents": [{"id", "key", "response"}]}`,
 mention -> cluster label). `expected.json` holds what the reference CoNLL scorer prints for each of them
 (MUC, B-cubed, CEAF-e, BLANC, plus BLANC link counts). The scorer is not vendored; the file was produced with
-`conll/reference-coreference-scorers` at tag **v8.01** (perl 5):
+`conll/reference-coreference-scorers` at tag **v8.01** (commit `61e8e660e2c5154a56ac830ba2f33a99a76edf53`, perl 5):
 
     git clone --branch v8.01 https://github.com/conll/reference-coreference-scorers /path/to/refscorer
     python packages/eval/tools/reference_scores.py /path/to/refscorer
