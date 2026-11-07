@@ -81,6 +81,7 @@ def test_no_gold_outside_scores(service, seeded):
     fill = {"run_id": str(seeded), "cluster_id": "c1", "document_id": "d1"}
     called = []
     with TestClient(app) as client:
+        framework_paths = {app.openapi_url, app.docs_url, app.redoc_url, "/docs/oauth2-redirect"}
         registered = set(_get_paths(app.routes))
         documented = {path for path, item in app.openapi()["paths"].items() if "get" in item}
         assert registered >= documented  # hidden (include_in_schema=False) routes are swept too
@@ -89,8 +90,9 @@ def test_no_gold_outside_scores(service, seeded):
             response = client.get(url)
             assert response.status_code == 200, (url, response.text)
             assert MARKER not in response.text, f"gold marker leaked from {url}"
-            # The schema document names ScoresOut.split as a field; it carries no data, so only the marker check applies to it.
-            if "json" in response.headers["content-type"] and path != app.openapi_url:
+            # Framework doc routes carry no data (the schema names ScoresOut.split as a field); only the marker check applies.
+            if path not in framework_paths:
+                assert response.headers["content-type"].startswith("application/json"), (url, response.headers["content-type"])
                 for where, key in _walk_keys(response.json()):
                     assert key not in FORBIDDEN_KEYS, f"forbidden key {key!r} at {url} {where}"
             called.append(path)
