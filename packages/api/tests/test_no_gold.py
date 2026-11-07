@@ -17,7 +17,16 @@ MARKER = "GOLD_MARKER_7f3a"
 FORBIDDEN_KEYS = {"gold", "topic", "split"}
 NOW = datetime.now(timezone.utc)
 TEXT = "Rebels seized the town. Troops retook it."
-EXEMPT = ("/runs/{run_id}/scores", "/compare")  # score reports are the one place gold may appear
+EXEMPT = {"/runs/{run_id}/scores", "/compare"}  # score reports are the one place gold may appear
+
+
+def _get_paths(routes, prefix=""):
+    """GET paths of every registered route, recursing into FastAPI's _IncludedRouter wrappers."""
+    for route in routes:
+        if hasattr(route, "original_router"):
+            yield from _get_paths(route.original_router.routes, prefix + route.include_context.prefix)
+        elif "GET" in (getattr(route, "methods", None) or ()):
+            yield prefix + route.path
 
 
 def _walk_keys(node, path=""):
@@ -59,10 +68,11 @@ def seeded(engine):
             run_id=run, mention_id="m1", adapter="a", adapter_version="1", deployment="dep",
             candidates=[], noul=0.1, probabilities={"A": 0.9}, outcome="new", reason="r", cluster_id="c1"))
         conn.execute(gold_documents.insert().values(document_id="d1", language="en", topic=MARKER, split=MARKER, doc_index=0))
-        conn.execute(gold_mentions.insert().values(document_id="d1", mention_id=f"{MARKER}-m", start=0, end=6, text=f"{MARKER} text"))
+        # Gold rows share document_id and mention_id with the displayed mentions; only the gold-only columns carry the marker.
+        conn.execute(gold_mentions.insert(), [dict(document_id="d1", mention_id=mid, start=0, end=6, text=f"{MARKER} {mid}")
+                                              for mid in ("m1", "m2")])
         conn.execute(gold_pairs.insert().values(language="en", kind="within", split=MARKER, topic=MARKER, source_document_id="d1",
-                                                source_mention_id=f"{MARKER}-a", target_document_id="d1",
-                                                target_mention_id=f"{MARKER}-b", label=1))
+                                                source_mention_id="m1", target_document_id="d1", target_mention_id="m2", label=1))
     return run
 
 
@@ -71,15 +81,18 @@ def test_no_gold_outside_scores(service, seeded):
     fill = {"run_id": str(seeded), "cluster_id": "c1", "document_id": "d1"}
     called = []
     with TestClient(app) as client:
-        for path, item in app.openapi()["paths"].items():
-            if "get" not in item or path.startswith(EXEMPT):
-                continue
+        registered = set(_get_paths(app.routes))
+        documented = {path for path, item in app.openapi()["paths"].items() if "get" in item}
+        assert registered >= documented  # hidden (include_in_schema=False) routes are swept too
+        for path in sorted(registered - EXEMPT):
             url = path.format(**fill)
             response = client.get(url)
             assert response.status_code == 200, (url, response.text)
             assert MARKER not in response.text, f"gold marker leaked from {url}"
-            for where, key in _walk_keys(response.json()):
-                assert key not in FORBIDDEN_KEYS, f"forbidden key {key!r} at {url} {where}"
+            # The schema document names ScoresOut.split as a field; it carries no data, so only the marker check applies to it.
+            if "json" in response.headers["content-type"] and path != app.openapi_url:
+                for where, key in _walk_keys(response.json()):
+                    assert key not in FORBIDDEN_KEYS, f"forbidden key {key!r} at {url} {where}"
             called.append(path)
     for expected in ("/runs", "/runs/{run_id}/clusters", "/runs/{run_id}/documents/{document_id}", "/runs/{run_id}/enrichments/sample",
                      "/adapters", "/deployments", "/runs/{run_id}/clusters/{cluster_id}/members"):
