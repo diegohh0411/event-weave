@@ -7,3 +7,4 @@ node_modules/
 .output/
 .DS_Store
 data/
+!packages/eval/src/weave_eval/data/
