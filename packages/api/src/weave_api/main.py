@@ -9,6 +9,8 @@ from weave_core.db import migrate
 from weave_core.runs import RunService, RunStateError
 from weave_core.service import build_service
 
+from .routers import adapters, deployments
+
 
 def create_app(service: RunService | None = None) -> FastAPI:
     @asynccontextmanager
@@ -35,6 +37,9 @@ def create_app(service: RunService | None = None) -> FastAPI:
     @app.exception_handler(NoResultFound)
     async def not_found(request: Request, exc: NoResultFound):
         return JSONResponse({"detail": "not found"}, status_code=404)
+
+    app.include_router(adapters.router)
+    app.include_router(deployments.router)
 
     @app.get("/health")
     def health() -> dict[str, str]:

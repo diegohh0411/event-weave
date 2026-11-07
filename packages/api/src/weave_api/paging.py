@@ -25,3 +25,8 @@ def paginate(conn, query: Select, paging: Paging, row: Callable[[Row], T]) -> Pa
     total = conn.execute(sa.select(sa.func.count()).select_from(query.order_by(None).subquery())).scalar_one()
     rows = conn.execute(query.offset(paging.offset).limit(paging.limit)).all()
     return Page(items=[row(r) for r in rows], total=total, offset=paging.offset, limit=paging.limit)
+
+
+def paginate_list(items: list[T], paging: Paging) -> Page[T]:
+    return Page(items=items[paging.offset:paging.offset + paging.limit], total=len(items),
+                offset=paging.offset, limit=paging.limit)
