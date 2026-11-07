@@ -1,0 +1,151 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises } from '@vue/test-utils'
+import { mountSuspended } from '@nuxt/test-utils/runtime'
+import ComparePage from '../../app/pages/compare.vue'
+import { createMockHandler } from '../../mock/server'
+import { RUN_LLM, RUN_NEW, RUN_PAPER } from '../../mock/fixtures/ids'
+import { HINDI_CROSS_SKIPPED } from '../../mock/fixtures/scores'
+
+type Override = (req: Request) => Response | Promise<Response> | undefined
+let overrides: Override[] = []
+let calls: URL[] = []
+const mounted: { unmount: () => void }[] = []
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+
+beforeEach(() => {
+  overrides = []
+  calls = []
+  const handler = createMockHandler()
+  vi.stubGlobal('fetch', async (input: Request | string, init?: RequestInit) => {
+    const req = input instanceof Request ? input : new Request(input, init)
+    calls.push(new URL(req.url))
+    for (const o of overrides) {
+      const r = o(req.clone())
+      if (r) return r
+    }
+    return handler(req)
+  })
+})
+afterEach(() => {
+  mounted.splice(0).forEach(w => w.unmount())
+  vi.unstubAllGlobals()
+})
+
+const compareCalls = () => calls.filter(u => u.pathname === '/compare')
+const mountCompare = async (ids: string[]) => {
+  const qs = ids.map(i => `run_id=${i}`).join('&')
+  const w = await mountSuspended(ComparePage, { route: `/compare${qs ? `?${qs}` : ''}` })
+  mounted.push(w)
+  await vi.waitFor(() => expect(w.text()).not.toContain('Loading'))
+  await flushPromises()
+  return w
+}
+const tables = (w: Awaited<ReturnType<typeof mountCompare>>, track?: string) =>
+  w.findAll(`[data-test=score-table]${track ? `[data-track="${track}"]` : ''}`)
+
+describe('compare page', () => {
+  it('paper_rows_only_in_track1_tables', async () => {
+    const w = await mountCompare([RUN_PAPER, RUN_LLM])
+    expect(tables(w, '1').length).toBeGreaterThan(0)
+    expect(tables(w, '2').length).toBeGreaterThan(0)
+    for (const t of tables(w, '2')) expect(t.text()).not.toContain('MCECR paper')
+    // Paper rows appear once per (language, setting, model) and never twice for the same table.
+    const en = tables(w, '1').find(t => t.attributes('data-language') === 'en')!
+    expect(en.findAll('[data-test=paper-row]').filter(r => r.text().includes('MCECR paper (hierarchical)'))).toHaveLength(2) // within + cross
+    // No paper numbers at all when only a Track 2 run is compared.
+    const w2 = await mountCompare([RUN_LLM])
+    expect(w2.text()).not.toContain('MCECR paper')
+  })
+
+  it('paper_rows_labelled', async () => {
+    const w = await mountCompare([RUN_PAPER])
+    const en = tables(w, '1').find(t => t.attributes('data-language') === 'en')!
+    const row = en.findAll('[data-test=paper-row]').find(r => r.text().includes('MCECR paper (hierarchical)'))!
+    expect(row.classes()).toContain('text-muted')
+    expect(row.text()).toContain('monolingual')
+    expect(row.text()).toContain('our setting is harder')
+    expect(row.text()).toContain('74.0') // paper MUC F1, one decimal
+    expect(en.text()).toContain('MCECR paper (joint)')
+  })
+
+  it('unchecked_banner', async () => {
+    const w = await mountCompare([RUN_PAPER])
+    expect(w.text()).toContain('Paper numbers UNCHECKED')
+    const checked = await mountCompare([RUN_LLM])
+    expect(checked.text()).not.toContain('Paper numbers UNCHECKED')
+  })
+
+  it('hindi_cross_shows_reason', async () => {
+    const w = await mountCompare([RUN_PAPER])
+    const hi = tables(w, '1').find(t => t.attributes('data-language') === 'hi')!
+    expect(hi.text()).toContain(HINDI_CROSS_SKIPPED)
+  })
+
+  it('unevaluated_run_message', async () => {
+    const w = await mountCompare([RUN_NEW])
+    expect(w.text()).toContain(`Not evaluated (run weave eval ${RUN_NEW})`)
+    expect(w.text()).not.toContain('MCECR paper')
+    expect(w.text()).not.toMatch(/\b0\.0\b/)
+  })
+
+  it('formats scores, intervals, trigger and cost columns', async () => {
+    const w = await mountCompare([RUN_PAPER, RUN_LLM])
+    const en1 = tables(w, '1').find(t => t.attributes('data-language') === 'en')!
+    const ours = en1.find('[data-test=run-row]')
+    expect(ours.text()).toContain('71.0 [68.0–74.0]')
+    expect(ours.text()).toContain('4210.5')
+    const t2 = tables(w, '2')[0]!
+    expect(t2.text()).toContain('Trigger P')
+    expect(t2.text()).toContain('84.0')
+    expect(t2.text()).toContain('0.55')
+    expect(t2.text()).toContain('912.3')
+    expect(t2.find('[data-test=run-row]').text()).toContain('6') // failures
+    expect(en1.text()).not.toContain('Trigger P')
+  })
+
+  it('wraps tables in their own scroll container', async () => {
+    const w = await mountCompare([RUN_PAPER])
+    expect(w.find('[data-test=score-table]').element.closest('.overflow-x-auto')).not.toBeNull()
+  })
+
+  it('keeps the selected runs in the URL and refetches', async () => {
+    const w = await mountCompare([RUN_PAPER])
+    expect(compareCalls().at(-1)!.searchParams.getAll('run_id')).toEqual([RUN_PAPER])
+    const box = w.find(`input[type=checkbox][value="${RUN_LLM}"]`)
+    await vi.waitFor(() => expect(box.exists()).toBe(true))
+    await box.setValue(true)
+    await vi.waitFor(() => expect(compareCalls().at(-1)!.searchParams.getAll('run_id')).toEqual([RUN_PAPER, RUN_LLM]))
+    expect([].concat(useRoute().query.run_id as never)).toEqual([RUN_PAPER, RUN_LLM])
+  })
+
+  it('asks for a run when none is selected and does not fetch', async () => {
+    const w = await mountCompare([])
+    expect(w.text()).toContain('Select at least one run')
+    expect(compareCalls()).toHaveLength(0)
+  })
+
+  it('shows an error alert when the API rejects', async () => {
+    overrides.push(req => (new URL(req.url).pathname === '/compare' ? json({ detail: 'boom' }, 500) : undefined))
+    const w = await mountCompare([RUN_PAPER])
+    expect(w.text()).toContain('Could not load the comparison')
+  })
+
+  it('ignores a stale response', async () => {
+    let release!: () => void
+    const gate = new Promise<void>(r => (release = r))
+    const handler = createMockHandler()
+    let n = 0
+    overrides.push((req) => {
+      if (new URL(req.url).pathname !== '/compare') return undefined
+      if (n++ === 0) return gate.then(() => handler(req)) as unknown as Response
+      return undefined
+    })
+    const w = await mountSuspended(ComparePage, { route: `/compare?run_id=${RUN_PAPER}` })
+    mounted.push(w)
+    await navigateTo(`/compare?run_id=${RUN_LLM}`)
+    await vi.waitFor(() => expect(tables(w, '2').length).toBeGreaterThan(0))
+    release()
+    await flushPromises()
+    expect(tables(w, '1')).toHaveLength(0)
+  })
+})
