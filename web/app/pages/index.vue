@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useApi } from '../api/client'
+import { fetchAll } from '../api/fetchAll'
 import type { components } from '../api/schema'
 import { buildRunConfig, STAGES, type BuilderState, type Capability, type DeploymentOut, type Stage } from '../utils/runConfig'
 import { changedSettings, fieldsFromSchema } from '../utils/schemaForm'
@@ -43,12 +44,11 @@ function setAdapter(stage: Stage, value: string | undefined) {
 async function load() {
   try {
     const [a, d] = await Promise.all([
-      api.GET('/adapters', { params: { query: { limit: 200 } } }),
-      api.GET('/deployments', { params: { query: { limit: 200 } } })
+      fetchAll((offset, limit) => api.GET('/adapters', { params: { query: { offset, limit } } }).then(r => r.data)),
+      fetchAll((offset, limit) => api.GET('/deployments', { params: { query: { offset, limit } } }).then(r => r.data))
     ])
-    if (!a.data || !d.data) throw new Error('could not load adapters and deployments')
-    adapters.value = a.data.items
-    deployments.value = d.data.items
+    adapters.value = a
+    deployments.value = d
     for (const stage of STAGES) {
       if (stage !== 'tag' && !chosen[stage]) chosen[stage] = optionsFor(stage)[0]?.name
     }
@@ -86,9 +86,14 @@ const estimate = ref<EstimateOut | null>(null)
 const busy = ref(false)
 const validated = ref(false)
 
+// Bumped on every config change; a response for an older config is dropped.
+let generation = 0
 function reset() {
+  generation++
   problems.value = []
   validated.value = false
+  estimate.value = null
+  busy.value = false
 }
 watch(config, reset, { deep: true })
 
@@ -104,19 +109,21 @@ function problemsOf(error: unknown): string[] {
 async function validate() {
   busy.value = true
   problems.value = []
+  const mine = generation
   try {
     const [v, est] = await Promise.all([
       api.POST('/runs/validate', { body: config.value }),
       api.POST('/runs/estimate', { body: config.value })
     ])
+    if (mine !== generation) return
     estimate.value = est.data ?? null
     if (v.error) problems.value = problemsOf(v.error)
     else if (est.error) problems.value = problemsOf(est.error)
     validated.value = problems.value.length === 0
   } catch (e) {
-    problems.value = [e instanceof Error ? e.message : String(e)]
+    if (mine === generation) problems.value = [e instanceof Error ? e.message : String(e)]
   } finally {
-    busy.value = false
+    if (mine === generation) busy.value = false
   }
 }
 
@@ -188,6 +195,7 @@ const blocked = computed(() => busy.value || problems.value.length > 0 || missin
           </UFormField>
           <SchemaForm
             v-if="chosen[stage]"
+            :key="chosen[stage]"
             v-model="settings[stage]"
             :fields="fieldsFor(stage)"
             @update:invalid="(v: boolean) => (jsonInvalid[stage] = v)"

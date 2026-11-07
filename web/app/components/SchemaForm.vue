@@ -11,6 +11,9 @@ const emit = defineEmits<{
 const drafts = reactive<Record<string, string>>({})
 const bad = reactive<Record<string, boolean>>({})
 
+// A form going away takes its invalid drafts with it.
+onBeforeUnmount(() => emit('update:invalid', false))
+
 const shown = (f: FieldSpec) => (f.key in props.modelValue ? props.modelValue[f.key] : f.default)
 
 function set(f: FieldSpec, value: unknown) {

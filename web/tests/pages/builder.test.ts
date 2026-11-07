@@ -102,4 +102,45 @@ describe('builder page', () => {
     expect(calls.some(c => c.endsWith('/start'))).toBe(false)
     expect(navigateTo).not.toHaveBeenCalled()
   })
+
+  it('clears the estimate when a setting changes', async () => {
+    const w = await mountBuilder()
+    await button(w, 'Validate').trigger('click')
+    await vi.waitFor(() => expect(w.text()).toContain('1800 / 6230'))
+    await w.find('input[type=number]').setValue('9')
+    await vi.waitFor(() => expect(w.text()).not.toContain('1800 / 6230'))
+    expect(w.text()).toContain('Press Validate')
+  })
+
+  it('drops an estimate that arrives for an older config', async () => {
+    let release!: () => void
+    const gate = new Promise<void>(r => (release = r))
+    const handler = createMockHandler()
+    overrides.push((r) => {
+      if (new URL(r.url).pathname !== '/runs/estimate') return undefined
+      return gate.then(() => handler(r)) as unknown as Response
+    })
+    const w = await mountBuilder()
+    await button(w, 'Validate').trigger('click')
+    await w.find('input[type=number]').setValue('9')
+    release()
+    await flushPromises()
+    await new Promise(r => setTimeout(r, 20))
+    expect(w.text()).not.toContain('1800 / 6230')
+  })
+
+  it('forgets an invalid JSON draft when the adapter is switched away and back', async () => {
+    const w = await mountBuilder()
+    const textarea = () => w.find('textarea')
+    await textarea().setValue('{nope')
+    expect(w.text()).toContain('Must be valid JSON')
+    expect(button(w, 'Launch').attributes('disabled')).toBeDefined()
+    const sel = w.findAllComponents({ name: 'USelect' }).find(c => (c.props('items') as { value: string }[]).some(i => i.value === 'llm-judge'))!
+    sel.vm.$emit('update:modelValue', 'llm-judge')
+    await flushPromises()
+    sel.vm.$emit('update:modelValue', 'threshold')
+    await flushPromises()
+    expect(w.text()).not.toContain('Must be valid JSON')
+    expect(button(w, 'Launch').attributes('disabled')).toBeUndefined()
+  })
 })
