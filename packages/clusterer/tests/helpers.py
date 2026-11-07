@@ -52,7 +52,7 @@ def add_member(c, run_id, partition, cluster_id, mention_id, vectors, order=(1,)
     c.execute(sa.insert(jobs).values(run_id=run_id, stage="enrich", unit_kind="mention", unit_id=mention_id,
                                      unit_content_hash="h", partition=partition, order_key=list(order),
                                      input_hash="i", status="done", attempts=1,
-                                     available_at=datetime.now(timezone.utc), cache_key=key))
+                                     available_at=sa.func.now(), cache_key=key))
 
 
 def q(**fields):
@@ -118,7 +118,7 @@ def seed_unit(c, run_id, mention_id, order, vectors, *, doc_id=None, partition="
         ids[stage] = c.execute(sa.insert(jobs).values(
             run_id=run_id, stage=stage, unit_kind="mention", unit_id=mention_id, unit_content_hash="h",
             parent_job_id=ids.get(parent), partition=partition, order_key=list(order), input_hash="i", status=status,
-            attempts=0, available_at=datetime.now(timezone.utc), cache_key=key if stage == "enrich" else None,
+            attempts=0, available_at=sa.func.now(), cache_key=key if stage == "enrich" else None,
         ).returning(jobs.c.id)).scalar_one()
 
 
