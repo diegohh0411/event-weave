@@ -82,6 +82,19 @@ if _enrichers_app is not None:
     app.add_typer(_enrichers_app, name='enrichers')
 
 
+def _clusterer():
+    try:
+        from weave_clusterer.cli import app as clusterer_app
+    except ImportError:  # weave-clusterer is not installed
+        return None
+    return clusterer_app
+
+
+_clusterer_app = _clusterer()
+if _clusterer_app is not None:
+    app.add_typer(_clusterer_app, name='clusterer')
+
+
 def _service(probe: bool = True):
     settings = Settings.from_env()
     registry = Registry()

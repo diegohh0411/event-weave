@@ -365,3 +365,32 @@ def test_complete_writes_mention_rows_once(queue, started_run, count_rows):
     rows = {"mentions": [mention_row(), mention_row()]}
     assert finish(queue, job, StageResult({}, [doc_unit("d1", 0, "t1")], [record()], rows))
     assert count_rows("mentions") == 1
+
+
+def _cluster(run, card, cid="c1"):
+    return {"id": cid, "run_id": run, "partition": "p", "card": card, "card_hash": "h" + str(card),
+            "size": 1, "created_order": [0]}
+
+
+def test_complete_upserts_cluster_card(queue, started_run, count_rows, service):
+    from weave_core.schema import clusters
+    [job] = queue.claim(Stage.provide, 1, "w")
+    for card in ({"v": 1}, {"v": 2}):
+        assert finish(queue, job, StageResult({}, [doc_unit("d1", 0, "t1")], [record()], {"clusters": [_cluster(started_run, card)]}))
+        with service.engine.begin() as c:  # re-open the job so the same cluster id is completed twice
+            c.execute(jobs.update().where(jobs.c.id == job.id).values(status=JobStatus.claimed))
+    assert count_rows("clusters") == 1
+    with service.engine.connect() as c:
+        assert c.execute(sa.select(clusters.c.card)).scalar() == {"v": 2}
+
+
+def test_cluster_members_one_per_mention(queue, started_run, count_rows, service):
+    from weave_core.schema import cluster_members
+    member = lambda cid: {"run_id": started_run, "mention_id": "m1", "cluster_id": cid, "partition": "p", "order_key": [0]}
+    rows = {"clusters": [_cluster(started_run, {}, "c1"), _cluster(started_run, {}, "c2")],
+            "cluster_members": [member("c1"), member("c2")]}
+    [job] = queue.claim(Stage.provide, 1, "w")
+    assert finish(queue, job, StageResult({}, [doc_unit("d1", 0, "t1")], [record()], rows))
+    assert count_rows("cluster_members") == 1
+    with service.engine.connect() as c:
+        assert c.execute(sa.select(cluster_members.c.cluster_id)).scalar() == "c1"

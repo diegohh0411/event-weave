@@ -1,5 +1,6 @@
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from .vector import Vector
 
 metadata = sa.MetaData()
 T = sa.Text
@@ -86,3 +87,30 @@ mention_tags = sa.Table("mention_tags", metadata,
     sa.Column("tagger", T, primary_key=True), sa.Column("tagger_version", T, primary_key=True),
     sa.Column("deployment", T, primary_key=True), sa.Column("significance", sa.Float),
     sa.Column("event_type", T), sa.Column("event_type_probs", JSONB))
+member_vectors = sa.Table("member_vectors", metadata,
+    sa.Column("id", T, primary_key=True),
+    sa.Column("mention_id", T, sa.ForeignKey("mentions.id"), nullable=False),
+    sa.Column("enrichment_id", T, sa.ForeignKey("enrichments.id"), nullable=False),
+    sa.Column("field", T, nullable=False), sa.Column("kind", T, nullable=False),
+    sa.Column("deployment", T, nullable=False), sa.Column("dimension", sa.Integer, nullable=False),
+    sa.Column("vector", Vector(), nullable=False),
+    sa.CheckConstraint("kind in ('document', 'query')", name="ck_member_vectors_kind"))
+sa.Index("ix_member_vectors_mention_id_field_kind", member_vectors.c.mention_id, member_vectors.c.field, member_vectors.c.kind)
+clusters = sa.Table("clusters", metadata,
+    sa.Column("id", T, primary_key=True), sa.Column("run_id", UUID(as_uuid=True), sa.ForeignKey("runs.id")),
+    sa.Column("partition", T), sa.Column("card", JSONB), sa.Column("card_hash", T), sa.Column("size", sa.Integer),
+    sa.Column("created_order", ARRAY(sa.BigInteger)))
+sa.Index("ix_clusters_run_id_partition", clusters.c.run_id, clusters.c.partition)
+cluster_members = sa.Table("cluster_members", metadata,
+    sa.Column("run_id", UUID(as_uuid=True), primary_key=True), sa.Column("mention_id", T, primary_key=True),
+    sa.Column("cluster_id", T, sa.ForeignKey("clusters.id")), sa.Column("partition", T),
+    sa.Column("order_key", ARRAY(sa.BigInteger)))
+cluster_decisions = sa.Table("cluster_decisions", metadata,
+    sa.Column("run_id", UUID(as_uuid=True), primary_key=True), sa.Column("mention_id", T, primary_key=True),
+    sa.Column("adapter", T), sa.Column("adapter_version", T), sa.Column("deployment", T),
+    sa.Column("candidates", JSONB), sa.Column("noul", sa.Float), sa.Column("probabilities", JSONB),
+    sa.Column("outcome", T), sa.Column("reason", T), sa.Column("cluster_id", T),
+    sa.CheckConstraint("outcome in ('join', 'new')", name="ck_cluster_decisions_outcome"))
+decision_cache = sa.Table("decision_cache", metadata,
+    sa.Column("key", T, primary_key=True), sa.Column("deployment", T), sa.Column("response", JSONB),
+    sa.Column("created_at", TZ, server_default=sa.func.now()))

@@ -54,7 +54,7 @@ class EnricherBase:
                "mention_id": unit.id, "enricher": self.spec.name, "enricher_version": self.spec.version,
                "deployment": self.deployment(), "discarded": discarded,
                **{name: getattr(enrichment, name).model_dump() for name in FIELDS}}
-        return StageResult(output={"enrichment": enrichment.model_dump(), "discarded": discarded},
+        return StageResult(output={"enrichment": enrichment.model_dump(), "discarded": discarded, "enrichment_id": row["id"]},
                            emits=[unit], rows={"enrichments": [row]})
 
 

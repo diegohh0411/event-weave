@@ -65,6 +65,15 @@ class Inference:
     def extract(self, req: ExtractionRequest) -> Result[ExtractionResponse]:
         return self._call(Capability.extraction, req)
 
+    def deployment(self, capability: Capability) -> Deployment:
+        catalog = self._catalog
+        if catalog is None:
+            raise RuntimeError("Inference.configure() has not been called")
+        dep_id = self.ctx.deployments.get(capability)
+        if dep_id is None or dep_id not in catalog.deployments:
+            raise NotReady(f"no deployment for {capability.value}")
+        return catalog.deployments[dep_id]
+
     # -- internals ---------------------------------------------------------
     def _ledger(self, deployment: str, digest: str, *, status: str, usage: Usage | None = None, cost=0,
                 estimated: bool = False, latency_ms: int = 0, attempts: int = 0, error: str | None = None) -> None:

@@ -1,11 +1,12 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = "==3.12.*"
 
 [manifest]
 members = [
     "event-weave",
     "weave-api",
+    "weave-clusterer",
     "weave-core",
     "weave-enrichers",
     "weave-extractors",
@@ -530,6 +531,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-xdist" },
     { name = "weave-api" },
+    { name = "weave-clusterer" },
     { name = "weave-core" },
     { name = "weave-enrichers" },
     { name = "weave-extractors" },
@@ -548,6 +550,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-xdist" },
     { name = "weave-api", editable = "packages/api" },
+    { name = "weave-clusterer", editable = "packages/clusterer" },
     { name = "weave-core", editable = "packages/core" },
     { name = "weave-enrichers", editable = "packages/enrichers" },
     { name = "weave-extractors", editable = "packages/extractors" },
@@ -2139,6 +2142,23 @@ requires-dist = [
     { name = "fastapi" },
     { name = "uvicorn" },
     { name = "weave-core", editable = "packages/core" },
+]
+
+[[package]]
+name = "weave-clusterer"
+version = "0.1.0"
+source = { editable = "packages/clusterer" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "weave-core" },
+    { name = "weave-inference" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2" },
+    { name = "weave-core", editable = "packages/core" },
+    { name = "weave-inference", editable = "packages/inference" },
 ]
 
 [[package]]
