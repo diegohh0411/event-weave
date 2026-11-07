@@ -1,7 +1,5 @@
-import os
 import signal
 import threading
-from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID, uuid4
@@ -9,12 +7,12 @@ from uuid import UUID, uuid4
 import typer
 import yaml
 
-from .config import ConfigError, RunConfig, StaticCatalog
-from .db import make_engine, migrate
-from .registry import Registry
-from .runs import RunService, RunStateError
+from .config import ConfigError, RunConfig
+from .db import migrate
+from .runs import RunStateError
+from .service import build_service
 from .settings import Settings
-from .stages import Capability, JobStatus, ORDERED_STAGES, PIPELINE, Stage
+from .stages import JobStatus, ORDERED_STAGES, PIPELINE, Stage
 from .worker import run_worker
 from .writer import run_writer
 
@@ -109,28 +107,14 @@ if _clusterer_app is not None:
 
 
 def _service(probe: bool = True):
-    settings = Settings.from_env()
-    registry = Registry()
-    registry.load_entry_points()
-    inf = _inference()
-    inference_file = os.environ.get('WEAVE_INFERENCE_FILE')
-    if inf is not None and inference_file:
-        try:
-            catalog = inf.load_catalog(Path(inference_file))
-        except inf.CatalogError as exc:
+    try:
+        return build_service(probe)
+    except Exception as exc:
+        if _inf is not None and isinstance(exc, _inf.CatalogError):
             for problem in exc.problems:
                 typer.echo(problem, err=True)
             raise typer.Exit(2)
-        if probe:
-            inf.probe(catalog)
-        engine = make_engine(settings.database_url)
-        inf.Inference.configure(catalog, engine)
-        return RunService(engine, registry, catalog, inf.LedgerEstimator(engine, registry),
-                          on_start=partial(inf.store_readiness, catalog=catalog))
-    path = os.environ.get('WEAVE_DEPLOYMENTS_FILE')
-    data = yaml.safe_load(Path(path).read_text()) if path else {}
-    catalog = StaticCatalog({key: (Capability(value[0]), value[1]) for key, value in (data or {}).items()})
-    return RunService(make_engine(settings.database_url), registry, catalog)
+        raise
 
 
 @db_app.command('migrate')

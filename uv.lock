@@ -2138,6 +2138,9 @@ dependencies = [
     { name = "fastapi" },
     { name = "uvicorn" },
     { name = "weave-core" },
+    { name = "weave-enrichers" },
+    { name = "weave-eval" },
+    { name = "weave-inference" },
 ]
 
 [package.metadata]
@@ -2145,6 +2148,9 @@ requires-dist = [
     { name = "fastapi" },
     { name = "uvicorn" },
     { name = "weave-core", editable = "packages/core" },
+    { name = "weave-enrichers", editable = "packages/enrichers" },
+    { name = "weave-eval", editable = "packages/eval" },
+    { name = "weave-inference", editable = "packages/inference" },
 ]
 
 [[package]]

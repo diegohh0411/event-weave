@@ -58,7 +58,7 @@ def test_core_cli_still_works_without_inference_installed(monkeypatch, tmp_path)
     monkeypatch.setitem(sys.modules, "weave_inference.estimate", None)
     monkeypatch.setenv("WEAVE_INFERENCE_FILE", str(tmp_path / "x.yaml"))
     monkeypatch.setenv("WEAVE_DATABASE_URL", "postgresql+psycopg://u:p@127.0.0.1:5432/none")
-    service = core_cli._service()
+    service = __import__("weave_core.service", fromlist=["x"]).build_service()
     from weave_core.runs import NoEstimate
     from weave_core.config import StaticCatalog
     assert isinstance(service.estimator, NoEstimate) and isinstance(service.catalog, StaticCatalog)

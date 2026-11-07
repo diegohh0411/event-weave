@@ -19,3 +19,22 @@ def database_url():
         with admin.connect() as connection:
             connection.exec_driver_sql(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
         admin.dispose()
+
+
+@pytest.fixture
+def engine(database_url):
+    from weave_core.db import make_engine, migrate
+
+    migrate(database_url)
+    eng = make_engine(database_url)
+    yield eng
+    eng.dispose()
+
+
+@pytest.fixture
+def service(engine):
+    from weave_core.config import StaticCatalog
+    from weave_core.registry import Registry
+    from weave_core.runs import RunService
+
+    return RunService(engine, Registry(), StaticCatalog({}))
