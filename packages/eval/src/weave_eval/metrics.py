@@ -153,35 +153,47 @@ def counts(key: Clustering, response: Clustering) -> Counts:
     )
 
 
-def _div(n: float, d: float) -> float:
-    return n / d if d else 0.0
+COUNT_FIELDS = tuple(f.name for f in fields(Counts))
+METRICS = ("muc", "b3", "ceafe", "blanc", "conll")
 
 
-def _f1(p: float, r: float) -> float:
-    return 2 * p * r / (p + r) if p + r else 0.0
+def to_matrix(rows) -> np.ndarray:
+    """Counts objects -> float matrix (one row each, columns in `COUNT_FIELDS` order)."""
+    return np.array([[getattr(c, f) for f in COUNT_FIELDS] for c in rows], dtype=float).reshape(-1, len(COUNT_FIELDS))
 
 
-def _prf(rn: float, rd: float, pn: float, pd: float) -> PRF:
+def _div(n, d):
+    n, d = np.asarray(n, dtype=float), np.asarray(d, dtype=float)
+    return np.divide(n, d, out=np.zeros(np.broadcast(n, d).shape), where=d != 0)
+
+
+def _f1(p, r):
+    return _div(2 * p * r, p + r)
+
+
+def _prf(rn, rd, pn, pd) -> tuple:
     p, r = _div(pn, pd), _div(rn, rd)
-    return PRF(100 * p, 100 * r, 100 * _f1(p, r))
+    return 100 * p, 100 * r, 100 * _f1(p, r)
 
 
-def _blanc(c: Counts) -> PRF:
-    """Mean of the coreference and non-coreference scores; a side with no key links is left out (v8.01)."""
-    pa, ra = _div(c.blanc_cc, c.blanc_rc), _div(c.blanc_cc, c.blanc_kc)
-    pn, rn = _div(c.blanc_cn, c.blanc_rn), _div(c.blanc_cn, c.blanc_kn)
+def score_matrix(m: np.ndarray) -> dict[str, tuple]:
+    """Vectorised `scores`: m has one row of summed counts per scored corpus; returns (precision, recall, f1)
+    arrays (percentages) for each of muc, b3, ceafe, blanc, plus the conll mean as a bare array."""
+    c = {f: m[:, i] for i, f in enumerate(COUNT_FIELDS)}
+    muc = _prf(c["muc_rn"], c["muc_rd"], c["muc_pn"], c["muc_pd"])
+    b3 = _prf(c["b3_rn"], c["b3_rd"], c["b3_pn"], c["b3_pd"])
+    ceafe = _prf(c["ceaf_sim"], c["ceaf_k"], c["ceaf_sim"], c["ceaf_r"])
+    # BLANC: mean of coreference and non-coreference scores; a side with no key links is left out (v8.01).
+    pa, ra = _div(c["blanc_cc"], c["blanc_rc"]), _div(c["blanc_cc"], c["blanc_kc"])
+    pn, rn = _div(c["blanc_cn"], c["blanc_rn"]), _div(c["blanc_cn"], c["blanc_kn"])
     fa, fn = _f1(pa, ra), _f1(pn, rn)
-    if c.blanc_kc == 0 and c.blanc_kn == 0:
-        return PRF(0.0, 0.0, 0.0)
-    if c.blanc_kc == 0:
-        return PRF(100 * pn, 100 * rn, 100 * fn)
-    if c.blanc_kn == 0:
-        return PRF(100 * pa, 100 * ra, 100 * fa)
-    return PRF(100 * (pa + pn) / 2, 100 * (ra + rn) / 2, 100 * (fa + fn) / 2)
+    no_c, no_n = c["blanc_kc"] == 0, c["blanc_kn"] == 0
+    blanc = tuple(100 * np.where(no_c & no_n, 0.0, np.where(no_c, n, np.where(no_n, a, (a + n) / 2)))
+                  for a, n in ((pa, pn), (ra, rn), (fa, fn)))
+    return {"muc": muc, "b3": b3, "ceafe": ceafe, "blanc": blanc, "conll": (muc[2] + b3[2] + ceafe[2]) / 3}
 
 
 def scores(c: Counts) -> Scores:
-    muc = _prf(c.muc_rn, c.muc_rd, c.muc_pn, c.muc_pd)
-    b3 = _prf(c.b3_rn, c.b3_rd, c.b3_pn, c.b3_pd)
-    ceafe = _prf(c.ceaf_sim, c.ceaf_k, c.ceaf_sim, c.ceaf_r)
-    return Scores(muc=muc, b3=b3, ceafe=ceafe, blanc=_blanc(c), conll=(muc.f1 + b3.f1 + ceafe.f1) / 3)
+    r = score_matrix(to_matrix([c]))
+    prf = {k: PRF(*(float(x[0]) for x in r[k])) for k in ("muc", "b3", "ceafe", "blanc")}
+    return Scores(conll=float(r["conll"][0]), **prf)
