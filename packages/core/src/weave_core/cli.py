@@ -106,15 +106,17 @@ if _clusterer_app is not None:
     app.add_typer(_clusterer_app, name='clusterer')
 
 
-def _service(probe: bool = True):
+def _build(probe: bool = True):
+    try:
+        from weave_inference.catalog import CatalogError
+    except ImportError:  # weave-inference is not installed; build_service cannot raise it
+        return build_service(probe)
     try:
         return build_service(probe)
-    except Exception as exc:
-        if _inf is not None and isinstance(exc, _inf.CatalogError):
-            for problem in exc.problems:
-                typer.echo(problem, err=True)
-            raise typer.Exit(2)
-        raise
+    except CatalogError as exc:
+        for problem in exc.problems:
+            typer.echo(problem, err=True)
+        raise typer.Exit(2)
 
 
 @db_app.command('migrate')
@@ -124,7 +126,7 @@ def db_migrate():
 
 @run_app.command('create')
 def create(config: Path):
-    service = _service()
+    service = _build()
     try:
         created = service.create(RunConfig.model_validate(yaml.safe_load(config.read_text())))
     except ConfigError as exc:
@@ -140,7 +142,7 @@ def create(config: Path):
 
 
 def _transition(action: str, run_id: UUID):
-    service = _service(probe=action == "start")
+    service = _build(probe=action == "start")
     try:
         getattr(service, action)(run_id)
     except RunStateError as exc:
@@ -167,7 +169,7 @@ def resume(run_id: UUID):
 
 @run_app.command('status')
 def status(run_id: UUID):
-    service = _service(probe=False)
+    service = _build(probe=False)
     try:
         result = service.status(run_id)
     finally:
@@ -180,7 +182,7 @@ def status(run_id: UUID):
 
 @app.command('worker')
 def worker(stage: Stage = typer.Option(...), threads: int = typer.Option(8, min=1)):
-    service = _service()
+    service = _build()
     stop = threading.Event()
     previous = {}
     def shutdown(signum, frame):
