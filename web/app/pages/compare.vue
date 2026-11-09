@@ -10,10 +10,14 @@ const api = useApi()
 const route = useRoute()
 const router = useRouter()
 
-const selected = computed<string[]>(() => {
+// The API rejects comparisons of more than 8 runs.
+const MAX_RUNS = 8
+const requested = computed<string[]>(() => {
   const v = route.query.run_id
-  return (Array.isArray(v) ? v : v ? [v] : []).filter((s): s is string => !!s)
+  return [...new Set((Array.isArray(v) ? v : v ? [v] : []).filter((s): s is string => !!s))]
 })
+const selected = computed(() => requested.value.slice(0, MAX_RUNS))
+const atLimit = computed(() => selected.value.length >= MAX_RUNS)
 
 const runs = ref<RunSummary[]>([])
 const runsError = ref<string>()
@@ -26,7 +30,7 @@ onMounted(async () => {
 })
 
 function toggle(id: string, on: boolean) {
-  const next = on ? [...selected.value.filter(s => s !== id), id] : selected.value.filter(s => s !== id)
+  const next = on ? [...selected.value.filter(s => s !== id), id].slice(0, MAX_RUNS) : selected.value.filter(s => s !== id)
   return router.replace({ query: { ...route.query, run_id: next.length ? next : undefined } })
 }
 
@@ -101,10 +105,14 @@ const groups = computed(() => {
         Runs
       </legend>
       <UAlert v-if="runsError" color="error" variant="subtle" title="Could not load runs" :description="runsError" />
+      <p class="text-xs text-muted">
+        Compare at most {{ MAX_RUNS }} runs{{ atLimit ? '; deselect one to pick another' : '' }}.
+      </p>
+      <UAlert v-if="requested.length > MAX_RUNS" color="warning" variant="subtle" title="Too many runs" :description="`Only the first ${MAX_RUNS} of ${requested.length} runs are compared.`" />
       <ul class="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
         <li v-for="r in runs" :key="r.id">
           <label class="flex min-w-0 items-center gap-2 text-sm">
-            <input type="checkbox" :value="r.id" :checked="selected.includes(r.id)" @change="toggle(r.id, ($event.target as HTMLInputElement).checked)">
+            <input type="checkbox" :value="r.id" :checked="selected.includes(r.id)" :disabled="atLimit && !selected.includes(r.id)" @change="toggle(r.id, ($event.target as HTMLInputElement).checked)">
             <span class="min-w-0 break-words">{{ r.name }} <span class="text-muted">({{ r.track }}, {{ r.state }})</span></span>
           </label>
         </li>

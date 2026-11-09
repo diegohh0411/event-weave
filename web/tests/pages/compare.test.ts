@@ -186,4 +186,45 @@ describe('compare page', () => {
     await flushPromises()
     expect(tables(w, '1')).toHaveLength(0)
   })
+
+  describe('eight run limit', () => {
+    const ids = Array.from({ length: 10 }, (_, n) => `0b8f6c1e-5d1a-4f3e-9a52-3c1d2e4f60${String(n).padStart(2, '0')}`)
+    const stubRuns = () => {
+      const handler = createMockHandler()
+      overrides.push((req) => {
+        if (new URL(req.url).pathname !== '/runs') return undefined
+        return (async () => {
+          const body = await (await handler(req)).json()
+          const base = body.items[0]
+          return json({ ...body, items: ids.map((id, n) => ({ ...base, id, name: `run ${n}` })), total: ids.length })
+        })()
+      })
+    }
+    const boxes = (w: Awaited<ReturnType<typeof mountCompare>>) => w.findAll('input[type=checkbox]')
+
+    it('disables further picks once eight are selected, with a hint', async () => {
+      stubRuns()
+      const w = await mountCompare(ids.slice(0, 8))
+      await vi.waitFor(() => expect(boxes(w)).toHaveLength(10))
+      const rest = boxes(w).filter(b => !(b.element as HTMLInputElement).checked)
+      expect(rest).toHaveLength(2)
+      for (const b of rest) expect(b.attributes('disabled')).toBeDefined()
+      for (const b of boxes(w).filter(b => (b.element as HTMLInputElement).checked)) expect(b.attributes('disabled')).toBeUndefined()
+      expect(w.text()).toContain('at most 8 runs')
+    })
+
+    it('keeps other runs selectable below the limit', async () => {
+      stubRuns()
+      const w = await mountCompare(ids.slice(0, 7))
+      await vi.waitFor(() => expect(boxes(w)).toHaveLength(10))
+      for (const b of boxes(w)) expect(b.attributes('disabled')).toBeUndefined()
+    })
+
+    it('truncates a longer URL to eight runs and says so', async () => {
+      stubRuns()
+      const w = await mountCompare(ids)
+      expect(compareCalls().at(-1)!.searchParams.getAll('run_id')).toEqual(ids.slice(0, 8))
+      expect(w.text()).toContain('Only the first 8 of 10 runs are compared')
+    })
+  })
 })
