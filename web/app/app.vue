@@ -4,6 +4,7 @@ import type { NavigationMenuItem } from '@nuxt/ui'
 const route = useRoute()
 const links = computed<NavigationMenuItem[]>(() => [
   { label: 'Builder', to: '/', active: route.path === '/' },
+  { label: 'Crawls', to: '/crawls', active: route.path.startsWith('/crawls') },
   { label: 'Runs', to: '/runs', active: route.path.startsWith('/runs') },
   { label: 'Compare', to: '/compare', active: route.path.startsWith('/compare') }
 ])

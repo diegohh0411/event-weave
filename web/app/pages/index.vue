@@ -4,11 +4,14 @@ import { fetchAll } from '../api/fetchAll'
 import type { components } from '../api/schema'
 import { buildRunConfig, STAGES, type BuilderState, type Capability, type DeploymentOut, type Stage } from '../utils/runConfig'
 import { changedSettings, fieldsFromSchema } from '../utils/schemaForm'
+import { apiError } from '../utils/apiError'
 
 type AdapterOut = components['schemas']['AdapterOut']
 type EstimateOut = components['schemas']['EstimateOut']
 
 const api = useApi()
+const route = useRoute()
+const crawlId = computed(() => typeof route.query.crawl_id === 'string' ? route.query.crawl_id : '')
 const NONE = '__none__'
 const STAGE_LABEL: Record<Stage, string> = {
   provide: 'Provider', extract: 'Extract', tag: 'Tag', enrich: 'Enrich', embed: 'Embed', cluster: 'Cluster'
@@ -20,7 +23,7 @@ const loading = ref(true)
 const loadError = ref<string>()
 
 const name = ref('my-run')
-const track = ref<'paper' | 'realistic'>('paper')
+const track = ref<'paper' | 'realistic'>(crawlId.value ? 'realistic' : 'paper')
 const seed = ref(0)
 const chosen = reactive<Record<Stage, string | undefined>>({ provide: undefined, extract: undefined, tag: undefined, enrich: undefined, embed: undefined, cluster: undefined })
 const settings = reactive<Record<Stage, Record<string, unknown>>>({ provide: {}, extract: {}, tag: {}, enrich: {}, embed: {}, cluster: {} })
@@ -52,6 +55,11 @@ async function load() {
     for (const stage of STAGES) {
       if (stage !== 'tag' && !chosen[stage]) chosen[stage] = optionsFor(stage)[0]?.name
     }
+    if (crawlId.value && optionsFor('provide').some(a => a.name === 'replay')) {
+      chosen.provide = 'replay'
+      settings.provide = { crawl_id: crawlId.value }
+      if (optionsFor('extract').some(a => a.name === 'stanza-srl')) chosen.extract = 'stanza-srl'
+    }
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -59,6 +67,25 @@ async function load() {
   }
 }
 onMounted(load)
+
+const probing = ref(false)
+const probeError = ref('')
+async function reprobe() {
+  if (probing.value) return
+  probing.value = true
+  probeError.value = ''
+  reset()
+  try {
+    const result = await api.POST('/deployments/probe')
+    if (!result.data) throw new Error(apiError(result.error))
+    deployments.value = await fetchAll(async (offset, limit) => {
+      const page = await api.GET('/deployments', { params: { query: { offset, limit } } })
+      if (!page.data) throw new Error(apiError(page.error))
+      return page.data
+    })
+  } catch (e) { probeError.value = e instanceof Error ? e.message : String(e) }
+  finally { probing.value = false }
+}
 
 const capabilities = (stage: Stage): Capability[] => adapterFor(stage)?.capabilities ?? []
 const missing = computed(() => STAGES.flatMap(stage => capabilities(stage)
@@ -109,6 +136,7 @@ function problemsOf(error: unknown): string[] {
 }
 
 async function validate() {
+  if (probing.value || busy.value || launching.value) return
   busy.value = true
   problems.value = []
   const mine = generation
@@ -148,7 +176,8 @@ async function launch() {
   }
 }
 
-const blocked = computed(() => launching.value || busy.value || problems.value.length > 0 || missing.value.length > 0
+const blocked = computed(() => launching.value || busy.value || probing.value || problems.value.length > 0 || missing.value.length > 0
+  || (crawlId.value && (!validated.value || chosen.provide !== 'replay' || settings.provide.crawl_id !== crawlId.value))
   || Object.values(jsonInvalid).some(Boolean) || !name.value.trim())
 </script>
 
@@ -164,6 +193,11 @@ const blocked = computed(() => launching.value || busy.value || problems.value.l
     <UAlert v-else-if="loadError" color="error" variant="subtle" title="Could not reach the API" :description="loadError" />
 
     <form v-else class="space-y-6" @submit.prevent="validate">
+      <p v-if="crawlId">Crawl context: {{ crawlId }}. Replay uses only this crawl's documents. Validate the configuration before launch; no run starts automatically.</p>
+      <UAlert v-if="crawlId && !optionsFor('provide').some(a => a.name === 'replay')" color="error" title="Replay provider is unavailable" description="The API must offer the replay provider to use this crawl." />
+      <div class="space-y-2"><UButton type="button" variant="outline" :loading="probing" :disabled="probing || launching || busy" @click="reprobe">Re-probe deployments</UButton>
+        <UAlert v-if="probeError" color="error" title="Could not re-probe deployments" :description="probeError" />
+      </div>
       <fieldset :disabled="launching" class="min-w-0 space-y-6 border-0 p-0">
       <UCard>
         <template #header>
@@ -257,7 +291,7 @@ const blocked = computed(() => launching.value || busy.value || problems.value.l
       </UAlert>
 
       <div class="flex flex-wrap gap-3">
-        <UButton type="button" variant="outline" :loading="busy" :disabled="launching || busy || Object.values(jsonInvalid).some(Boolean)" @click="validate">
+        <UButton type="button" variant="outline" :loading="busy" :disabled="launching || busy || probing || Object.values(jsonInvalid).some(Boolean)" @click="validate">
           Validate
         </UButton>
         <UButton type="button" :disabled="blocked" @click="launch">
