@@ -1,0 +1,8 @@
+outlets:
+  - name: smoke-news
+    domain: elnorte.com
+    language: es
+    feeds:
+      - https://www.elnorte.com/rss/portada.xml
+    per_day: 3
+
