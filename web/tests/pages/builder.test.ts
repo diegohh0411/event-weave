@@ -12,6 +12,7 @@ mockNuxtImport('navigateTo', () => navigateTo)
 type Override = (req: Request) => Response | undefined
 let overrides: Override[] = []
 let calls: string[] = []
+const mounted: { unmount: () => void }[] = []
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
 beforeEach(() => {
@@ -30,10 +31,15 @@ beforeEach(() => {
     return handler(req)
   })
 })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  // Unmount so a finished test's page cannot keep fetching/updating under the next test's stubs.
+  mounted.splice(0).forEach(w => w.unmount())
+  vi.unstubAllGlobals()
+})
 
 const mountBuilder = async () => {
   const w = await mountSuspended(Builder)
+  mounted.push(w)
   await vi.waitFor(() => expect(w.text()).not.toContain('Loading'))
   await flushPromises()
   return w

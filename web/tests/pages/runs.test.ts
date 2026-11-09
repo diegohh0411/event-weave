@@ -12,6 +12,8 @@ mockNuxtImport('useToast', () => () => ({ add }))
 type Override = (req: Request) => Response | undefined
 let overrides: Override[] = []
 let calls: string[] = []
+const mounted: { unmount: () => void }[] = []
+const track = <T extends { unmount: () => void }>(w: T) => { mounted.push(w); return w }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
 beforeEach(() => {
@@ -30,12 +32,14 @@ beforeEach(() => {
   })
 })
 afterEach(() => {
+  // Unmount first (still under the test's timers) so no page keeps polling into the next test.
+  mounted.splice(0).forEach(w => w.unmount())
   vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 
 const mountRun = async (id: string) => {
-  const w = await mountSuspended(RunPage, { route: `/runs/${id}` })
+  const w = track(await mountSuspended(RunPage, { route: `/runs/${id}` }))
   await vi.waitFor(() => expect(w.text()).not.toContain('Loading'))
   await flushPromises()
   return w
@@ -45,7 +49,7 @@ const labels = (w: Awaited<ReturnType<typeof mountRun>>) =>
 
 describe('runs list', () => {
   it('lists every run with a link to it', async () => {
-    const w = await mountSuspended(RunsList)
+    const w = track(await mountSuspended(RunsList))
     await vi.waitFor(() => expect(w.text()).toContain('paper-baseline'))
     for (const r of [runPaper, runLlm, runNew, runCancelled]) expect(w.text()).toContain(r.name)
     expect(w.find(`a[href="/runs/${runLlm.id}"]`).exists()).toBe(true)
