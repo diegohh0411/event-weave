@@ -132,3 +132,23 @@ evaluation_scores = sa.Table("evaluation_scores", metadata,
     sa.CheckConstraint("track in ('paper', 'realistic')", name="ck_evaluation_scores_track"),
     sa.CheckConstraint("setting in ('within', 'cross', 'pooled')", name="ck_evaluation_scores_setting"),
     sa.CheckConstraint("metric in ('muc', 'b3', 'ceafe', 'blanc', 'conll')", name="ck_evaluation_scores_metric"))
+
+crawl_runs = sa.Table("crawl_runs", metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("request", JSONB, nullable=False), sa.Column("status", T, nullable=False),
+    sa.Column("created_at", TZ, nullable=False), sa.Column("started_at", TZ), sa.Column("finished_at", TZ),
+    sa.Column("claim_token", UUID(as_uuid=True)), sa.Column("lease_until", TZ),
+    sa.Column("progress", JSONB, nullable=False), sa.Column("error", T),
+    sa.CheckConstraint("status in ('queued', 'running', 'completed', 'failed')", name="ck_crawl_runs_status"))
+crawl_articles = sa.Table("crawl_articles", metadata,
+    sa.Column("crawl_id", UUID(as_uuid=True), sa.ForeignKey("crawl_runs.id", ondelete="CASCADE"), primary_key=True),
+    sa.Column("canonical_url", T, primary_key=True), sa.Column("outlet", T, nullable=False),
+    sa.Column("url", T, nullable=False), sa.Column("status", T, nullable=False), sa.Column("reason", T),
+    sa.Column("document_id", T, sa.ForeignKey("documents.id")), sa.Column("fetched", sa.Boolean, nullable=False),
+    sa.Column("updated_at", TZ, nullable=False),
+    sa.CheckConstraint("status in ('stored', 'existing', 'duplicate', 'rejected', 'error')", name="ck_crawl_articles_status"))
+crawl_sources = sa.Table("crawl_sources", metadata,
+    sa.Column("crawl_id", UUID(as_uuid=True), sa.ForeignKey("crawl_runs.id", ondelete="CASCADE"), primary_key=True),
+    sa.Column("url", T, primary_key=True), sa.Column("site", T, nullable=False),
+    sa.Column("kind", T, nullable=False), sa.Column("status", T, nullable=False), sa.Column("error", T),
+    sa.CheckConstraint("kind in ('feed', 'sitemap')", name="ck_crawl_sources_kind"))

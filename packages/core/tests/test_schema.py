@@ -37,7 +37,7 @@ def test_migration_creates_ledger_and_run_deployments(database_url):
     assert insp.get_pk_constraint("run_deployments")["constrained_columns"] == ["run_id", "deployment"]
     cfg = Config()
     cfg.set_main_option("script_location", str(Path(weave_core.__file__).parent / "migrations"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["0007_evaluations"]
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0008_crawls"]
 
 
 def test_documents_have_order_key_and_no_gold_columns(database_url):
@@ -117,3 +117,13 @@ def test_evaluation_tables_exist(database_url):
     assert ("run_id", "created_at") in {tuple(i["column_names"]) for i in insp.get_indexes("evaluations")}
     jobs_cols = {c["name"]: c for c in insp.get_columns("jobs")}
     assert jobs_cols["cache_hit"]["nullable"] is False
+
+
+def test_crawl_migration_preserves_existing_tables(database_url):
+    engine = make_engine(database_url)
+    inspector = sa.inspect(engine)
+    assert {"documents", "crawled_pages", "crawl_runs", "crawl_articles", "crawl_sources"} <= set(inspector.get_table_names())
+    assert inspector.get_pk_constraint("crawl_articles")["constrained_columns"] == ["crawl_id", "canonical_url"]
+    assert inspector.get_pk_constraint("crawl_sources")["constrained_columns"] == ["crawl_id", "url"]
+    with engine.connect() as conn:
+        assert conn.scalar(sa.text("select version_num from alembic_version")) == "0008_crawls"
