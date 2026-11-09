@@ -12,8 +12,12 @@ from .settings import Settings
 from .stages import Capability
 
 
-def build_service(probe: bool = True) -> RunService:
-    """Build the RunService from the environment. Raises weave_inference CatalogError on a bad inference file."""
+def build_service(probe: bool = True, probe_timeout: float = 5.0) -> RunService:
+    """Build the RunService from the environment. Raises weave_inference CatalogError on a bad inference file.
+
+    A bounded, nonfatal probe keeps cold starts (API and workers) from blocking on or dying at model providers;
+    callers that must not probe at all (the API's cold start) pass probe=False.
+    """
     settings = Settings.from_env()
     registry = Registry()
     registry.load_entry_points()
@@ -29,7 +33,7 @@ def build_service(probe: bool = True) -> RunService:
         else:
             catalog = load_catalog(Path(inference_file))
             if probe:
-                probe_catalog(catalog)
+                probe_catalog(catalog, timeout=probe_timeout)
             engine = make_engine(settings.database_url)
             Inference.configure(catalog, engine)
             return RunService(engine, registry, catalog, LedgerEstimator(engine, registry),

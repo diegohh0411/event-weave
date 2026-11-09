@@ -82,6 +82,13 @@ describe('fixture cases later pages rely on', () => {
   const body = <T>(method: string, path: string, pick?: (f: { params?: Record<string, string> }) => boolean) =>
     fixtures[routeKey(method, path)]!.filter(f => !pick || pick(f)).map(f => f.body as T)
 
+  it('has completed crawls covering paywalls, source errors, and accessible documents', () => {
+    const crawls = body<any>('GET', '/crawls/{crawl_id}')
+    expect(crawls.some(c => c.status === 'completed' && c.counters.stored === 0 && c.counters.reasons.paywall > 0)).toBe(true)
+    expect(crawls.some(c => c.status === 'completed' && c.counters.stored > 0)).toBe(true)
+    expect(body<any>('GET', '/crawls/{crawl_id}/sources').flatMap(p => p.items).some((s: any) => s.error)).toBe(true)
+  })
+
   it('has a deployment that is not ready, with a reason', () => {
     const [page] = body<any>('GET', '/deployments')
     const llm = page.items.filter((d: any) => d.capability === 'llm')

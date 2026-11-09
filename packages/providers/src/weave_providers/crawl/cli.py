@@ -1,4 +1,6 @@
 """`weave crawl <outlets.yaml> [--days 7]`."""
+import signal
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -9,9 +11,10 @@ from weave_core.settings import Settings
 from weave_providers.crawl.fetch import Crawl4aiFetcher, HttpFetcher
 from weave_providers.crawl.outlets import load_outlets
 from weave_providers.crawl.store import crawl
+from weave_providers.crawl.worker import run_crawl_worker
 
 
-def crawl_command(outlets: Path, days: int = typer.Option(7, min=1)) -> None:
+def _require_crawl_extra():
     try:
         import crawl4ai  # noqa: F401
         import defusedxml  # noqa: F401
@@ -19,6 +22,10 @@ def crawl_command(outlets: Path, days: int = typer.Option(7, min=1)) -> None:
     except ImportError:
         typer.echo("weave crawl needs crawl4ai, feedparser and defusedxml: install weave-providers[crawl]", err=True)
         raise typer.Exit(1)
+
+
+def crawl_command(outlets: Path, days: int = typer.Option(7, min=1)) -> None:
+    _require_crawl_extra()
     engine = make_engine(Settings.from_env().database_url)
     try:
         with Crawl4aiFetcher() as browser, HttpFetcher() as http:
@@ -32,3 +39,20 @@ def crawl_command(outlets: Path, days: int = typer.Option(7, min=1)) -> None:
         typer.echo(f"rejected {reason}: {count}")
     for outlet, count in sorted(report.discovery_errors.items()):
         typer.echo(f"discovery errors {outlet}: {count}")
+
+
+def crawl_worker_command(once: bool = typer.Option(False, help='Process at most one crawl and exit.')) -> None:
+    _require_crawl_extra()
+    engine = make_engine(Settings.from_env().database_url)
+    stop = threading.Event()
+    previous = {}
+    def shutdown(signum, frame):
+        stop.set()
+    try:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            previous[sig] = signal.signal(sig, shutdown)
+        run_crawl_worker(engine, stop, once=once)
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+        engine.dispose()

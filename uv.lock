@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = "==3.12.*"
 
 [manifest]
@@ -2141,6 +2141,7 @@ dependencies = [
     { name = "weave-enrichers" },
     { name = "weave-eval" },
     { name = "weave-inference" },
+    { name = "weave-providers" },
 ]
 
 [package.metadata]
@@ -2151,6 +2152,7 @@ requires-dist = [
     { name = "weave-enrichers", editable = "packages/enrichers" },
     { name = "weave-eval", editable = "packages/eval" },
     { name = "weave-inference", editable = "packages/inference" },
+    { name = "weave-providers", editable = "packages/providers" },
 ]
 
 [[package]]

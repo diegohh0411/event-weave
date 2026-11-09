@@ -10,8 +10,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from weave_api.main import create_app
-from weave_core.schema import (cluster_decisions, cluster_members, clusters, documents, gold_documents, gold_mentions,
-                               gold_pairs, jobs, mention_tags, mentions, runs, stage_outputs)
+from weave_core.schema import (cluster_decisions, cluster_members, clusters, crawl_articles, crawl_runs, crawl_sources,
+                               documents, gold_documents, gold_mentions, gold_pairs, jobs, mention_tags, mentions, runs,
+                               stage_outputs)
 
 MARKER = "GOLD_MARKER_7f3a"
 FORBIDDEN_KEYS = {"gold", "topic", "split"}
@@ -42,11 +43,17 @@ def _walk_keys(node, path=""):
 @pytest.fixture
 def seeded(engine):
     run = uuid4()
+    crawl = uuid4()
     with engine.begin() as conn:
         conn.execute(runs.insert().values(id=run, config={"name": "r", "track": "realistic", "seed": 0, "stages": {}}, config_hash="h", state="done", created_at=NOW))
         conn.execute(documents.insert().values(id="d1", provider="p", external_id="d1", language="en", title="t", byline="b",
                                                outlet="o", url="u", text=TEXT, token_offsets=[], sentence_offsets=[[0, 23], [24, 40]],
                                                content_hash="h"))
+        conn.execute(crawl_runs.insert().values(id=crawl, request={'sites': [{'domain': 'example.com', 'language': 'en'}], 'days': 1},
+                                               status='completed', created_at=NOW, finished_at=NOW, progress={}))
+        conn.execute(crawl_articles.insert().values(crawl_id=crawl, canonical_url='https://example.com/a', url='https://example.com/a',
+                                                   outlet='example.com', status='stored', document_id='d1', fetched=True, updated_at=NOW))
+        conn.execute(crawl_sources.insert().values(crawl_id=crawl, url='https://example.com/feed', site='example.com', kind='feed', status='ok'))
         for mid, start, word in (("m1", 0, "Rebels"), ("m2", 24, "Troops")):
             conn.execute(mentions.insert().values(id=mid, document_id="d1", start=start, end=start + len(word), tok_start=0, tok_end=1,
                                                   sentence=0 if start == 0 else 1, text=word, extractor="x", extractor_version="1"))
@@ -73,12 +80,13 @@ def seeded(engine):
                                               for mid in ("m1", "m2")])
         conn.execute(gold_pairs.insert().values(language="en", kind="within", split=MARKER, topic=MARKER, source_document_id="d1",
                                                 source_mention_id="m1", target_document_id="d1", target_mention_id="m2", label=1))
-    return run
+    return run, crawl
 
 
 def test_no_gold_outside_scores(service, seeded):
     app = create_app(service)
-    fill = {"run_id": str(seeded), "cluster_id": "c1", "document_id": "d1"}
+    run, crawl = seeded
+    fill = {"run_id": str(run), "crawl_id": str(crawl), "cluster_id": "c1", "document_id": "d1"}
     called = []
     with TestClient(app) as client:
         framework_paths = {app.openapi_url, app.docs_url, app.redoc_url, "/docs/oauth2-redirect"}
@@ -97,7 +105,9 @@ def test_no_gold_outside_scores(service, seeded):
                     assert key not in FORBIDDEN_KEYS, f"forbidden key {key!r} at {url} {where}"
             called.append(path)
     for expected in ("/runs", "/runs/{run_id}/clusters", "/runs/{run_id}/documents/{document_id}", "/runs/{run_id}/enrichments/sample",
-                     "/adapters", "/deployments", "/runs/{run_id}/clusters/{cluster_id}/members"):
+                     "/adapters", "/deployments", "/runs/{run_id}/clusters/{cluster_id}/members", "/crawls",
+                     "/crawls/{crawl_id}", "/crawls/{crawl_id}/articles", "/crawls/{crawl_id}/sources",
+                     "/crawls/{crawl_id}/documents/{document_id}"):
         assert expected in called
 
 

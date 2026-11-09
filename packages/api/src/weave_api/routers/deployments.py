@@ -30,8 +30,9 @@ def _all(catalog) -> list[DeploymentOut]:
     out = []
     for dep_id, dep in sorted(catalog.deployments.items()):
         readiness = catalog.readiness.get(dep_id)
-        out.append(DeploymentOut(id=dep_id, capability=catalog.capability_of(dep_id), ready=catalog.is_ready(dep_id),
-                                 reason=readiness.reason if readiness and not readiness.ready else None,
+        ready = catalog.is_ready(dep_id)
+        out.append(DeploymentOut(id=dep_id, capability=catalog.capability_of(dep_id), ready=ready,
+                                 reason=(readiness.reason if readiness and not ready else 'not probed') if not ready else None,
                                  is_default=dep_id in defaults, local=dep.local))
     return out
 

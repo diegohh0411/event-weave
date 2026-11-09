@@ -82,8 +82,11 @@ class Crawl4aiFetcher:
     Use as a context manager or call close(). Browser errors come back as Fetched.error.
     """
 
-    def __init__(self, crawler_factory: Callable[[], Any] | None = None):
-        self._crawler_factory = crawler_factory or _default_crawler
+    def __init__(self, crawler_factory: Callable[[], Any] | None = None, validator=None):
+        self.validator = validator
+        self.navigation_guard = None
+        self.cancelled: Callable[[], bool] = lambda: False
+        self._crawler_factory = crawler_factory or (lambda: _default_crawler(public=bool(self.validator)))
         self._loop: asyncio.AbstractEventLoop | None = None
         self._crawler: Any = None
 
@@ -106,8 +109,39 @@ class Crawl4aiFetcher:
 
         if self._crawler is None:
             crawler = self._crawler_factory()
+            if self.validator:
+                async def install(page, *, context, **kwargs):
+                    async def guard(route):
+                        # Playwright routing does not reliably intercept every
+                        # redirect hop. Fetch without automatic redirects, check
+                        # each Location, and fulfill the response ourselves.
+                        current = route.request.url
+                        try:
+                            for hop in range(MAX_REDIRECTS + 1):
+                                if self.cancelled():
+                                    raise ValueError('crawl cancelled')
+                                self.validator(current)
+                                if route.request.is_navigation_request() and self.navigation_guard:
+                                    if not self.navigation_guard(current):
+                                        raise ValueError('navigation disallowed')
+                                response = await route.fetch(url=current, max_redirects=0)
+                                location = response.headers.get('location')
+                                if response.status not in (301, 302, 303, 307, 308) or not location:
+                                    await route.fulfill(response=response)
+                                    return
+                                current = urljoin(current, location)
+                            raise ValueError('too many redirects')
+                        except Exception:
+                            await route.abort()
+                    await context.route('**/*', guard)
+                    async def block_socket(socket):
+                        await socket.close()
+                    await context.route_web_socket('**/*', block_socket)
+                crawler.crawler_strategy.set_hook('on_page_context_created', install)
             await crawler.start()
             self._crawler = crawler
+        if self.validator:
+            self.validator(url)
         result = await self._crawler.arun(url=url, config=CrawlerRunConfig())
         status = result.status_code or 0
         if not result.success:
@@ -126,10 +160,12 @@ class Crawl4aiFetcher:
             self._loop = None
 
 
-def _default_crawler() -> Any:
+def _default_crawler(public: bool = False) -> Any:
     from crawl4ai import AsyncWebCrawler, BrowserConfig
 
-    return AsyncWebCrawler(config=BrowserConfig(user_agent=USER_AGENT))
+    # JavaScript is disabled in guarded crawls: crawl4ai does not expose Playwright's
+    # service_workers="block" context setting, so scripts could otherwise bypass routing.
+    return AsyncWebCrawler(config=BrowserConfig(user_agent=USER_AGENT, java_script_enabled=not public))
 
 
 class PoliteFetcher:
@@ -153,7 +189,18 @@ class PoliteFetcher:
         min_interval: float = 2.0,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
+        validator=None,
+        domain: str | None = None,
     ):
+        self.validator = validator
+        self.domain = domain
+        self.cancelled: Callable[[], bool] = lambda: False
+        if validator and isinstance(inner, Crawl4aiFetcher):
+            if inner._crawler is not None:
+                raise ValueError("cannot enable public guarding on an already started browser")
+            inner.validator = validator
+            inner.cancelled = lambda: self.cancelled()
+            inner.navigation_guard = lambda url: self._in_domain(url) and self.allowed(url)
         self.inner = inner
         self.meta = meta or inner
         self.min_interval = min_interval
@@ -162,25 +209,30 @@ class PoliteFetcher:
         self._robots: dict[str, RobotFileParser | bool] = {}  # True = allow all, False = deny all
         self._last_request: dict[str, float] = {}
 
+    def _in_domain(self, url):
+        host = (urlsplit(url).hostname or '').lower().rstrip('.')
+        domain = (self.domain or '').lower().rstrip('.')
+        # The commonplace www variant is equivalent to the requested apex.
+        if domain.startswith('www.'):
+            domain = domain[4:]
+        return bool(domain and (host == domain or host.endswith('.' + domain)))
+
     def allowed(self, url: str) -> bool:
+        if self.validator:
+            try:
+                self.validator(url)
+            except ValueError:
+                return False
         rules = self._rules_for(url)
         if isinstance(rules, bool):
             return rules
         return rules.can_fetch(_PRODUCT_TOKEN, url)
 
     def fetch(self, url: str) -> Fetched:
-        if self.meta is self.inner:
-            return self._guarded(self.inner, url)
-        # Resolve the redirect chain with the plain HTTP fetcher, then give only the final,
-        # allowed URL to the browser fetcher.
-        probe = self._guarded(self.meta, url)
-        if probe.error or probe.status == 0 or probe.status >= 400:
-            return probe
-        final = probe.final_url or url
-        got = self._guarded(self.inner, final)
-        if got.error == "robots disallowed" or got.final_url is None and final == url:
+        got = self._guarded(self.inner, url)
+        if got.error:
             return replace(got, url=url)
-        return replace(got, url=url, final_url=got.final_url or final)
+        return replace(got, url=url, final_url=got.final_url or url)
 
     def meta_view(self) -> Fetcher:
         """A Fetcher for sitemaps and feeds: same politeness, routed to `meta`."""
@@ -189,11 +241,18 @@ class PoliteFetcher:
     def _guarded(self, fetcher: Fetcher, url: str) -> Fetched:
         current = url
         for hop in range(MAX_REDIRECTS + 1):
-            if hop and _origin(current) != _origin(url):
-                return Fetched(url, 0, None, "robots disallowed")
+            if self.cancelled():
+                return Fetched(url, 0, None, 'crawl cancelled')
+            if self.validator:
+                try:
+                    self.validator(current)
+                except ValueError as exc:
+                    return Fetched(url, 0, None, str(exc))
+            if hop and _origin(current) != _origin(url) and not self._in_domain(current):
+                return Fetched(url, 0, None, "robots disallowed" if not self.validator else "redirect outside requested domain")
             if not self.allowed(current):
                 return Fetched(url, 0, None, "robots disallowed")
-            got = self._throttled_fetch(fetcher, current)
+            got = self._safe_fetch(fetcher, current)
             if not got.redirect_to:
                 break
             current = got.redirect_to
@@ -203,7 +262,7 @@ class PoliteFetcher:
             got = replace(got, url=url, final_url=current)
         final = got.final_url
         if final and final != url:
-            if _origin(final) != _origin(url) or not self.allowed(final):
+            if (_origin(final) != _origin(url) and not self._in_domain(final)) or not self.allowed(final):
                 return Fetched(url, 0, None, "robots disallowed")
         return got
 
@@ -221,20 +280,36 @@ class PoliteFetcher:
 
     def _fetch_robots(self, url: str) -> Fetched:
         """robots.txt itself is not subject to robots rules; follow its redirects (max 5 hops)."""
-        got = self._throttled_fetch(self.meta, url)
+        got = self._safe_fetch(self.meta, url)
         for _ in range(MAX_REDIRECTS):
             if not got.redirect_to:
                 return got
-            got = self._throttled_fetch(self.meta, got.redirect_to)
+            if _origin(got.redirect_to) != _origin(url) and not self._in_domain(got.redirect_to):
+                return Fetched(url, 0, None, "robots disallowed")
+            got = self._safe_fetch(self.meta, got.redirect_to)
         return got if not got.redirect_to else Fetched(url, 0, None, "too many redirects")
 
+    def _safe_fetch(self, fetcher, url):
+        return self._throttled_fetch(fetcher, url)
+
     def _throttled_fetch(self, fetcher: Fetcher, url: str) -> Fetched:
+        if self.cancelled():
+            return Fetched(url, 0, None, 'crawl cancelled')
         domain = urlsplit(url).netloc.lower()
         last = self._last_request.get(domain)
         if last is not None:
             wait = self.min_interval - (self._clock() - last)
             if wait > 0:
                 self._sleep(wait)
+        if self.cancelled():
+            return Fetched(url, 0, None, 'crawl cancelled')
+        if self.validator:
+            try:
+                self.validator(url)
+            except ValueError as exc:
+                return Fetched(url, 0, None, str(exc))
+        if self.cancelled():
+            return Fetched(url, 0, None, 'crawl cancelled')
         try:
             return fetcher.fetch(url)
         finally:
@@ -247,6 +322,9 @@ class _MetaView:
 
     def fetch(self, url: str) -> Fetched:
         return self._polite._guarded(self._polite.meta, url)
+
+    def fetch_robots(self, url: str) -> Fetched:
+        return self._polite._fetch_robots(url)
 
 
 def _origin(url: str) -> str:

@@ -15,6 +15,18 @@ export const adapters: Adapters = {
       })
     },
     {
+      name: 'replay', version: '1', stage: 'provide', input_kind: 'run', capabilities: [], cacheable: false, optional_stage: false,
+      settings_schema: obj({
+        provider: { type: 'string', default: 'crawl', title: 'Provider' },
+        crawl_id: { anyOf: [{ type: 'string', format: 'uuid' }, { type: 'null' }], default: null, title: 'Crawl Id' },
+        languages: { anyOf: [{ type: 'array', items: { type: 'string' } }, { type: 'null' }], default: null, title: 'Languages' },
+        outlets: { anyOf: [{ type: 'array', items: { type: 'string' } }, { type: 'null' }], default: null, title: 'Outlets' },
+        published_from: { anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }], default: null, title: 'Published From' },
+        published_to: { anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }], default: null, title: 'Published To' },
+        limit: { anyOf: [{ type: 'integer' }, { type: 'null' }], default: null, title: 'Limit' }
+      })
+    },
+    {
       name: 'gold', version: '1', stage: 'extract', input_kind: 'document', capabilities: [], cacheable: false, optional_stage: false,
       settings_schema: obj({})
     },
@@ -52,7 +64,7 @@ export const adapters: Adapters = {
       })
     }
   ],
-  total: 7,
+  total: 8,
   offset: 0,
   limit: 50
 }

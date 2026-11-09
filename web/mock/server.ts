@@ -6,12 +6,15 @@
  * 422 in FastAPI's error shape otherwise. Unknown ids give 404; run actions the fixtures do not
  * cover give 409 like the API's RunStateError.
  */
+import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
 import { pathToFileURL } from 'node:url'
 import {
   createApp, eventHandler, getRequestURL, readRawBody, setResponseHeaders, setResponseStatus, toNodeListener, toWebHandler
 } from 'h3'
 import { fixtures, type Fixture } from './fixtures'
+import { emptyCounters } from './fixtures/crawls'
+import type { Schemas } from './fixtures/types'
 
 const MAX_LIMIT = 200
 const DEFAULT_LIMIT = 50
@@ -78,7 +81,39 @@ function pick(route: Route, params: Record<string, string>, query: URLSearchPara
 
 export interface MockResponse { status: number, body: unknown }
 
-export function respond(method: string, pathname: string, query: URLSearchParams, rawBody: string | undefined): MockResponse {
+// The mock persists new queued jobs for this server instance; it never executes crawls.
+function normalizeCrawl(value: unknown): Schemas['CrawlRequest'] | null {
+  const input = value as Record<string, any> | null
+  if (!input || !Array.isArray(input.sites) || input.sites.length < 1 || input.sites.length > 20) return null
+  const days = input.days ?? 1
+  if (!Number.isInteger(days) || days < 1 || days > 30) return null
+  const validDomain = (s: string) => s.length <= 253 && s.includes('.') && !/^\d+$/.test(s.split('.').at(-1)!) &&
+    s.split('.').every(label => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))
+  const seen = new Set<string>()
+  const sites: Schemas['CrawlSite'][] = []
+  for (const site of input.sites) {
+    if (!site || typeof site.domain !== 'string') return null
+    const domain = site.domain.trim().toLowerCase().replace(/\.+$/, '')
+    if (!validDomain(domain) || seen.has(domain) || !['en', 'es', 'hi', 'tr', 'uk'].includes(site.language)) return null
+    seen.add(domain)
+    const per_day = site.per_day ?? 3
+    if (!Number.isInteger(per_day) || per_day < 1 || per_day > 200 || (site.name != null && typeof site.name !== 'string')) return null
+    const validSources = (urls: unknown) => Array.isArray(urls) && urls.length <= 20 && urls.every((s: unknown) => {
+      if (typeof s !== 'string' || /\s/.test(s)) return false
+      try {
+        const u = new URL(s)
+        return ['http:', 'https:'].includes(u.protocol) && !u.username && !u.password && !u.port && validDomain(u.hostname)
+      } catch { return false }
+    })
+    const feeds = site.feeds ?? [], sitemaps = site.sitemaps ?? []
+    if (!validSources(feeds) || !validSources(sitemaps)) return null
+    sites.push({ domain, name: site.name ?? domain, language: site.language, per_day, feeds, sitemaps })
+  }
+  return { sites, days }
+}
+
+type CrawlState = Schemas['CrawlOut'][]
+export function respond(method: string, pathname: string, query: URLSearchParams, rawBody: string | undefined, createdCrawls: CrawlState = []): MockResponse {
   if (pathname === '/openapi.json') return { status: 200, body: { note: 'see web/openapi.json' } }
   for (const route of routes) {
     const m = route.method === method ? route.regex.exec(pathname) : null
@@ -87,6 +122,23 @@ export function respond(method: string, pathname: string, query: URLSearchParams
     if (params.run_id && !knownRunIds.has(params.run_id)) return { status: 404, body: { detail: `run ${params.run_id} not found` } }
     let body: unknown
     try { body = rawBody ? JSON.parse(rawBody) : undefined } catch { return { status: 422, body: { detail: [{ type: 'json_invalid', loc: ['body'], msg: 'JSON decode error' }] } } }
+    if (route.template === '/crawls' && method === 'POST') {
+      const request = normalizeCrawl(body)
+      if (!request) return { status: 422, body: { detail: [{ type: 'value_error', loc: ['body'], msg: 'Invalid crawl request', input: body }] } }
+      const crawl: Schemas['CrawlOut'] = { id: randomUUID(), request, status: 'queued', created_at: new Date().toISOString(),
+        started_at: null, finished_at: null, counters: emptyCounters(), error: null }
+      createdCrawls.unshift(crawl)
+      return { status: 202, body: crawl }
+    }
+    const createdCrawl = params.crawl_id && createdCrawls.find(c => c.id === params.crawl_id)
+    if (createdCrawl) {
+      if (route.template === '/crawls/{crawl_id}') return { status: 200, body: createdCrawl }
+      if (route.template === '/crawls/{crawl_id}/articles' || route.template === '/crawls/{crawl_id}/sources') {
+        const bad = pagingError(query)
+        if (bad) return { status: 422, body: bad }
+        return { status: 200, body: { items: [], total: 0, offset: Number(query.get('offset') ?? 0), limit: Number(query.get('limit') ?? DEFAULT_LIMIT) } }
+      }
+    }
     if (route.template === '/compare' && query.getAll('run_id').length === 0) {
       return { status: 422, body: validation('run_id', 'Field required', 'missing', null) }
     }
@@ -120,7 +172,8 @@ export function respond(method: string, pathname: string, query: URLSearchParams
       }
       const keep = filters[`${method} ${route.template}`]
       const rows = keep ? data.items.filter(i => keep(i, query)) : data.items
-      return { status: fixture.status, body: { items: rows.slice(offset, offset + limit), total: rows.length, offset, limit } }
+      const allRows = route.template === '/crawls' ? [...createdCrawls, ...rows] : rows
+      return { status: fixture.status, body: { items: allRows.slice(offset, offset + limit), total: allRows.length, offset, limit } }
     }
     return { status: fixture.status, body: fixture.body }
   }
@@ -135,6 +188,7 @@ const cors = {
 
 export function createMockApp() {
   const app = createApp()
+  const createdCrawls: CrawlState = []
   app.use(eventHandler(async (event) => {
     setResponseHeaders(event, cors)
     if (event.method === 'OPTIONS') {
@@ -143,7 +197,7 @@ export function createMockApp() {
     }
     const url = getRequestURL(event)
     const raw = event.method === 'POST' ? await readRawBody(event, 'utf8') : undefined
-    const out = respond(event.method, url.pathname, url.searchParams, raw)
+    const out = respond(event.method, url.pathname, url.searchParams, raw, createdCrawls)
     setResponseStatus(event, out.status)
     return out.body
   }))

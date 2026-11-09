@@ -267,7 +267,7 @@ def test_meta_view_uses_meta_fetcher_but_same_politeness():
     assert pf.meta_view().fetch("https://ex.com/private/feed").error == "robots disallowed"
     pf.fetch("https://ex.com/a")
     assert inner.calls == ["https://ex.com/a"]
-    assert clock.sleeps == [2.0, 2.0, 2.0]
+    assert clock.sleeps == [2.0, 2.0]
 
 
 def redirect(url, to):
@@ -297,29 +297,28 @@ def test_redirect_chain_stops_at_disallowed_middle_hop():
     assert inner.calls == ["https://ex.com/robots.txt", "https://ex.com/a"]
 
 
-def test_allowed_redirect_chain_reaches_article_and_browser_gets_final_url():
-    meta = FixtureFetcher({
+def test_allowed_redirect_chain_reaches_article_and_reports_final_url():
+    inner = FixtureFetcher({
         "https://ex.com/robots.txt": ROBOTS,
         "https://ex.com/a": redirect("https://ex.com/a", "https://ex.com/b"),
         "https://ex.com/b": redirect("https://ex.com/b", "https://ex.com/c"),
         "https://ex.com/c": page("https://ex.com/c"),
     })
-    inner = FixtureFetcher({"https://ex.com/c": page("https://ex.com/c")})
-    pf, _ = polite(inner, meta=meta)
+    pf, _ = polite(inner)
     got = pf.fetch("https://ex.com/a")
     assert got.status == 200 and got.url == "https://ex.com/a" and got.final_url == "https://ex.com/c"
-    assert inner.calls == ["https://ex.com/c"]
+    assert inner.calls == ["https://ex.com/robots.txt", "https://ex.com/a",
+                           "https://ex.com/b", "https://ex.com/c"]
 
 
-def test_redirect_chain_to_disallowed_never_reaches_browser():
-    meta = FixtureFetcher({
+def test_redirect_chain_to_disallowed_is_never_followed():
+    inner = FixtureFetcher({
         "https://ex.com/robots.txt": ROBOTS,
         "https://ex.com/a": redirect("https://ex.com/a", "https://ex.com/private/b"),
     })
-    inner = FixtureFetcher({})
-    pf, _ = polite(inner, meta=meta)
+    pf, _ = polite(inner)
     assert pf.fetch("https://ex.com/a").error == "robots disallowed"
-    assert inner.calls == [] and "https://ex.com/private/b" not in meta.calls
+    assert "https://ex.com/private/b" not in inner.calls
 
 
 def test_more_than_five_redirects_is_an_error():
@@ -342,3 +341,40 @@ def test_robots_txt_redirect_is_followed():
     pf, _ = polite(inner)
     assert pf.fetch("https://ex.com/private/a").error == "robots disallowed"
     assert pf.fetch("https://ex.com/ok").status == 200
+
+
+def test_validated_redirect_to_www_checks_its_robots():
+    f = FixtureFetcher({'https://ex.com/robots.txt': robots('', 404),
+                        'https://ex.com/a': redirect('https://ex.com/a', 'https://www.ex.com/a'),
+                        'https://www.ex.com/robots.txt': robots('User-agent: *\nDisallow: /a')})
+    pf, _ = polite(f, validator=lambda url: url, domain='ex.com')
+    assert pf.fetch('https://ex.com/a').error == 'robots disallowed'
+    assert 'https://www.ex.com/a' not in f.calls
+
+
+def test_www_to_apex_redirect_succeeds_after_robots_checks():
+    f = FixtureFetcher({'https://www.ex.com/robots.txt': robots('', 404),
+                        'https://www.ex.com/a': redirect('https://www.ex.com/a', 'https://ex.com/a'),
+                        'https://ex.com/robots.txt': robots('', 404),
+                        'https://ex.com/a': page('https://ex.com/a')})
+    pf, _ = polite(f, validator=lambda url: url, domain='www.ex.com')
+    assert pf.fetch('https://www.ex.com/a').status == 200
+    assert 'https://ex.com/robots.txt' in f.calls
+
+
+def test_unsafe_initial_url_never_reaches_transport():
+    f = FixtureFetcher({})
+    def deny(url):
+        raise ValueError('unsafe URL')
+    pf, _ = polite(f, validator=deny, domain='ex.com')
+    assert pf.fetch('http://127.0.0.1/a').status == 0
+    assert f.calls == []
+
+
+def test_cancel_after_redirect_stops_before_next_transport():
+    f = FixtureFetcher({'https://ex.com/robots.txt': robots('', 404),
+                        'https://ex.com/a': redirect('https://ex.com/a', 'https://ex.com/b')})
+    pf, _ = polite(f)
+    pf.cancelled = lambda: 'https://ex.com/a' in f.calls
+    assert pf.fetch('https://ex.com/a').status == 0
+    assert f.calls == ['https://ex.com/robots.txt', 'https://ex.com/a']

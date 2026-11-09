@@ -43,15 +43,16 @@ if _inf is not None:
 
 def _crawl():
     try:
-        from weave_providers.crawl.cli import crawl_command
+        from weave_providers.crawl.cli import crawl_command, crawl_worker_command
     except ImportError:  # weave-providers or its `crawl` extra is not installed
         return None
-    return crawl_command
+    return crawl_command, crawl_worker_command
 
 
-_crawl_command = _crawl()
-if _crawl_command is not None:
-    app.command('crawl')(_crawl_command)
+_crawl_commands = _crawl()
+if _crawl_commands is not None:
+    app.command('crawl')(_crawl_commands[0])
+    app.command('crawl-worker')(_crawl_commands[1])
 
 
 def _eval():
@@ -106,13 +107,13 @@ if _clusterer_app is not None:
     app.add_typer(_clusterer_app, name='clusterer')
 
 
-def _build(probe: bool = True):
+def _build(probe: bool = True, probe_timeout: float = 5.0):
     try:
         from weave_inference.catalog import CatalogError
     except ImportError:  # weave-inference is not installed; build_service cannot raise it
         return build_service(probe)
     try:
-        return build_service(probe)
+        return build_service(probe, probe_timeout=probe_timeout)
     except CatalogError as exc:
         for problem in exc.problems:
             typer.echo(problem, err=True)
@@ -182,7 +183,8 @@ def status(run_id: UUID):
 
 @app.command('worker')
 def worker(stage: Stage = typer.Option(...), threads: int = typer.Option(8, min=1)):
-    service = _build()
+    # Bounded, nonfatal readiness probe at worker startup; an unreachable provider leaves the worker running.
+    service = _build(probe=True, probe_timeout=5.0)
     stop = threading.Event()
     previous = {}
     def shutdown(signum, frame):
