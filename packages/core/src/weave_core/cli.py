@@ -1,7 +1,5 @@
-import os
 import signal
 import threading
-from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID, uuid4
@@ -9,12 +7,12 @@ from uuid import UUID, uuid4
 import typer
 import yaml
 
-from .config import ConfigError, RunConfig, StaticCatalog
-from .db import make_engine, migrate
-from .registry import Registry
-from .runs import RunService, RunStateError
+from .config import ConfigError, RunConfig
+from .db import migrate
+from .runs import RunStateError
+from .service import build_service
 from .settings import Settings
-from .stages import Capability, JobStatus, ORDERED_STAGES, PIPELINE, Stage
+from .stages import JobStatus, ORDERED_STAGES, PIPELINE, Stage
 from .worker import run_worker
 from .writer import run_writer
 
@@ -108,29 +106,17 @@ if _clusterer_app is not None:
     app.add_typer(_clusterer_app, name='clusterer')
 
 
-def _service(probe: bool = True):
-    settings = Settings.from_env()
-    registry = Registry()
-    registry.load_entry_points()
-    inf = _inference()
-    inference_file = os.environ.get('WEAVE_INFERENCE_FILE')
-    if inf is not None and inference_file:
-        try:
-            catalog = inf.load_catalog(Path(inference_file))
-        except inf.CatalogError as exc:
-            for problem in exc.problems:
-                typer.echo(problem, err=True)
-            raise typer.Exit(2)
-        if probe:
-            inf.probe(catalog)
-        engine = make_engine(settings.database_url)
-        inf.Inference.configure(catalog, engine)
-        return RunService(engine, registry, catalog, inf.LedgerEstimator(engine, registry),
-                          on_start=partial(inf.store_readiness, catalog=catalog))
-    path = os.environ.get('WEAVE_DEPLOYMENTS_FILE')
-    data = yaml.safe_load(Path(path).read_text()) if path else {}
-    catalog = StaticCatalog({key: (Capability(value[0]), value[1]) for key, value in (data or {}).items()})
-    return RunService(make_engine(settings.database_url), registry, catalog)
+def _build(probe: bool = True):
+    try:
+        from weave_inference.catalog import CatalogError
+    except ImportError:  # weave-inference is not installed; build_service cannot raise it
+        return build_service(probe)
+    try:
+        return build_service(probe)
+    except CatalogError as exc:
+        for problem in exc.problems:
+            typer.echo(problem, err=True)
+        raise typer.Exit(2)
 
 
 @db_app.command('migrate')
@@ -140,7 +126,7 @@ def db_migrate():
 
 @run_app.command('create')
 def create(config: Path):
-    service = _service()
+    service = _build()
     try:
         created = service.create(RunConfig.model_validate(yaml.safe_load(config.read_text())))
     except ConfigError as exc:
@@ -156,7 +142,7 @@ def create(config: Path):
 
 
 def _transition(action: str, run_id: UUID):
-    service = _service(probe=action == "start")
+    service = _build(probe=action == "start")
     try:
         getattr(service, action)(run_id)
     except RunStateError as exc:
@@ -183,7 +169,7 @@ def resume(run_id: UUID):
 
 @run_app.command('status')
 def status(run_id: UUID):
-    service = _service(probe=False)
+    service = _build(probe=False)
     try:
         result = service.status(run_id)
     finally:
@@ -196,7 +182,7 @@ def status(run_id: UUID):
 
 @app.command('worker')
 def worker(stage: Stage = typer.Option(...), threads: int = typer.Option(8, min=1)):
-    service = _service()
+    service = _build()
     stop = threading.Event()
     previous = {}
     def shutdown(signum, frame):

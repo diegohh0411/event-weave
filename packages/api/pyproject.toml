@@ -2,10 +2,13 @@
 name = "weave-api"
 version = "0.1.0"
 requires-python = ">=3.12,<3.13"
-dependencies = ["weave-core", "fastapi", "uvicorn"]
+dependencies = ["weave-core", "weave-inference", "weave-eval", "weave-enrichers", "fastapi", "uvicorn"]
 
 [tool.uv.sources]
 weave-core = { workspace = true }
+weave-inference = { workspace = true }
+weave-eval = { workspace = true }
+weave-enrichers = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

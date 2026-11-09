@@ -63,3 +63,11 @@ def test_status_lines(cli, config_file):
 def test_resume_from_created_exits_1(cli, config_file):
     run_id = created_id(cli(['run', 'create', str(config_file)]))
     assert cli(['run', 'resume', run_id]).exit_code == 1
+
+
+def test_cli_create_still_exits_2_on_catalog_error(cli, config_file, monkeypatch, tmp_path):
+    bad = tmp_path / 'inference.yaml'
+    bad.write_text('defaults: {extraction: nope}')
+    monkeypatch.setenv('WEAVE_INFERENCE_FILE', str(bad))
+    result = cli(['run', 'create', str(config_file)])
+    assert result.exit_code == 2

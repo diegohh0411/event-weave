@@ -29,10 +29,8 @@ class LedgerEstimator:
         return Decimal(total) / count if count else None
 
     def estimate(self, cfg: RunConfig) -> Estimate:
-        digest = provide_hash(cfg)
         with self.engine.connect() as conn:
-            prior = conn.execute(sa.select(runs.c.id).join(jobs, jobs.c.run_id == runs.c.id).where(
-                jobs.c.stage == 'provide', jobs.c.input_hash == digest).order_by(runs.c.created_at.desc()).limit(1)).scalar()
+            prior = _prior_run(conn, cfg)
             if prior is None:
                 return Estimate(None, 'no prior run with the same provider')
             amount = Decimal(0)
@@ -40,21 +38,60 @@ class LedgerEstimator:
                 choice = cfg.stages.get(stage)
                 if choice is None or not choice.deployments:
                     continue
-                spec = self.registry.get(stage, choice.adapter).spec
                 avgs = []
                 for deployment in sorted(choice.deployments.values()):
                     avg = self._average(conn, stage, choice.adapter, deployment)
                     if avg is None:
                         return Estimate(None, f'no ledger history for {choice.adapter}@{deployment}')
                     avgs.append(avg)
-                hashes = conn.scalars(sa.select(jobs.c.input_hash).where(jobs.c.run_id == prior, jobs.c.stage == stage)).all()
-                if not hashes:
+                keys = _stage_keys(conn, self.registry, prior, stage, choice)
+                if not keys:
                     return Estimate(None, f'prior run has no {stage} jobs')
-                keys = [cache_key(h, spec, choice.settings, choice.deployments) for h in hashes]
-                cached = set(conn.scalars(sa.select(stage_outputs.c.cache_key).where(stage_outputs.c.cache_key.in_(keys))))
-                units = sum(1 for k in keys if k not in cached)
-                amount += units * sum(avgs)
+                amount += (len(keys) - _cached_count(conn, keys)) * sum(avgs)
         return Estimate(amount)
+
+
+def _prior_run(conn, cfg: RunConfig):
+    """The most recent run that used the same provider: its jobs are the best guide to this run's units."""
+    return conn.execute(sa.select(runs.c.id).join(jobs, jobs.c.run_id == runs.c.id).where(
+        jobs.c.stage == 'provide', jobs.c.input_hash == provide_hash(cfg)).order_by(runs.c.created_at.desc()).limit(1)).scalar()
+
+
+def _stage_keys(conn, registry, prior, stage, choice) -> list[str]:
+    """Cache key of each unit the prior run processed in this stage, under this run's adapter, settings and deployments."""
+    spec = registry.get(stage, choice.adapter).spec
+    hashes = conn.scalars(sa.select(jobs.c.input_hash).where(jobs.c.run_id == prior, jobs.c.stage == stage)).all()
+    return [cache_key(h, spec, choice.settings, choice.deployments) for h in hashes]
+
+
+LOOKUP_BATCH = 10_000
+
+
+def _cached_count(conn, keys: list[str]) -> int:
+    cached = set()
+    for i in range(0, len(keys), LOOKUP_BATCH):  # Postgres caps a statement at 65,535 bind parameters
+        batch = keys[i:i + LOOKUP_BATCH]
+        cached.update(conn.scalars(sa.select(stage_outputs.c.cache_key).where(stage_outputs.c.cache_key.in_(batch))))
+    return sum(1 for k in keys if k in cached)
+
+
+def cache_coverage(engine, registry, cfg: RunConfig) -> dict[Stage, tuple[int, int]] | None:
+    """(cached, total) units per configured stage, from the last run with the same provider; None when there is none.
+
+    A non-cacheable stage reports 0 cached of the prior run's job count; a stage the prior run has no jobs for reports (0, 0)."""
+    with engine.connect() as conn:
+        prior = _prior_run(conn, cfg)
+        if prior is None:
+            return None
+        coverage = {}
+        for stage in PIPELINE:
+            choice = cfg.stages.get(stage)
+            if choice is None:
+                continue
+            keys = _stage_keys(conn, registry, prior, stage, choice)
+            cacheable = registry.get(stage, choice.adapter).spec.cacheable
+            coverage[stage] = (_cached_count(conn, keys) if cacheable and keys else 0, len(keys))
+        return coverage
 
 
 def store_readiness(session, run_id, cfg: RunConfig, *, catalog) -> None:
