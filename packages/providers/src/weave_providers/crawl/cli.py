@@ -1,4 +1,5 @@
 """`weave crawl <outlets.yaml> [--days 7]`."""
+import os
 import signal
 import threading
 from datetime import datetime, timezone
@@ -8,7 +9,9 @@ import typer
 
 from weave_core.db import make_engine
 from weave_core.settings import Settings
-from weave_providers.crawl.fetch import Crawl4aiFetcher, HttpFetcher
+from weave_providers.crawl.fetch import (Crawl4aiFetcher, HttpFetcher, PoliteFetcher,
+    RemoteBrowserFetcher, respect_robots_from_env)
+from weave_providers.crawl.public_urls import validate_public_url
 from weave_providers.crawl.outlets import load_outlets
 from weave_providers.crawl.store import crawl
 from weave_providers.crawl.worker import run_crawl_worker
@@ -28,8 +31,13 @@ def crawl_command(outlets: Path, days: int = typer.Option(7, min=1)) -> None:
     _require_crawl_extra()
     engine = make_engine(Settings.from_env().database_url)
     try:
-        with Crawl4aiFetcher() as browser, HttpFetcher() as http:
-            report = crawl(engine, load_outlets(outlets), browser, datetime.now(timezone.utc), days,
+        endpoint = os.environ.get('WEAVE_CRAWL_BROWSER_URL')
+        browser_context = RemoteBrowserFetcher(endpoint) if endpoint else Crawl4aiFetcher()
+        with browser_context as browser, HttpFetcher(
+                proxy=os.environ.get('WEAVE_CRAWL_EGRESS_PROXY')) as http:
+            guard = PoliteFetcher(browser, meta=http, validator=validate_public_url,
+                                  respect_robots=respect_robots_from_env())
+            report = crawl(engine, load_outlets(outlets), guard, datetime.now(timezone.utc), days,
                            meta_fetcher=http)
     finally:
         engine.dispose()

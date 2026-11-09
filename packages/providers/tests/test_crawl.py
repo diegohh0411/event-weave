@@ -154,10 +154,12 @@ def test_cli_crawl_prints_report(tmp_path, monkeypatch, database_url):
     outlets.write_text("outlets:\n  - name: example-news\n    domain: example-news.test\n    language: en\n"
                        f"    sitemaps: ['{BASE}/sitemap.xml']\n")
     monkeypatch.setenv("WEAVE_DATABASE_URL", database_url)
+    monkeypatch.setenv("WEAVE_CRAWL_RESPECT_ROBOTS", "true")
+    monkeypatch.setattr(cli, "validate_public_url", lambda u: u)
 
-    class FakeBrowser(PoliteFetcher):
+    class FakeBrowser(FixtureFetcher):
         def __init__(self):
-            super().__init__(FixtureFetcher(routes()), min_interval=0, clock=lambda: 0.0, sleep=lambda s: None)
+            super().__init__(routes())
 
         def __enter__(self):
             return self
@@ -165,7 +167,10 @@ def test_cli_crawl_prints_report(tmp_path, monkeypatch, database_url):
         def __exit__(self, *exc):
             pass
 
-    class FakeHttp:
+    class FakeHttp(FixtureFetcher):
+        def __init__(self, **kwargs):
+            super().__init__(routes())
+
         def __enter__(self):
             return self
 

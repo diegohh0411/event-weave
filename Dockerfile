@@ -9,9 +9,16 @@ RUN uv sync --frozen --no-dev --all-packages
 
 # Crawl container: adds crawl4ai and its browser (weave-providers[crawl]); runs the long-lived crawl queue worker.
 FROM base AS crawler
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 RUN uv sync --frozen --no-dev --all-packages --extra crawl && crawl4ai-setup
 COPY outlets.example.yaml /app/outlets.yaml
 CMD ["weave", "crawl-worker"]
+
+# No application credentials or writable application files in the renderer.
+FROM crawler AS crawl-browser
+ENV HOME=/tmp CRAWL4_AI_BASE_DIRECTORY=/tmp
+USER 10001:10001
+CMD ["uvicorn", "weave_providers.crawl.browser_service:app", "--host", "0.0.0.0", "--port", "8081", "--limit-concurrency", "8", "--timeout-keep-alive", "5"]
 
 # Stanza service: pinned stanza==1.10.1 (weave-extractors[stanza]); models live in the stanza-models volume.
 FROM base AS stanza

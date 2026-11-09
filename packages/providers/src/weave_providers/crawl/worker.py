@@ -1,10 +1,12 @@
 """Consume public crawl jobs, retaining progress across lease expiry and shutdown."""
 import logging
+import os
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from threading import Event, Thread
 
-from .fetch import Crawl4aiFetcher, HttpFetcher, PoliteFetcher
+from .fetch import (HttpFetcher, PoliteFetcher, browser_fetcher_from_env,
+                    respect_robots_from_env)
 from .jobs import (LEASE_SECONDS, claim_crawl, finish_crawl, heartbeat, lock_owned,
                    record_article, record_source, release_crawl)
 from .public_urls import validate_public_url
@@ -21,7 +23,8 @@ def _now():
 @contextmanager
 def public_fetchers():
     # PoliteFetcher enables guarding on the browser before it is started.
-    with Crawl4aiFetcher() as browser, HttpFetcher() as http:
+    with browser_fetcher_from_env() as browser, HttpFetcher(
+            proxy=os.environ.get('WEAVE_CRAWL_EGRESS_PROXY')) as http:
         yield browser, http
 
 
@@ -81,7 +84,7 @@ def process_claim(engine, claim, stop, *, fetcher_factory=public_fetchers,
         if not cancelled():
             with fetcher_factory() as (browser, http):
                 fetcher = PoliteFetcher(browser, meta=http, validator=validate_public_url,
-                                        min_interval=min_interval)
+                                        min_interval=min_interval, respect_robots=respect_robots_from_env())
                 # Reclaims must use the original discovery window, not a later one.
                 crawl(engine, claim.request.sites, fetcher, claim.started_at, claim.request.days,
                       observer=observe, cancelled=cancelled, write_guard=guard)
@@ -104,6 +107,8 @@ def process_claim(engine, claim, stop, *, fetcher_factory=public_fetchers,
 
 def run_crawl_worker(engine, stop, poll_seconds=2, once=False, fetcher_factory=public_fetchers,
                      *, min_interval=2.0):
+    # Configuration errors must never consume queued work.
+    respect_robots_from_env()
     while not stop.is_set():
         try:
             claim = claim_crawl(engine, _now())

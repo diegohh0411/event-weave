@@ -378,3 +378,39 @@ def test_cancel_after_redirect_stops_before_next_transport():
     pf.cancelled = lambda: 'https://ex.com/a' in f.calls
     assert pf.fetch('https://ex.com/a').status == 0
     assert f.calls == ['https://ex.com/robots.txt', 'https://ex.com/a']
+
+
+def test_disabled_robots_does_not_fetch_rules_but_keeps_validation_and_redirect_guards():
+    source = 'https://ex.com/private/a'
+    inner = FixtureFetcher({source: redirect(source, 'https://elsewhere.com/a')})
+    pf = PoliteFetcher(inner, respect_robots=False, min_interval=0,
+                       validator=lambda u: u, domain='ex.com')
+    assert pf.fetch(source).error == 'redirect outside requested domain'
+    assert inner.calls == [source]
+    def deny(url):
+        raise ValueError('unsafe URL')
+    pf.validator = deny
+    assert pf.fetch(source).error == 'unsafe URL'
+    assert inner.calls == [source]
+
+
+def test_disabled_robots_allows_disallowed_path_and_preserves_spacing():
+    url = 'https://ex.com/private/a'
+    inner = FixtureFetcher({url: page(url)})
+    pf, clock = polite(inner, respect_robots=False)
+    assert pf.fetch(url).status == 200
+    assert pf.meta_view().fetch(url).status == 200
+    assert clock.sleeps == [2.0]
+    assert inner.calls == [url, url]
+
+
+def test_robots_environment_defaults_disabled_and_rejects_typos(monkeypatch):
+    from weave_providers.crawl.fetch import respect_robots_from_env
+    monkeypatch.delenv('WEAVE_CRAWL_RESPECT_ROBOTS', raising=False)
+    assert respect_robots_from_env() is False
+    monkeypatch.setenv('WEAVE_CRAWL_RESPECT_ROBOTS', 'true')
+    assert respect_robots_from_env() is True
+    monkeypatch.setenv('WEAVE_CRAWL_RESPECT_ROBOTS', 'treu')
+    import pytest
+    with pytest.raises(ValueError):
+        respect_robots_from_env()
