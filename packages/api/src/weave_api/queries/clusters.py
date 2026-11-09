@@ -1,20 +1,32 @@
 from uuid import UUID
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import distinct_on
 
-from weave_core.schema import cluster_decisions, cluster_members, clusters, documents, mention_tags, mentions
+from weave_core.schema import cluster_decisions, cluster_members, clusters, documents, jobs, mentions, stage_outputs
+from weave_core.stages import JobStatus, Stage
+
+
+def _run_tags(run_id: UUID):
+    """One row per mention: the tags the run's own tag job produced (jobs are unique per run, stage and unit)."""
+    out = stage_outputs.c.output
+    return (sa.select(jobs.c.unit_id.label("mention_id"),
+                      sa.cast(out["significance"].astext, sa.Float).label("significance"),
+                      out["event_type"].astext.label("event_type"))
+            .select_from(jobs.join(stage_outputs, stage_outputs.c.cache_key == jobs.c.cache_key))
+            .where(jobs.c.run_id == run_id, jobs.c.stage == Stage.tag, jobs.c.status == JobStatus.done)
+            .subquery("run_tags"))
 
 
 def _facets(run_id: UUID):
     """Per-cluster languages, event types and max significance over its members (run-scoped)."""
+    tags = _run_tags(run_id)
     return (sa.select(cluster_members.c.cluster_id,
                       sa.func.array_agg(sa.distinct(documents.c.language)).label("languages"),
-                      sa.func.array_remove(sa.func.array_agg(sa.distinct(mention_tags.c.event_type)), None).label("event_types"),
-                      sa.func.max(mention_tags.c.significance).label("max_significance"))
+                      sa.func.array_remove(sa.func.array_agg(sa.distinct(tags.c.event_type)), None).label("event_types"),
+                      sa.func.max(tags.c.significance).label("max_significance"))
             .select_from(cluster_members.join(mentions, mentions.c.id == cluster_members.c.mention_id)
                          .join(documents, documents.c.id == mentions.c.document_id)
-                         .outerjoin(mention_tags, mention_tags.c.mention_id == mentions.c.id))
+                         .outerjoin(tags, tags.c.mention_id == mentions.c.id))
             .where(cluster_members.c.run_id == run_id, cluster_members.c.cluster_id.is_not(None))
             .group_by(cluster_members.c.cluster_id).subquery("facets"))
 
@@ -51,10 +63,7 @@ def cluster_row(conn, run_id: UUID, cluster_id: str):
 
 
 def members(run_id: UUID, cluster_id: str):
-    tag = (sa.select(mention_tags.c.mention_id, mention_tags.c.significance, mention_tags.c.event_type)
-           .ext(distinct_on(mention_tags.c.mention_id))
-           .order_by(mention_tags.c.mention_id, mention_tags.c.significance.desc().nulls_last(), mention_tags.c.tagger,
-                     mention_tags.c.tagger_version, mention_tags.c.deployment).subquery("tag"))
+    tag = _run_tags(run_id)
     s_start = sa.func.coalesce(sa.cast(documents.c.sentence_offsets[mentions.c.sentence][0].astext, sa.Integer), 0)
     s_end = sa.func.coalesce(sa.cast(documents.c.sentence_offsets[mentions.c.sentence][1].astext, sa.Integer), sa.func.length(documents.c.text))
     return (sa.select(mentions.c.id.label("mention_id"), mentions.c.document_id, documents.c.title.label("document_title"),

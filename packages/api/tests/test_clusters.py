@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from weave_api.main import create_app
-from weave_core.schema import cluster_decisions, cluster_members, clusters, documents, mention_tags, mentions, runs
+from weave_core.schema import cluster_decisions, cluster_members, clusters, documents, jobs, mentions, runs, stage_outputs
 
 TEXTS = {"en": "Rebels seized the town. Troops retook it on Monday.", "es": "Los rebeldes tomaron el pueblo. Las tropas lo recuperaron."}
 
@@ -36,6 +36,15 @@ def _cluster(conn, run, cid, size, order, card, members):
             noul=0.1, probabilities={"A": 0.9}, outcome="join" if i else "new", reason="r", cluster_id=cid))
 
 
+def _tag(conn, run, mid, significance, event_type):
+    key = f"tag-{run}-{mid}"
+    conn.execute(stage_outputs.insert().values(
+        cache_key=key, stage="tag", adapter="t", adapter_version="1", emits={}, created_at=datetime.now(timezone.utc),
+        output={"significance": significance, "event_type": event_type, "event_type_probs": None}))
+    conn.execute(jobs.insert().values(run_id=run, stage="tag", unit_kind="mention", unit_id=mid, unit_content_hash="u", partition="p",
+                                      order_key=[0], input_hash="i", status="done", available_at=datetime.now(timezone.utc), cache_key=key))
+
+
 @pytest.fixture
 def seeded(engine):
     run, other = uuid4(), uuid4()
@@ -49,11 +58,9 @@ def seeded(engine):
         _mention(conn, "m2", "d-en", "en", 1, "Troops")
         _mention(conn, "m3", "d-es", "es", 0, "rebeldes")
         _mention(conn, "m4", "d-es", "es", 1, "tropas")
-        conn.execute(mention_tags.insert(), [
-            dict(mention_id="m1", tagger="t", tagger_version="1", deployment="d", significance=0.9, event_type="attack"),
-            dict(mention_id="m2", tagger="t", tagger_version="1", deployment="d", significance=0.2, event_type="military"),
-            dict(mention_id="m3", tagger="t", tagger_version="1", deployment="d", significance=0.5, event_type="attack"),
-            dict(mention_id="m4", tagger="t", tagger_version="1", deployment="d", significance=0.1, event_type="other")])
+        for r, mid, sig, kind in [(run, "m1", 0.9, "attack"), (run, "m2", 0.2, "military"), (run, "m3", 0.5, "attack"),
+                                  (run, "m4", 0.1, "other"), (other, "m1", 0.99, "diplomacy")]:
+            _tag(conn, r, mid, sig, kind)
         _cluster(conn, run, "c-big", 2, 5, {"action": "seize town"}, ["m1", "m3"])
         _cluster(conn, run, "c-mid", 1, 9, {"action": "retake"}, ["m2"])
         _cluster(conn, run, "c-es", 1, 1, {"action": "recuperar"}, ["m4"])
@@ -161,3 +168,11 @@ def test_members_without_sentence_offsets_fall_back_to_document(api, engine):
         assert m["sentence"] == TEXTS["en"]
         a, b = m["trigger"]
         assert m["sentence"][a:b] == m["text"]
+
+
+def test_tags_come_only_from_the_requested_runs_tag_job(api, seeded):
+    # m1 is tagged attack/0.9 in the seeded run and diplomacy/0.99 in the other run
+    big = api.get(f"/runs/{seeded}/clusters/c-big").json()["cluster"]
+    assert big["event_types"] == ["attack"] and big["max_significance"] == 0.9
+    first = api.get(f"/runs/{seeded}/clusters/c-big/members").json()["items"][0]
+    assert first["event_type"] == "attack" and first["significance"] == 0.9
