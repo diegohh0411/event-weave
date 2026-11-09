@@ -1,0 +1,259 @@
+"""The public crawl queue is exercised with fixture fetchers, never the network."""
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from threading import Event, Thread
+
+import pytest
+import sqlalchemy as sa
+from typer.testing import CliRunner
+
+from weave_core.db import make_engine
+from weave_core.schema import crawl_articles, crawl_runs, crawl_sources, crawled_pages, documents
+from weave_providers.crawl.fetch import Fetched, FixtureFetcher
+from weave_providers.crawl.jobs import claim_crawl, create_crawl, crawl_counters
+from weave_providers.crawl.requests import CrawlRequest
+from weave_providers.crawl import worker
+
+BASE = 'https://example.test'
+HTML = (Path(__file__).parent / 'fixtures/reuters/article.html').read_text()
+
+
+@pytest.fixture
+def engine(database_url, monkeypatch):
+    # Validation is injected, not bypassed, in fixture-only tests.
+    monkeypatch.setattr(worker, 'validate_public_url', lambda url: url)
+    engine = make_engine(database_url)
+    yield engine
+    engine.dispose()
+
+
+def request():
+    return CrawlRequest(sites=[{'domain': 'example.test', 'language': 'en',
+                                'sitemaps': [BASE + '/sitemap.xml'], 'per_day': 10}])
+
+
+def factory(on_fetch=None, on_close=None):
+    sitemap = ('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+               '<url><loc>https://example.test/a</loc></url>'
+               '<url><loc>https://example.test/b</loc></url></urlset>')
+    routes = {BASE + '/robots.txt': Fetched('', 200, 'User-agent: *\nAllow: /', None),
+              BASE + '/sitemap.xml': Fetched('', 200, sitemap, None),
+              BASE + '/a': Fetched('', 200, HTML, None),
+              BASE + '/b': Fetched('', 200, HTML.replace('replace roughly forty', 'replace roughly fifty'), None)}
+    class Fake(FixtureFetcher):
+        def fetch(self, url):
+            if on_fetch:
+                on_fetch(url)
+            return super().fetch(url)
+    @contextmanager
+    def create():
+        try:
+            yield Fake(routes), Fake(routes)
+        finally:
+            if on_close:
+                on_close()
+    return create
+
+
+def status(engine, id):
+    with engine.connect() as c:
+        return c.execute(sa.select(crawl_runs).where(crawl_runs.c.id == id)).mappings().one()
+
+
+def test_worker_records_progress_and_resumes_interrupted_claim(engine, monkeypatch):
+    crawl_id = create_crawl(engine, request())
+    stop = Event()
+    original = worker.record_article
+    seen_progress = []
+    def interrupt(engine, id, token, outcome):
+        ok = original(engine, id, token, outcome)
+        with engine.connect() as c:
+            seen_progress.append(crawl_counters(c, id))
+        stop.set()
+        return ok
+    monkeypatch.setattr(worker, 'record_article', interrupt)
+    worker.run_crawl_worker(engine, stop, once=True, fetcher_factory=factory(), min_interval=0)
+    assert seen_progress[0]['stored'] == 1
+    assert status(engine, crawl_id)['status'] == 'running'
+    with engine.connect() as c:
+        assert c.scalar(sa.select(sa.func.count()).select_from(crawl_sources)) == 1
+    monkeypatch.setattr(worker, 'record_article', original)
+    worker.run_crawl_worker(engine, Event(), once=True, fetcher_factory=factory(), min_interval=0)
+    assert status(engine, crawl_id)['status'] == 'completed'
+    with engine.connect() as c:
+        counters = crawl_counters(c, crawl_id)
+        assert counters['discovered'] == counters['stored'] == 2
+        assert c.scalar(sa.select(sa.func.count()).select_from(documents)) == 2
+        assert c.scalar(sa.select(sa.func.count()).select_from(crawl_articles)) == 2
+
+
+def test_stale_claim_does_not_fetch_or_finish(engine):
+    crawl_id = create_crawl(engine, request())
+    now = datetime.now(timezone.utc)
+    stale = claim_crawl(engine, now)
+    current = claim_crawl(engine, now + timedelta(seconds=121))
+    calls = []
+    worker.process_claim(engine, stale, Event(), fetcher_factory=factory(on_fetch=calls.append), min_interval=0)
+    assert not calls
+    assert status(engine, crawl_id)['claim_token'] == current.token
+
+
+def test_stale_source_event_is_rejected_before_heartbeat(engine):
+    crawl_id = create_crawl(engine, request())
+    claim = claim_crawl(engine, datetime.now(timezone.utc))
+    current = []
+    def takeover(url):
+        if url == BASE + '/sitemap.xml' and not current:
+            current.append(claim_crawl(engine, datetime.now(timezone.utc) + timedelta(seconds=121)))
+    worker.process_claim(engine, claim, Event(), fetcher_factory=factory(on_fetch=takeover), min_interval=0)
+    assert status(engine, crawl_id)['claim_token'] == current[0].token
+    with engine.connect() as c:
+        assert c.scalar(sa.select(sa.func.count()).select_from(crawl_sources)) == 0
+        assert c.scalar(sa.select(sa.func.count()).select_from(crawl_articles)) == 0
+
+
+def test_reclaim_during_fetch_prevents_stale_document_and_event_writes(engine):
+    crawl_id = create_crawl(engine, request())
+    claim = claim_crawl(engine, datetime.now(timezone.utc))
+    reclaimed = []
+    def takeover(url):
+        if url == BASE + '/a' and not reclaimed:
+            reclaimed.append(claim_crawl(engine, datetime.now(timezone.utc) + timedelta(seconds=121)))
+    worker.process_claim(engine, claim, Event(), fetcher_factory=factory(on_fetch=takeover), min_interval=0)
+    assert reclaimed[0].id == crawl_id
+    assert status(engine, crawl_id)['claim_token'] == reclaimed[0].token
+    with engine.connect() as c:
+        assert c.scalar(sa.select(sa.func.count()).select_from(documents)) == 0
+        assert c.scalar(sa.select(sa.func.count()).select_from(crawled_pages)) == 0
+        assert c.scalar(sa.select(sa.func.count()).select_from(crawl_articles)) == 0
+
+
+def test_reclaim_after_document_commit_before_membership_event(engine, monkeypatch):
+    crawl_id = create_crawl(engine, request())
+    claim = claim_crawl(engine, datetime.now(timezone.utc))
+    original = worker.record_article
+    def crash(*args):
+        raise SystemExit('simulated process death')
+    monkeypatch.setattr(worker, 'record_article', crash)
+    closed = Event()
+    with pytest.raises(SystemExit):
+        worker.process_claim(engine, claim, Event(), fetcher_factory=factory(on_close=closed.set), min_interval=0)
+    assert closed.is_set()
+    with engine.connect() as c:
+        assert c.scalar(sa.select(sa.func.count()).select_from(documents)) == 1
+        assert c.scalar(sa.select(sa.func.count()).select_from(crawl_articles)) == 0
+    monkeypatch.setattr(worker, 'record_article', original)
+    resumed = claim_crawl(engine, datetime.now(timezone.utc) + timedelta(seconds=121))
+    assert resumed.started_at == claim.started_at
+    worker.process_claim(engine, resumed, Event(), fetcher_factory=factory(), min_interval=0)
+    assert status(engine, crawl_id)['status'] == 'completed'
+    with engine.connect() as c:
+        assert c.scalar(sa.select(sa.func.count()).select_from(documents)) == 2
+        assert {r.status for r in c.execute(sa.select(crawl_articles.c.status))} == {'existing', 'stored'}
+        assert c.scalar(sa.select(sa.func.count()).select_from(crawl_articles)) == 2
+
+
+def test_heartbeat_uses_an_independent_connection_and_stops_after_loss(engine):
+    create_crawl(engine, request())
+    claim = claim_crawl(engine, datetime.now(timezone.utc))
+    entered, unblock, lost, renewed = Event(), Event(), Event(), Event()
+    original_heartbeat = worker.heartbeat
+    renewals = []
+    def observe_heartbeat(engine, id, token, now):
+        ok = original_heartbeat(engine, id, token, now)
+        if not ok:
+            lost.set()
+        else:
+            renewals.append(now)
+            if len(renewals) > 1:
+                renewed.set()
+        return ok
+    def block(url):
+        if url == BASE + '/a':
+            entered.set()
+            assert unblock.wait(5)
+    # Patch manually so this thread can observe the heartbeat after a takeover.
+    from unittest.mock import patch
+    with patch.object(worker, 'heartbeat', observe_heartbeat):
+        thread = Thread(target=worker.process_claim, args=(engine, claim, Event()),
+                        kwargs={'fetcher_factory': factory(on_fetch=block), 'min_interval': 0,
+                                'heartbeat_seconds': 0.01})
+        thread.start()
+        try:
+            assert entered.wait(5)
+            assert renewed.wait(5)  # the crawler is still blocked in the fetch
+            assert claim_crawl(engine, datetime.now(timezone.utc) + timedelta(seconds=121))
+            assert lost.wait(5)
+        finally:
+            unblock.set()
+            thread.join(5)
+    assert not thread.is_alive()
+    with engine.connect() as c:
+        assert c.scalar(sa.select(sa.func.count()).select_from(documents)) == 0
+        assert c.scalar(sa.select(sa.func.count()).select_from(crawl_articles)) == 0
+
+
+def test_shutdown_during_fetch_closes_and_releases_claim(engine):
+    crawl_id = create_crawl(engine, request())
+    stop, closed = Event(), Event()
+    def shutdown(url):
+        if url == BASE + '/a':
+            stop.set()
+    worker.run_crawl_worker(engine, stop, once=True,
+                            fetcher_factory=factory(on_fetch=shutdown, on_close=closed.set), min_interval=0)
+    assert closed.is_set()
+    assert status(engine, crawl_id)['status'] == 'running'
+    assert claim_crawl(engine, datetime.now(timezone.utc)).id == crawl_id
+    with engine.connect() as c:
+        assert c.scalar(sa.select(sa.func.count()).select_from(documents)) == 0
+
+
+def test_worker_validates_public_urls_before_any_fixture_transport(engine, monkeypatch):
+    from weave_providers.crawl import public_urls
+    monkeypatch.setattr(public_urls, '_resolve', lambda host, port: ['127.0.0.1'])
+    monkeypatch.setattr(worker, 'validate_public_url', public_urls.validate_public_url)
+    crawl_id = create_crawl(engine, request())
+    calls = []
+    worker.run_crawl_worker(engine, Event(), once=True, fetcher_factory=factory(on_fetch=calls.append), min_interval=0)
+    assert calls == []
+    assert status(engine, crawl_id)['status'] == 'completed'
+    with engine.connect() as c:
+        source = c.execute(sa.select(crawl_sources.c.status, crawl_sources.c.error)).one()
+    assert source.status == 'error' and 'unsafe URL' in source.error
+
+
+def test_failure_does_not_stop_worker_from_processing_next_job(engine, monkeypatch):
+    first, second = create_crawl(engine, request()), create_crawl(engine, request())
+    stop = Event()
+    count = 0
+    finish = worker.finish_crawl
+    def finish_and_stop(engine, id, token, error=None):
+        result = finish(engine, id, token, error=error)
+        if id == second:
+            stop.set()
+        return result
+    monkeypatch.setattr(worker, 'finish_crawl', finish_and_stop)
+    @contextmanager
+    def sometimes_fails():
+        nonlocal count
+        count += 1
+        if count == 1:
+            raise RuntimeError('browser unavailable')
+        with factory()() as fetchers:
+            yield fetchers
+    worker.run_crawl_worker(engine, stop, poll_seconds=0.01, fetcher_factory=sometimes_fails, min_interval=0)
+    assert status(engine, first)['status'] == 'failed'
+    assert 'browser unavailable' in status(engine, first)['error']
+    assert status(engine, second)['status'] == 'completed'
+
+
+def test_cli_registers_crawl_worker(monkeypatch, database_url):
+    from weave_core.cli import app
+    from weave_providers.crawl import cli
+    monkeypatch.setenv('WEAVE_DATABASE_URL', database_url)
+    seen = []
+    monkeypatch.setattr(cli, 'run_crawl_worker', lambda engine, stop, **kw: seen.append(kw))
+    result = CliRunner().invoke(app, ['crawl-worker', '--once'])
+    assert result.exit_code == 0, result.output
+    assert seen == [{'once': True}]

@@ -14,6 +14,7 @@ class ClaimedCrawl:
     id: UUID
     token: UUID
     request: CrawlRequest
+    started_at: datetime
 
 
 def create_crawl(engine, request: CrawlRequest) -> UUID:
@@ -37,10 +38,12 @@ def claim_crawl(engine, now: datetime, lease_seconds: int = 120) -> ClaimedCrawl
         conn.execute(crawl_runs.update().where(crawl_runs.c.id == row["id"]).values(
             status="running", claim_token=token, lease_until=now + timedelta(seconds=lease_seconds),
             started_at=row["started_at"] or now))
-        return ClaimedCrawl(row["id"], token, CrawlRequest.model_validate(row["request"]))
+        return ClaimedCrawl(row["id"], token, CrawlRequest.model_validate(row["request"]),
+                            row["started_at"] or now)
 
 
-def _owned(conn, crawl_id, token):
+def lock_owned(conn, crawl_id, token):
+    """Lock the claim row in the caller's write transaction; serialize with reclaim."""
     return conn.scalar(sa.select(crawl_runs.c.id).where(
         crawl_runs.c.id == crawl_id, crawl_runs.c.status == "running",
         crawl_runs.c.claim_token == token).with_for_update()) is not None
@@ -51,6 +54,15 @@ def heartbeat(engine, id, token, now) -> bool:
         result = conn.execute(crawl_runs.update().where(crawl_runs.c.id == id,
             crawl_runs.c.status == "running", crawl_runs.c.claim_token == token).values(
                 lease_until=now + timedelta(seconds=120)))
+        return result.rowcount == 1
+
+
+def release_crawl(engine, id, token, now) -> bool:
+    """Expire a stopped worker's claim without allowing it to release a newer owner."""
+    with engine.begin() as conn:
+        result = conn.execute(crawl_runs.update().where(
+            crawl_runs.c.id == id, crawl_runs.c.status == 'running',
+            crawl_runs.c.claim_token == token).values(lease_until=now))
         return result.rowcount == 1
 
 
@@ -70,7 +82,7 @@ def record_article(engine, id, token, outcome) -> bool:
     values.setdefault("reason", None)
     values.setdefault("document_id", None)
     with engine.begin() as conn:
-        if not _owned(conn, id, token):
+        if not lock_owned(conn, id, token):
             return False
         stmt = insert(crawl_articles).values(**values)
         conn.execute(stmt.on_conflict_do_update(index_elements=["crawl_id", "canonical_url"],
@@ -84,7 +96,7 @@ def record_source(engine, id, token, outcome) -> bool:
     values["crawl_id"] = id
     values.setdefault("error", None)
     with engine.begin() as conn:
-        if not _owned(conn, id, token):
+        if not lock_owned(conn, id, token):
             return False
         stmt = insert(crawl_sources).values(**values)
         conn.execute(stmt.on_conflict_do_update(index_elements=["crawl_id", "url"],

@@ -37,25 +37,28 @@ class CrawlReport:
 
 
 def crawl(engine: Engine, outlets: list[Outlet | CrawlSite], fetcher: Fetcher, now: datetime,
-          days: int = 7, meta_fetcher: Fetcher | None = None, observer=None, cancelled=None) -> CrawlReport:
+          days: int = 7, meta_fetcher: Fetcher | None = None, observer=None, cancelled=None,
+          write_guard=None) -> CrawlReport:
     """Crawl configured outlets or CrawlSites, emitting ``(kind, outcome)`` events.
 
     Pass a source-less CrawlSite for automatic discovery; legacy Outlet/CLI
     validation remains unchanged. Public jobs must supply a PoliteFetcher with
     a public URL validator. Cancellation stops new requests and writes after an
     in-flight request returns; the observer must still enforce lease ownership.
+    Public jobs also pass a write_guard that locks and checks ownership in each
+    document/page transaction, serializing those writes with lease reclaim.
     """
     if not isinstance(fetcher, PoliteFetcher):
         fetcher = PoliteFetcher(fetcher, meta=meta_fetcher)
     previous_cancelled = fetcher.cancelled
     fetcher.cancelled = cancelled or (lambda: False)
     try:
-        return _run_crawl(engine, outlets, fetcher, now, days, observer, fetcher.cancelled)
+        return _run_crawl(engine, outlets, fetcher, now, days, observer, fetcher.cancelled, write_guard)
     finally:
         fetcher.cancelled = previous_cancelled
 
 
-def _run_crawl(engine, outlets, fetcher, now, days, observer, stopped):
+def _run_crawl(engine, outlets, fetcher, now, days, observer, stopped, write_guard):
     meta = fetcher.meta_view()
     window = (now - timedelta(days=days), now)
     report = CrawlReport()
@@ -119,7 +122,8 @@ def _run_crawl(engine, outlets, fetcher, now, days, observer, stopped):
                                      outlet=candidate.outlet, status=status, reason=reason,
                                      document_id=doc_id, fetched=False))
                 continue
-            outcome = _crawl_page(engine, candidate, outlet.language, fetcher, now, report, rejected, stopped)
+            outcome = _crawl_page(engine, candidate, outlet.language, fetcher, now, report, rejected, stopped,
+                                  write_guard)
             if outcome is None:
                 break
             emit('article', dict(canonical_url=candidate.url, url=candidate.url,
@@ -138,19 +142,20 @@ def _prior_page(engine: Engine, canonical: str):
 
 
 def _crawl_page(engine, candidate: Candidate, language: str, fetcher: Fetcher, now: datetime,
-                report: CrawlReport, rejected: Counter, cancelled) -> dict | None:
+                report: CrawlReport, rejected: Counter, cancelled, write_guard) -> dict | None:
     got = fetcher.fetch(candidate.url)
     if cancelled():
         return None
     if got.error == ROBOTS_DISALLOWED:
-        _record(engine, candidate, now, ROBOTS_DISALLOWED, None, rejected)
+        _record(engine, candidate, now, ROBOTS_DISALLOWED, None, rejected, write_guard=write_guard)
         return dict(status='rejected', reason=ROBOTS_DISALLOWED, document_id=None, fetched=False)
     if got.error or got.status == 0 or got.status >= 500 or (not got.html and got.status == 200):
         reason = FETCH_ERROR + (got.error or ("empty response" if got.status == 200 else f"HTTP {got.status}"))
-        _record(engine, candidate, now, reason, None, rejected, count_as=FETCH_ERROR.rstrip(": "))
+        _record(engine, candidate, now, reason, None, rejected, count_as=FETCH_ERROR.rstrip(": "),
+                write_guard=write_guard)
         return dict(status='error', reason=reason, document_id=None, fetched=False)
     if got.status != 200 or not got.html:
-        _record(engine, candidate, now, f"HTTP {got.status}", None, rejected)
+        _record(engine, candidate, now, f"HTTP {got.status}", None, rejected, write_guard=write_guard)
         return dict(status='rejected', reason=f'HTTP {got.status}', document_id=None, fetched=False)
     report.fetched += 1
     raw = gzip.compress(got.html.encode("utf-8"))
@@ -158,7 +163,7 @@ def _crawl_page(engine, candidate: Candidate, language: str, fetcher: Fetcher, n
     if cancelled():
         return None
     if isinstance(result, Rejected):
-        _record(engine, candidate, now, result.reason, raw, rejected)
+        _record(engine, candidate, now, result.reason, raw, rejected, write_guard=write_guard)
         return dict(status='rejected', reason=result.reason, document_id=None, fetched=True)
     digest = content_hash(result.text)
     published = result.published_at
@@ -166,6 +171,8 @@ def _crawl_page(engine, candidate: Candidate, language: str, fetcher: Fetcher, n
     external_id = opaque_id(candidate.url)
     doc_id = f"{PROVIDER}:{external_id}"
     with engine.begin() as conn:
+        if write_guard:
+            write_guard(conn)
         dup = conn.execute(sa.select(documents.c.id).where(
             documents.c.provider == PROVIDER, documents.c.content_hash == digest)).scalar()
         if cancelled():
@@ -185,8 +192,11 @@ def _crawl_page(engine, candidate: Candidate, language: str, fetcher: Fetcher, n
     return dict(status="stored", reason=None, document_id=doc_id, fetched=True)
 
 
-def _record(engine, candidate, now, reason, raw, rejected: Counter, count_as: str | None = None) -> None:
+def _record(engine, candidate, now, reason, raw, rejected: Counter, count_as: str | None = None,
+            write_guard=None) -> None:
     with engine.begin() as conn:
+        if write_guard:
+            write_guard(conn)
         _upsert_page(conn, candidate, now, "rejected", reason, raw, None)
     rejected[count_as or reason] += 1
 

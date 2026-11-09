@@ -13,6 +13,8 @@ from weave_core.db import make_engine
 from weave_core.registry import Registry
 from weave_core.runs import RunService
 from weave_core.schema import documents, jobs
+from weave_providers.crawl.jobs import claim_crawl, create_crawl, finish_crawl, record_article
+from weave_providers.crawl.requests import CrawlRequest
 from weave_core.stages import Stage, UnitKind
 from weave_core.worker import run_worker
 from weave_providers.replay import ReplayProvider, ReplaySettings
@@ -94,6 +96,35 @@ def test_replay_of_unknown_provider_is_empty_not_error(engine):
     seed(engine, [("a", (1,), "crawl", "en", "x", day(1), "u1")])
     result = run_replay(provider="nope")
     assert result.emits == [] and result.documents == [] and result.output == {"documents": 0}
+
+
+def test_replay_exact_distinct_crawl_membership_and_validation(engine):
+    seed(engine, [("a", (2,), "crawl", "en", "x", day(1), "u2"),
+                  ("b", (1,), "crawl", "es", "x", day(2), "u1"),
+                  ("c", (3,), "crawl", "en", "x", day(3), "u3")])
+    request = CrawlRequest(sites=[{"domain": "example.com", "language": "en"}])
+    first = create_crawl(engine, request)
+    claim1 = claim_crawl(engine, datetime.now(timezone.utc))
+    def member(claim, url, doc, status):
+        assert record_article(engine, claim.id, claim.token, dict(
+            canonical_url=url, url=url, outlet='x', status=status, document_id=doc))
+    member(claim1, 'https://example.com/a', 'crawl:a', 'stored')
+    member(claim1, 'https://example.com/b', 'crawl:b', 'stored')
+    assert finish_crawl(engine, first, claim1.token)
+    second = create_crawl(engine, request)
+    claim2 = claim_crawl(engine, datetime.now(timezone.utc))
+    member(claim2, 'https://example.com/a', 'crawl:a', 'existing')
+    member(claim2, 'https://example.com/copy', 'crawl:a', 'duplicate')
+    member(claim2, 'https://example.com/c', 'crawl:c', 'stored')
+    with pytest.raises(ValueError, match='(?i)(not completed|running)'):
+        run_replay(crawl_id=second)
+    with pytest.raises(ValueError, match='(?i)(unknown|not found)'):
+        run_replay(crawl_id=uuid4())
+    assert finish_crawl(engine, second, claim2.token)
+    assert [u.id for u in run_replay(crawl_id=first).emits] == ['crawl:b', 'crawl:a']
+    assert [u.id for u in run_replay(crawl_id=second).emits] == ['crawl:a', 'crawl:c']
+    assert [u.id for u in run_replay(crawl_id=first, languages=['en']).emits] == ['crawl:a']
+    assert [u.id for u in run_replay(crawl_id=second, limit=1).emits] == ['crawl:a']
 
 
 def test_second_identical_run_sees_documents_added_in_between(engine):
