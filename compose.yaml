@@ -124,11 +124,63 @@ services:
     restart: unless-stopped
     environment:
       WEAVE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-weave}:${POSTGRES_PASSWORD:-weave}@postgres:5432/${POSTGRES_DB:-weave}
+      WEAVE_CRAWL_BROWSER_URL: http://crawl-browser:8081
+      WEAVE_CRAWL_EGRESS_PROXY: http://crawl-egress:8080
+      WEAVE_CRAWL_RESPECT_ROBOTS: ${WEAVE_CRAWL_RESPECT_ROBOTS:-false}
+    networks: [default, crawl-isolated]
     depends_on:
       postgres:
         condition: service_healthy
       api:
         condition: service_healthy
+      crawl-browser:
+        condition: service_healthy
+
+  crawl-browser:
+    build:
+      context: .
+      target: crawl-browser
+    image: event-weave-crawl-browser:latest
+    restart: unless-stopped
+    environment:
+      WEAVE_CRAWL_EGRESS_PROXY: http://crawl-egress:8080
+    networks: [crawl-isolated]
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    shm_size: 256m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 2g
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/health')"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    depends_on:
+      crawl-egress:
+        condition: service_started
+
+  crawl-egress:
+    build:
+      context: .
+      target: app
+    image: event-weave:latest
+    command: ["python", "-m", "weave_providers.crawl.egress"]
+    user: "10001:10001"
+    restart: unless-stopped
+    networks: [crawl-isolated, crawl-egress]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    pids_limit: 64
+
+networks:
+  crawl-isolated:
+    internal: true
+  crawl-egress:
 
 volumes:
   pgdata:

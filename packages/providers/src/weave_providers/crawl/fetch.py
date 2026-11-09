@@ -1,5 +1,6 @@
 """Fetching seam for the crawler: a Fetcher returns a page or a reason it failed."""
 import asyncio
+import os
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -51,9 +52,10 @@ class HttpFetcher:
     Never follows redirects itself: a 3xx comes back with `redirect_to` so PoliteFetcher can
     check each hop against robots.txt before requesting it."""
 
-    def __init__(self, transport: httpx.BaseTransport | None = None, timeout: float = 20.0):
+    def __init__(self, transport: httpx.BaseTransport | None = None, timeout: float = 20.0,
+                 proxy: str | None = None):
         self._client = httpx.Client(headers={"User-Agent": USER_AGENT}, follow_redirects=False,
-                                    timeout=timeout, transport=transport)
+                                    timeout=timeout, transport=transport, proxy=proxy, trust_env=False)
 
     def __enter__(self) -> "HttpFetcher":
         return self
@@ -82,11 +84,13 @@ class Crawl4aiFetcher:
     Use as a context manager or call close(). Browser errors come back as Fetched.error.
     """
 
-    def __init__(self, crawler_factory: Callable[[], Any] | None = None, validator=None):
+    def __init__(self, crawler_factory: Callable[[], Any] | None = None, validator=None,
+                 isolated_proxy: str | None = None):
+        self.isolated_proxy = isolated_proxy
         self.validator = validator
         self.navigation_guard = None
         self.cancelled: Callable[[], bool] = lambda: False
-        self._crawler_factory = crawler_factory or (lambda: _default_crawler(public=bool(self.validator)))
+        self._crawler_factory = crawler_factory or (lambda: _default_crawler(public=bool(self.validator), isolated_proxy=self.isolated_proxy))
         self._loop: asyncio.AbstractEventLoop | None = None
         self._crawler: Any = None
 
@@ -142,7 +146,9 @@ class Crawl4aiFetcher:
             self._crawler = crawler
         if self.validator:
             self.validator(url)
-        result = await self._crawler.arun(url=url, config=CrawlerRunConfig())
+        result = await self._crawler.arun(url=url, config=CrawlerRunConfig(
+            magic=bool(self.isolated_proxy), check_robots_txt=False,
+            page_timeout=45000, delay_before_return_html=2.0 if self.isolated_proxy else 0.1))
         status = result.status_code or 0
         if not result.success:
             return Fetched(url, status, None, result.error_message or "fetch failed")
@@ -160,12 +166,74 @@ class Crawl4aiFetcher:
             self._loop = None
 
 
-def _default_crawler(public: bool = False) -> Any:
+def _default_crawler(public: bool = False, isolated_proxy: str | None = None) -> Any:
     from crawl4ai import AsyncWebCrawler, BrowserConfig
 
-    # JavaScript is disabled in guarded crawls: crawl4ai does not expose Playwright's
-    # service_workers="block" context setting, so scripts could otherwise bypass routing.
+    if isolated_proxy:
+        from crawl4ai import UndetectedAdapter
+        from crawl4ai.async_crawler_strategy import AsyncPlaywrightCrawlerStrategy
+        config = BrowserConfig(
+            headless=True, java_script_enabled=True,
+            proxy_config={"server": isolated_proxy},
+            extra_args=["--proxy-bypass-list=<-loopback>", "--disable-quic",
+                        "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"],
+        )
+        strategy = AsyncPlaywrightCrawlerStrategy(browser_config=config,
+                                                   browser_adapter=UndetectedAdapter())
+        return AsyncWebCrawler(config=config, crawler_strategy=strategy)
+    # Only the isolated service can enable JS for guarded public crawls.
     return AsyncWebCrawler(config=BrowserConfig(user_agent=USER_AGENT, java_script_enabled=not public))
+
+
+class RemoteBrowserFetcher:
+    """Bounded RPC to the isolated renderer. Errors never trigger local fallback."""
+
+    def __init__(self, endpoint: str, *, transport=None):
+        self.guard = None
+        self._client = httpx.Client(base_url=endpoint, timeout=90, transport=transport,
+                                    trust_env=False, follow_redirects=False)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self._client.close()
+
+    def fetch(self, url):
+        if self.guard is None or not self.guard.domain:
+            return Fetched(url, 0, None, 'isolated browser requires a domain guard')
+        if self.guard.cancelled():
+            return Fetched(url, 0, None, 'crawl cancelled')
+        try:
+            with self._client.stream('POST', '/fetch', json={
+                'url': url, 'domain': self.guard.domain,
+                'respect_robots': self.guard.respect_robots,
+            }) as response:
+                response.raise_for_status()
+                chunks = bytearray()
+                for chunk in response.iter_bytes():
+                    if self.guard.cancelled():
+                        return Fetched(url, 0, None, 'crawl cancelled')
+                    chunks.extend(chunk)
+                    if len(chunks) > 12_000_000:
+                        raise ValueError('browser response too large')
+                import json
+                return Fetched(**json.loads(chunks))
+        except (httpx.HTTPError, ValueError, TypeError) as exc:
+            return Fetched(url, 0, None, f'isolated browser: {exc}')
+
+
+def browser_fetcher_from_env():
+    endpoint = os.environ.get('WEAVE_CRAWL_BROWSER_URL')
+    from .public_urls import validate_public_url
+    return RemoteBrowserFetcher(endpoint) if endpoint else Crawl4aiFetcher(validator=validate_public_url)
+
+
+def respect_robots_from_env() -> bool:
+    value = os.environ.get("WEAVE_CRAWL_RESPECT_ROBOTS", "false").strip().lower()
+    if value not in ("true", "false", "1", "0"):
+        raise ValueError("WEAVE_CRAWL_RESPECT_ROBOTS must be true or false")
+    return value in ("true", "1")
 
 
 class PoliteFetcher:
@@ -191,9 +259,13 @@ class PoliteFetcher:
         sleep: Callable[[float], None] = time.sleep,
         validator=None,
         domain: str | None = None,
+        respect_robots: bool = True,
     ):
+        self.respect_robots = respect_robots
         self.validator = validator
         self.domain = domain
+        if isinstance(inner, RemoteBrowserFetcher):
+            inner.guard = self
         self.cancelled: Callable[[], bool] = lambda: False
         if validator and isinstance(inner, Crawl4aiFetcher):
             if inner._crawler is not None:
@@ -223,6 +295,8 @@ class PoliteFetcher:
                 self.validator(url)
             except ValueError:
                 return False
+        if not self.respect_robots:
+            return True
         rules = self._rules_for(url)
         if isinstance(rules, bool):
             return rules

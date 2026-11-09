@@ -271,3 +271,15 @@ def test_cli_registers_crawl_worker(monkeypatch, database_url):
     result = CliRunner().invoke(app, ['crawl-worker', '--once'])
     assert result.exit_code == 0, result.output
     assert seen == [{'once': True}]
+
+
+def test_invalid_robots_configuration_stops_worker_before_claiming_jobs(monkeypatch):
+    monkeypatch.setenv('WEAVE_CRAWL_RESPECT_ROBOTS', 'invalid')
+    claimed = []
+    def claim(*args):
+        claimed.append(True)
+        return None
+    monkeypatch.setattr(worker, 'claim_crawl', claim)
+    with pytest.raises(ValueError, match='WEAVE_CRAWL_RESPECT_ROBOTS'):
+        worker.run_crawl_worker(None, Event(), once=True)
+    assert claimed == []
