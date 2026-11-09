@@ -1,0 +1,23 @@
+# Opt-in override for the MCECR dataset: mount a host checkout read-only into the pipeline workers.
+# Not part of the default stack, which starts without any dataset mount.
+# Start the full stack with the base file plus this override:
+#   podman compose -f compose.yaml -f deploy/compose/mcecr.yaml up -d
+services:
+  worker-provide:
+    volumes:
+      - ${WEAVE_MCECR_PATH:-./.mcecr-unset}:/data/mcecr:ro
+  worker-extract:
+    volumes:
+      - ${WEAVE_MCECR_PATH:-./.mcecr-unset}:/data/mcecr:ro
+  worker-tag:
+    volumes:
+      - ${WEAVE_MCECR_PATH:-./.mcecr-unset}:/data/mcecr:ro
+  worker-enrich:
+    volumes:
+      - ${WEAVE_MCECR_PATH:-./.mcecr-unset}:/data/mcecr:ro
+  worker-embed:
+    volumes:
+      - ${WEAVE_MCECR_PATH:-./.mcecr-unset}:/data/mcecr:ro
+  worker-cluster:
+    volumes:
+      - ${WEAVE_MCECR_PATH:-./.mcecr-unset}:/data/mcecr:ro

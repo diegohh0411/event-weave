@@ -7,10 +7,11 @@ COPY packages ./packages
 # All workspace packages, so workers can load provider adapters via entry points.
 RUN uv sync --frozen --no-dev --all-packages
 
-# Crawl container: adds crawl4ai and its browser (weave-providers[crawl]); not used by the stack's workers.
+# Crawl container: adds crawl4ai and its browser (weave-providers[crawl]); runs the long-lived crawl queue worker.
 FROM base AS crawler
 RUN uv sync --frozen --no-dev --all-packages --extra crawl && crawl4ai-setup
 COPY outlets.example.yaml /app/outlets.yaml
+CMD ["weave", "crawl-worker"]
 
 # Stanza service: pinned stanza==1.10.1 (weave-extractors[stanza]); models live in the stanza-models volume.
 FROM base AS stanza

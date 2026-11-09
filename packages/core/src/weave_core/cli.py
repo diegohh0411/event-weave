@@ -107,13 +107,13 @@ if _clusterer_app is not None:
     app.add_typer(_clusterer_app, name='clusterer')
 
 
-def _build(probe: bool = True):
+def _build(probe: bool = True, probe_timeout: float = 5.0):
     try:
         from weave_inference.catalog import CatalogError
     except ImportError:  # weave-inference is not installed; build_service cannot raise it
         return build_service(probe)
     try:
-        return build_service(probe)
+        return build_service(probe, probe_timeout=probe_timeout)
     except CatalogError as exc:
         for problem in exc.problems:
             typer.echo(problem, err=True)
@@ -183,7 +183,8 @@ def status(run_id: UUID):
 
 @app.command('worker')
 def worker(stage: Stage = typer.Option(...), threads: int = typer.Option(8, min=1)):
-    service = _build()
+    # Bounded, nonfatal readiness probe at worker startup; an unreachable provider leaves the worker running.
+    service = _build(probe=True, probe_timeout=5.0)
     stop = threading.Event()
     previous = {}
     def shutdown(signum, frame):

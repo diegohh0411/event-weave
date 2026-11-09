@@ -6,10 +6,10 @@ x-worker: &worker
   restart: unless-stopped
   environment:
     WEAVE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-weave}:${POSTGRES_PASSWORD:-weave}@postgres:5432/${POSTGRES_DB:-weave}
-    WEAVE_MCECR_PATH: /data/mcecr
+    WEAVE_INFERENCE_FILE: /app/inference.yaml
     WEAVE_STANZA_URL: http://stanza:8001
   volumes:
-    - ${WEAVE_MCECR_PATH:-./.mcecr-unset}:/data/mcecr:ro
+    - ./inference.yaml:/app/inference.yaml:ro
   depends_on:
     api:
       condition: service_healthy
@@ -40,10 +40,11 @@ services:
     environment:
       WEAVE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-weave}:${POSTGRES_PASSWORD:-weave}@postgres:5432/${POSTGRES_DB:-weave}
       WEAVE_INFERENCE_FILE: /app/inference.yaml
+      WEAVE_WEB_ORIGINS: ${WEAVE_WEB_ORIGINS:-http://127.0.0.1:3000,http://localhost:3000}
     volumes:
       - ./inference.yaml:/app/inference.yaml:ro
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${WEAVE_API_PORT:-8000}:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,23 +61,25 @@ services:
     restart: unless-stopped
     environment:
       # The browser, not the container, calls the API.
-      NUXT_PUBLIC_API_BASE: http://127.0.0.1:8000
+      NUXT_PUBLIC_API_BASE: http://127.0.0.1:${WEAVE_API_PORT:-8000}
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${WEAVE_WEB_PORT:-3000}:3000"
     depends_on:
       api:
         condition: service_healthy
 
+  # Optional: the stanza service stays available behind its profile and never blocks the crawl stack.
   stanza:
     build:
       context: .
       target: stanza
     image: event-weave-stanza:latest
     restart: unless-stopped
+    profiles: ["stanza"]
     volumes:
       - stanza-models:/models
     ports:
-      - "127.0.0.1:8001:8001"
+      - "127.0.0.1:${WEAVE_STANZA_PORT:-8001}:8001"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')"]
       interval: 5s
@@ -102,14 +105,14 @@ services:
     <<: *worker
     command: weave worker --stage cluster
 
-  # Long-lived container for on-demand crawls: `podman compose up -d crawler`, then
-  # `podman compose exec crawler weave crawl /app/outlets.yaml`.
+  # Long-lived crawl queue worker: claims and finishes leased crawl jobs.
+  # `podman compose exec crawler weave crawl /app/outlets.yaml` runs an ad-hoc crawl.
   crawler:
     build:
       context: .
       target: crawler
     image: event-weave-crawler:latest
-    command: sleep infinity
+    command: ["weave", "crawl-worker"]
     restart: unless-stopped
     environment:
       WEAVE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-weave}:${POSTGRES_PASSWORD:-weave}@postgres:5432/${POSTGRES_DB:-weave}

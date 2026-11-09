@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -12,15 +13,19 @@ from weave_core.service import build_service
 
 from .routers import adapters, clusters, crawls, deployments, documents, enrichments, runs, scores
 
-# The web app is served from these origins and calls the API from the browser.
-WEB_ORIGINS = ["http://127.0.0.1:3000", "http://localhost:3000"]
+
+def web_origins() -> list[str]:
+    """Browser origins allowed to call the API; overridable so an isolated stack can publish other ports."""
+    raw = os.environ.get("WEAVE_WEB_ORIGINS", "http://127.0.0.1:3000,http://localhost:3000")
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
 def create_app(service: RunService | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         owned = service is None
-        app.state.service = build_service(probe=True) if owned else service
+        # Readiness is probed explicitly (POST /deployments/probe); a cold app never blocks on model providers.
+        app.state.service = build_service(probe=False) if owned else service
         app.state.schema = migrate(app.state.service.engine.url.render_as_string(hide_password=False))
         try:
             yield
@@ -29,7 +34,7 @@ def create_app(service: RunService | None = None) -> FastAPI:
                 app.state.service.engine.dispose()
 
     app = FastAPI(title="Event Weave", lifespan=lifespan)
-    app.add_middleware(CORSMiddleware, allow_origins=WEB_ORIGINS, allow_methods=["*"], allow_headers=["*"])
+    app.add_middleware(CORSMiddleware, allow_origins=web_origins(), allow_methods=["*"], allow_headers=["*"])
 
     @app.exception_handler(ConfigError)
     async def config_error(request: Request, exc: ConfigError):
