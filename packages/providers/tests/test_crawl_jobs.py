@@ -85,3 +85,21 @@ def test_retry_updates_failed_article_without_losing_stored_outcome(database_url
     assert record_article(engine, crawl_id, claim.token, {**outcome, "status": "rejected", "reason": "paywall", "fetched": True})
     with engine.connect() as conn:
         assert conn.execute(sa.text("select status, reason, fetched from crawl_articles where crawl_id=:id"), {"id": crawl_id}).one() == ("rejected", "paywall", True)
+
+
+def test_successful_retries_clear_previous_failure_details(database_url):
+    from weave_providers.crawl.jobs import crawl_counters
+    engine = make_engine(database_url)
+    crawl_id = create_crawl(engine, CrawlRequest(sites=[{"domain": "example.com", "language": "en"}]))
+    claim = claim_crawl(engine, datetime.now(timezone.utc))
+    with engine.begin() as conn:
+        conn.execute(sa.text("insert into documents (id, provider, external_id, language, title, byline, outlet, url, text, token_offsets, sentence_offsets, content_hash) values ('d', 'p', 'e', 'en', 'title', '', 'outlet', 'https://example.com/a', 'body', '[]', '[]', 'hash')"))
+    article = dict(canonical_url="https://example.com/a", url="https://example.com/a", outlet="example.com", status="error", reason="temporary")
+    record_article(engine, crawl_id, claim.token, article)
+    record_article(engine, crawl_id, claim.token, {k: v for k, v in {**article, "status": "stored", "document_id": "d", "fetched": True}.items() if k != "reason"})
+    source = dict(url="https://example.com/feed", site="example.com", kind="feed", status="error", error="temporary")
+    record_source(engine, crawl_id, claim.token, source)
+    record_source(engine, crawl_id, claim.token, {k: v for k, v in {**source, "status": "ok"}.items() if k != "error"})
+    with engine.connect() as conn:
+        assert crawl_counters(conn, crawl_id)["reasons"] == {}
+        assert conn.scalar(sa.text("select error from crawl_sources where crawl_id=:id"), {"id": crawl_id}) is None

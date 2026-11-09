@@ -67,6 +67,8 @@ def record_article(engine, id, token, outcome) -> bool:
     values = dict(outcome)
     values.update(crawl_id=id, updated_at=datetime.now(timezone.utc))
     values.setdefault("fetched", False)
+    values.setdefault("reason", None)
+    values.setdefault("document_id", None)
     with engine.begin() as conn:
         if not _owned(conn, id, token):
             return False
@@ -80,6 +82,7 @@ def record_article(engine, id, token, outcome) -> bool:
 def record_source(engine, id, token, outcome) -> bool:
     values = dict(outcome)
     values["crawl_id"] = id
+    values.setdefault("error", None)
     with engine.begin() as conn:
         if not _owned(conn, id, token):
             return False
