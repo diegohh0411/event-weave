@@ -18,7 +18,7 @@ export type Schemas = import('../../app/api/schema').components['schemas']
  * the full, unpaged page: the mock server slices `items` with the request's offset and limit.
  */
 export interface Fixture<B = unknown> {
-  status: 200 | 201
+  status: 200 | 201 | 202
   body: B
   params?: Record<string, string>
   /** Extra condition on the request, for fixtures chosen by body or by a repeated query key. */

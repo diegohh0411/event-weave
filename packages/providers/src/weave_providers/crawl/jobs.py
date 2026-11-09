@@ -17,12 +17,12 @@ class ClaimedCrawl:
     started_at: datetime
 
 
-def create_crawl(engine, request: CrawlRequest) -> UUID:
+def create_crawl(engine, request: CrawlRequest, *, created_at: datetime | None = None) -> UUID:
     request = CrawlRequest.model_validate(request)
     crawl_id = uuid4()
     with engine.begin() as conn:
         conn.execute(crawl_runs.insert().values(id=crawl_id, request=request.model_dump(mode="json"),
-            status="queued", created_at=datetime.now(timezone.utc), progress={}))
+            status="queued", created_at=created_at or datetime.now(timezone.utc), progress={}))
     return crawl_id
 
 

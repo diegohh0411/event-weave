@@ -473,6 +473,388 @@
         "title": "Coverage",
         "type": "object"
       },
+      "CrawlArticleOut": {
+        "properties": {
+          "canonical_url": {
+            "title": "Canonical Url",
+            "type": "string"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "fetched": {
+            "title": "Fetched",
+            "type": "boolean"
+          },
+          "outlet": {
+            "title": "Outlet",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "enum": [
+              "stored",
+              "existing",
+              "duplicate",
+              "rejected",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "canonical_url",
+          "outlet",
+          "url",
+          "status",
+          "reason",
+          "document_id",
+          "fetched",
+          "updated_at"
+        ],
+        "title": "CrawlArticleOut",
+        "type": "object"
+      },
+      "CrawlCounters": {
+        "properties": {
+          "discovered": {
+            "title": "Discovered",
+            "type": "integer"
+          },
+          "duplicates": {
+            "title": "Duplicates",
+            "type": "integer"
+          },
+          "errors": {
+            "title": "Errors",
+            "type": "integer"
+          },
+          "existing": {
+            "title": "Existing",
+            "type": "integer"
+          },
+          "fetched": {
+            "title": "Fetched",
+            "type": "integer"
+          },
+          "reasons": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Reasons",
+            "type": "object"
+          },
+          "rejected": {
+            "title": "Rejected",
+            "type": "integer"
+          },
+          "stored": {
+            "title": "Stored",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "discovered",
+          "fetched",
+          "stored",
+          "existing",
+          "duplicates",
+          "rejected",
+          "errors",
+          "reasons"
+        ],
+        "title": "CrawlCounters",
+        "type": "object"
+      },
+      "CrawlDocumentOut": {
+        "properties": {
+          "byline": {
+            "title": "Byline",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "language": {
+            "title": "Language",
+            "type": "string"
+          },
+          "outlet": {
+            "title": "Outlet",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "byline",
+          "outlet",
+          "url",
+          "language",
+          "published_at",
+          "text"
+        ],
+        "title": "CrawlDocumentOut",
+        "type": "object"
+      },
+      "CrawlOut": {
+        "properties": {
+          "counters": {
+            "$ref": "#/components/schemas/CrawlCounters"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/components/schemas/CrawlRequest"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "request",
+          "status",
+          "created_at",
+          "started_at",
+          "finished_at",
+          "counters",
+          "error"
+        ],
+        "title": "CrawlOut",
+        "type": "object"
+      },
+      "CrawlRequest": {
+        "properties": {
+          "days": {
+            "default": 1,
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Days",
+            "type": "integer"
+          },
+          "sites": {
+            "items": {
+              "$ref": "#/components/schemas/CrawlSite"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Sites",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sites"
+        ],
+        "title": "CrawlRequest",
+        "type": "object"
+      },
+      "CrawlSite": {
+        "properties": {
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "feeds": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Feeds",
+            "type": "array"
+          },
+          "language": {
+            "enum": [
+              "en",
+              "es",
+              "hi",
+              "tr",
+              "uk"
+            ],
+            "title": "Language",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "per_day": {
+            "default": 3,
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Per Day",
+            "type": "integer"
+          },
+          "sitemaps": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Sitemaps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "domain",
+          "language"
+        ],
+        "title": "CrawlSite",
+        "type": "object"
+      },
+      "CrawlSourceOut": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "kind": {
+            "enum": [
+              "feed",
+              "sitemap"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "site": {
+            "title": "Site",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "site",
+          "kind",
+          "status",
+          "error"
+        ],
+        "title": "CrawlSourceOut",
+        "type": "object"
+      },
       "CreatedOut": {
         "properties": {
           "config_hash": {
@@ -1087,6 +1469,99 @@
           "limit"
         ],
         "title": "Page[ClusterSummary]",
+        "type": "object"
+      },
+      "Page_CrawlArticleOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CrawlArticleOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "Page[CrawlArticleOut]",
+        "type": "object"
+      },
+      "Page_CrawlOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CrawlOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "Page[CrawlOut]",
+        "type": "object"
+      },
+      "Page_CrawlSourceOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CrawlSourceOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "Page[CrawlSourceOut]",
         "type": "object"
       },
       "Page_DeploymentOut_": {
@@ -1946,6 +2421,310 @@
           }
         },
         "summary": "Compare Runs"
+      }
+    },
+    "/crawls": {
+      "get": {
+        "operationId": "list_crawls_crawls_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_CrawlOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Crawls"
+      },
+      "post": {
+        "operationId": "create_crawls_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CrawlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrawlOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create"
+      }
+    },
+    "/crawls/{crawl_id}": {
+      "get": {
+        "operationId": "get_crawl_crawls__crawl_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "crawl_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Crawl Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrawlOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Crawl"
+      }
+    },
+    "/crawls/{crawl_id}/articles": {
+      "get": {
+        "operationId": "list_articles_crawls__crawl_id__articles_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "crawl_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Crawl Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_CrawlArticleOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Articles"
+      }
+    },
+    "/crawls/{crawl_id}/documents/{document_id}": {
+      "get": {
+        "operationId": "get_document_crawls__crawl_id__documents__document_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "crawl_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Crawl Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrawlDocumentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Document"
+      }
+    },
+    "/crawls/{crawl_id}/sources": {
+      "get": {
+        "operationId": "list_sources_crawls__crawl_id__sources_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "crawl_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Crawl Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_CrawlSourceOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sources"
       }
     },
     "/deployments": {

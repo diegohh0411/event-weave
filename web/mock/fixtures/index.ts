@@ -8,6 +8,7 @@ import { allDocs, documentSummaries } from './documents'
 import { compareDefault, compareRealistic, compareUnevaluated, scoresPaper } from './scores'
 import { llmFailures } from './failures'
 import { samples } from './enrichments'
+import { articles as crawlArticles, crawls, document as crawlDocument, queued as queuedCrawl, sources as crawlSources, CRAWL_STORED } from './crawls'
 import { CLUSTER_FLOOD, CLUSTER_SINGLE, CLUSTER_STRIKE, RUN_CANCELLED, RUN_LLM, RUN_NEW, RUN_PAPER } from './ids'
 
 export type { Fixture } from './types'
@@ -38,6 +39,13 @@ export const fixtures: Record<string, Fixture[]> = {
   'GET /adapters': [ok(adapters)],
   'GET /deployments': [ok(deployments)],
   'POST /deployments/probe': [ok(deployments)],
+
+  'GET /crawls': [ok(page(crawls))],
+  'POST /crawls': [{ status: 202, body: queuedCrawl }],
+  'GET /crawls/{crawl_id}': crawls.map(c => ok(c, { crawl_id: c.id })),
+  'GET /crawls/{crawl_id}/articles': crawls.map(c => ok(page(crawlArticles[c.id]!), { crawl_id: c.id })),
+  'GET /crawls/{crawl_id}/sources': crawls.map(c => ok(page(crawlSources[c.id]!), { crawl_id: c.id })),
+  'GET /crawls/{crawl_id}/documents/{document_id}': [ok(crawlDocument, { crawl_id: CRAWL_STORED, document_id: crawlDocument.id })],
 
   'GET /runs': [ok(page(runs))],
   'POST /runs': [created(createdOut)],

@@ -10,7 +10,7 @@ from weave_core.db import migrate
 from weave_core.runs import RunService, RunStateError
 from weave_core.service import build_service
 
-from .routers import adapters, clusters, deployments, documents, enrichments, runs, scores
+from .routers import adapters, clusters, crawls, deployments, documents, enrichments, runs, scores
 
 # The web app is served from these origins and calls the API from the browser.
 WEB_ORIGINS = ["http://127.0.0.1:3000", "http://localhost:3000"]
@@ -47,6 +47,7 @@ def create_app(service: RunService | None = None) -> FastAPI:
     app.include_router(deployments.router)
     app.include_router(runs.router)
     app.include_router(clusters.router)
+    app.include_router(crawls.router)
     app.include_router(documents.router)
     app.include_router(enrichments.router)
     app.include_router(scores.router)
