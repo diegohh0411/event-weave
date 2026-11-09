@@ -11,6 +11,17 @@ from urllib.robotparser import RobotFileParser
 import httpx
 
 USER_AGENT = "EventWeaveBot/0.1 (+https://github.com/diegohh0411/event-weave)"
+# Source discovery uses ordinary browser headers: some CDNs reject the default
+# HTTP client profile before serving even robots.txt or sitemaps. Keep the bot
+# identity above for robots policy matching independently of transport headers.
+HTTP_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
 _PRODUCT_TOKEN = USER_AGENT.split("/")[0]
 MAX_REDIRECTS = 5
 
@@ -54,7 +65,7 @@ class HttpFetcher:
 
     def __init__(self, transport: httpx.BaseTransport | None = None, timeout: float = 20.0,
                  proxy: str | None = None):
-        self._client = httpx.Client(headers={"User-Agent": USER_AGENT}, follow_redirects=False,
+        self._client = httpx.Client(headers=HTTP_HEADERS, follow_redirects=False,
                                     timeout=timeout, transport=transport, proxy=proxy, trust_env=False)
 
     def __enter__(self) -> "HttpFetcher":

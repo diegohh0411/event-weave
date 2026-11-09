@@ -1,7 +1,7 @@
 import httpx
 
 from weave_providers.crawl.fetch import (
-    Crawl4aiFetcher, Fetched, FixtureFetcher, HttpFetcher, PoliteFetcher, USER_AGENT)
+    Crawl4aiFetcher, Fetched, FixtureFetcher, HttpFetcher, PoliteFetcher, USER_AGENT, HTTP_HEADERS)
 
 
 def robots(body: str, status: int = 200) -> Fetched:
@@ -229,7 +229,7 @@ def test_http_fetcher_sends_user_agent_and_exposes_redirects_without_following()
     with HttpFetcher(transport=httpx.MockTransport(handler)) as f:
         got = f.fetch("https://ex.com/old")
     assert got.status == 301 and got.redirect_to == "https://ex.com/new"
-    assert seen == [("/old", USER_AGENT)]
+    assert seen == [("/old", HTTP_HEADERS["User-Agent"])]
 
 
 def test_http_fetcher_returns_errors_and_statuses():
@@ -414,3 +414,18 @@ def test_robots_environment_defaults_disabled_and_rejects_typos(monkeypatch):
     import pytest
     with pytest.raises(ValueError):
         respect_robots_from_env()
+
+
+def test_source_discovery_uses_browser_compatible_headers():
+    def handler(request):
+        # Model the observed rejection of generic HTTP/bot request profiles.
+        compatible = (
+            request.headers['user-agent'].startswith('Mozilla/5.0')
+            and 'text/html' in request.headers.get('accept', '')
+            and bool(request.headers.get('accept-language'))
+        )
+        return httpx.Response(200 if compatible else 403, text='source')
+
+    with HttpFetcher(transport=httpx.MockTransport(handler)) as fetcher:
+        assert fetcher.fetch('https://ex.com/robots.txt').status == 200
+        assert fetcher.fetch('https://ex.com/sitemap.xml').status == 200
