@@ -269,7 +269,7 @@ export interface paths {
         };
         /**
          * Enrichment Sample
-         * @description `limit` is the sample size; `offset` slices the seeded order. With `enricher`, oversample 4x (cap 800), then filter.
+         * @description `limit` is the sample size; `offset` slices the seeded order; `total` counts the (enricher-filtered) population.
          */
         get: operations["enrichment_sample_runs__run_id__enrichments_sample_get"];
         put?: never;

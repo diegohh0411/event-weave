@@ -61,22 +61,41 @@ def coverage(engine, run_id: UUID) -> list[CoverageRow]:
     return rows
 
 
-def sample(engine, run_id: UUID, n: int, seed: int) -> list[dict]:
+def _sample_base(run_id: UUID):
+    j, o, m, d = jobs.c, stage_outputs.c, mentions.c, documents.c
+    return (sa.select(o.cache_key, o.adapter, o.adapter_version, o.output, m.id.label("mention_id"), m.document_id,
+                      m.start, m.end, m.sentence, d.text, d.sentence_offsets)
+            .select_from(jobs).join(stage_outputs, o.cache_key == j.cache_key)
+            .join(mentions, m.id == j.unit_id).join(documents, d.id == m.document_id)
+            .where(j.run_id == run_id, j.stage == Stage.enrich, j.status == JobStatus.done))
+
+
+def sample_total(engine, run_id: UUID, enricher: str | None = None) -> int:
+    """Number of the run's done enrichments eligible for `sample` (optionally only one enricher's)."""
+    base = _sample_base(run_id)
+    if enricher is not None:
+        base = base.where(stage_outputs.c.adapter == enricher)
+    with engine.connect() as conn:
+        return conn.scalar(sa.select(sa.func.count()).select_from(base.subquery())) or 0
+
+
+def sample(engine, run_id: UUID, n: int, seed: int, offset: int = 0, enricher: str | None = None) -> list[dict]:
     """n enrichments of the run ordered by sha256(seed:id), each with its mention's sentence, trigger marked.
 
     Read from the run's own stage outputs (via its enrich jobs' cache keys), so another run's rows never appear.
+    `enricher` filters the whole population before ordering; `offset` skips that many of the seeded order. Ordering and
+    slicing happen in SQL (hex sha256, "C" collation, equal to Python's hexdigest order).
     """
-    j, o, m, d = jobs.c, stage_outputs.c, mentions.c, documents.c
-    query = (sa.select(o.cache_key, o.adapter, o.adapter_version, o.output, m.id.label("mention_id"), m.document_id,
-                       m.start, m.end, m.sentence, d.text, d.sentence_offsets)
-             .select_from(jobs).join(stage_outputs, o.cache_key == j.cache_key)
-             .join(mentions, m.id == j.unit_id).join(documents, d.id == m.document_id)
-             .where(j.run_id == run_id, j.stage == Stage.enrich, j.status == JobStatus.done))
+    o = stage_outputs.c
+    key = sa.func.encode(sa.func.sha256(sa.func.convert_to(sa.literal(f"{seed}:") + o.cache_key, "UTF8")), "hex")
+    query = _sample_base(run_id)
+    if enricher is not None:
+        query = query.where(o.adapter == enricher)
+    query = query.order_by(sa.collate(key, "C"), mentions.c.id).offset(offset).limit(n)
     with engine.connect() as conn:
         rows = conn.execute(query).all()
-    rows.sort(key=lambda r: hashlib.sha256(f"{seed}:{r.cache_key}".encode()).hexdigest())
     out = []
-    for r in rows[:n]:
+    for r in rows:
         s_start, s_end = r.sentence_offsets[r.sentence] if r.sentence < len(r.sentence_offsets) else (0, len(r.text))
         enrichment = r.output.get("enrichment", {})
         out.append({"id": r.cache_key, "mention_id": r.mention_id, "document_id": r.document_id, "enricher": r.adapter,
