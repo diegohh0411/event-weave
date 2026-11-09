@@ -3,6 +3,7 @@ import { useApi } from '../../../../api/client'
 import type { components } from '../../../../api/schema'
 import { sliceCodePoints } from '../../../../utils/highlight'
 import { clusterColors } from '../../../../utils/clusterColors'
+import { cardFields } from '../../../../utils/clusterCard'
 
 type Doc = components['schemas']['DocumentOut']
 type ClusterOut = components['schemas']['ClusterOut']
@@ -64,8 +65,10 @@ const pieces = computed<Piece[]>(() => {
 })
 
 const fill = (m: Doc['mentions'][number]) => (m.cluster_id ? colours.value.get(m.cluster_id) : undefined)
-const cardOf = (m: Doc['mentions'][number]) => (m.cluster_id ? cards.value[m.cluster_id] ?? null : null)
-const participants = (card: Record<string, unknown> | null) => ((card?.participants as string[] | undefined) ?? []).join(', ')
+const cardOf = (m: Doc['mentions'][number]) => {
+  const card = m.cluster_id ? cards.value[m.cluster_id] : null
+  return card ? cardFields(card) : null
+}
 const date = (s: string | null) => (s ? s.slice(0, 10) : '—')
 </script>
 
@@ -120,10 +123,10 @@ const date = (s: string | null) => (s ? s.slice(0, 10) : '—')
         >{{ p.text }}</span><template #content><div class="space-y-1 p-3 text-sm" data-test="popover">
           <template v-if="p.mention.cluster_id">
             <template v-if="cardOf(p.mention)">
-              <p><span class="text-muted">Action</span> {{ cardOf(p.mention)?.action ?? '—' }}</p>
-              <p><span class="text-muted">Participants</span> {{ participants(cardOf(p.mention)) || '—' }}</p>
-              <p><span class="text-muted">Location</span> {{ cardOf(p.mention)?.location ?? '—' }}</p>
-              <p><span class="text-muted">Time</span> {{ cardOf(p.mention)?.time ?? '—' }}</p>
+              <p><span class="text-muted">Action</span> {{ cardOf(p.mention)?.action || '—' }}</p>
+              <p><span class="text-muted">Participants</span> {{ cardOf(p.mention)?.participants || '—' }}</p>
+              <p><span class="text-muted">Location</span> {{ cardOf(p.mention)?.location || '—' }}</p>
+              <p><span class="text-muted">Time</span> {{ cardOf(p.mention)?.time || '—' }}</p>
             </template>
             <p v-else class="text-muted">No card for this cluster.</p>
             <NuxtLink :to="`/runs/${id}/clusters/${p.mention.cluster_id}`" class="text-primary hover:underline">

@@ -4,14 +4,18 @@ import { CLUSTER_FLOOD, CLUSTER_SINGLE, CLUSTER_STRIKE, DOC_EN, DOC_ES, DOC_HI }
 type Summary = Ok<'/runs/{run_id}/clusters', 'get'>['items'][number]
 type Member = Ok<'/runs/{run_id}/clusters/{cluster_id}/members', 'get'>['items'][number]
 
+// The production card shape (weave_clusterer.cards.Card.canonical): the four fields are string lists under `values`.
+const card = (size: number, languages: string[], sentence: string, values: Record<string, string[]>) =>
+  ({ size, languages, earliest: '2026-03-14', latest: '2026-03-15', sentence, values })
+
 export const clusterSummaries: Summary[] = [
   {
     id: CLUSTER_FLOOD, size: 3, languages: ['en', 'es'], event_types: ['natural_disaster'], max_significance: 0.92, partition: 'topic-14',
-    card: { action: 'flooded', participants: ['River Tisza', 'Szeged'], location: 'Szeged, Hungary', time: '2026-03-14' }
+    card: card(3, ['en', 'es'], 'The river Tisza flooded the lower streets of Szeged on Friday.', { action: ['flooded'], participants: ['River Tisza', 'Szeged'], location: ['Szeged, Hungary'], time: ['2026-03-14'] })
   },
   {
     id: CLUSTER_STRIKE, size: 2, languages: ['en'], event_types: ['labor_action'], max_significance: 0.61, partition: 'topic-9',
-    card: { action: 'walked out', participants: ['dockworkers'], location: 'Rotterdam', time: '2026-03-02' }
+    card: card(2, ['en'], 'Meanwhile, dockworkers in Rotterdam walked out over pay.', { action: ['walked out'], participants: ['dockworkers'], location: ['Rotterdam'], time: ['2026-03-02'] })
   },
   {
     id: CLUSTER_SINGLE, size: 1, languages: ['hi'], event_types: [], max_significance: null, partition: null, card: null

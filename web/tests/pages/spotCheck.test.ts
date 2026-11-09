@@ -38,11 +38,17 @@ describe('enrichment spot check', () => {
     expect(rows.length).toBe(3)
     const flood = rows.find(r => r.text().includes('Tisza flooded'))!
     expect(flood.findAll('mark').map(m => m.text())).toEqual(['flooded'])
-    for (const t of ['natural_disaster', 'River Tisza', 'Szeged']) expect(flood.text()).toContain(t)
+    expect(flood.text()).not.toContain('⟦')
+    expect(flood.text()).toContain('The river Tisza flooded the lower')
+    expect(flood.find('[data-test=field-action]').text()).toContain('flooded')
+    expect(flood.find('[data-test=field-participants]').text()).toContain('River Tisza')
+    expect(flood.find('[data-test=field-location]').text()).toContain('Szeged')
+    expect(flood.find('[data-test=field-time]').text()).toContain('Friday')
     const strike = rows.find(r => r.text().includes('Rotterdam walked out'))!
     expect(strike.findAll('mark').map(m => m.text())).toEqual(['walked out'])
-    expect(strike.text()).toContain('no date in window')
+    expect(strike.find('[data-test=field-time]').text()).toContain('—')
     expect(strike.text()).toContain('Discarded (1)')
+    expect(strike.text()).toContain('time: 1')
   })
 
   it('offers the run config enricher and the sample enrichers, and filters by it', async () => {

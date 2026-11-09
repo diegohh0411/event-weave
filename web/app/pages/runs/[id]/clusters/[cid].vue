@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useApi } from '../../../../api/client'
 import type { components } from '../../../../api/schema'
+import { cardFields } from '../../../../utils/clusterCard'
 
 type ClusterOut = components['schemas']['ClusterOut']
 type Member = components['schemas']['Member']
@@ -63,8 +64,7 @@ onMounted(async () => {
   }
 })
 
-const card = computed(() => cluster.value?.cluster.card ?? null)
-const participants = computed(() => ((card.value?.participants as string[] | undefined) ?? []).join(', '))
+const card = computed(() => (cluster.value?.cluster.card ? cardFields(cluster.value.cluster.card) : null))
 </script>
 
 <template>
@@ -87,27 +87,27 @@ const participants = computed(() => ((card.value?.participants as string[] | und
           <dt class="text-sm text-muted">
             Action
           </dt>
-          <dd>{{ card.action ?? '—' }}</dd>
+          <dd>{{ card.action || '—' }}</dd>
         </div>
         <div>
           <dt class="text-sm text-muted">
             Participants
           </dt>
           <dd class="break-words">
-            {{ participants || '—' }}
+            {{ card.participants || '—' }}
           </dd>
         </div>
         <div>
           <dt class="text-sm text-muted">
             Location
           </dt>
-          <dd>{{ card.location ?? '—' }}</dd>
+          <dd>{{ card.location || '—' }}</dd>
         </div>
         <div>
           <dt class="text-sm text-muted">
             Time
           </dt>
-          <dd>{{ card.time ?? '—' }}</dd>
+          <dd>{{ card.time || '—' }}</dd>
         </div>
       </dl>
       <p v-else class="text-muted">

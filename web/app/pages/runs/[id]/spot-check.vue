@@ -4,6 +4,7 @@ import type { components } from '../../../api/schema'
 
 type Item = components['schemas']['SampleItem']
 interface Row extends Item { range: [number, number] | null }
+interface Field { text?: unknown }
 
 const api = useApi()
 const route = useRoute()
@@ -46,28 +47,18 @@ const addEnrichers = (names: (string | undefined)[]) => {
   enrichers.value = [...all]
 }
 
-const docs = new Map<string, Promise<components['schemas']['DocumentOut'] | undefined>>()
-const documentOf = (did: string) => {
-  let p = docs.get(did)
-  if (!p) {
-    p = api.GET('/runs/{run_id}/documents/{document_id}', { params: { path: { run_id: id, document_id: did } } })
-      .then(r => r.data, () => undefined)
-    docs.set(did, p)
-  }
-  return p
-}
+const OPEN = '⟦'
+const CLOSE = '⟧'
 
-/** The trigger's code-point range inside its sentence: the document offset minus the sentence's own offset. */
-async function triggerRange(item: Item): Promise<[number, number] | null> {
-  const d = await documentOf(item.document_id)
-  const m = d?.mentions.find(x => x.id === item.mention_id)
-  if (!d || !m) return null
-  const at = d.text.indexOf(item.sentence)
-  if (at < 0) return null
-  const offset = Array.from(d.text.slice(0, at)).length
-  const start = m.start - offset
-  const end = m.end - offset
-  return start >= 0 && end <= Array.from(item.sentence).length ? [start, end] : null
+/** Splits a sentence carrying its trigger as ⟦...⟧ into the clean sentence and the trigger's code-point range. */
+function parseMarked(marked: string): { sentence: string, range: [number, number] | null } {
+  const open = marked.indexOf(OPEN)
+  const close = marked.indexOf(CLOSE, open + 1)
+  if (open < 0 || close < 0) return { sentence: marked.replaceAll(OPEN, '').replaceAll(CLOSE, ''), range: null }
+  const before = marked.slice(0, open)
+  const inside = marked.slice(open + 1, close)
+  const start = Array.from(before).length
+  return { sentence: before + inside + marked.slice(close + 1), range: [start, start + Array.from(inside).length] }
 }
 
 async function load() {
@@ -80,9 +71,10 @@ async function load() {
     if (mine !== seq) return
     if (!r.data) throw new Error(errorText(r))
     const items = r.data.items as Item[]
-    const withRanges = await Promise.all(items.map(async i => ({ ...i, range: await triggerRange(i) })))
-    if (mine !== seq) return
-    rows.value = withRanges
+    rows.value = items.map((i) => {
+      const { sentence, range } = parseMarked(i.sentence)
+      return { ...i, sentence, range }
+    })
     addEnrichers(items.map(i => i.enricher))
     error.value = undefined
   } catch (e) {
@@ -104,8 +96,12 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => { seq++ })
 
-const list = (v: unknown) => (Array.isArray(v) ? v.join(', ') : '')
-const show = (v: unknown) => (v === undefined || v === null || v === '' ? '—' : String(v))
+// Each of the four fields is `{text, ...}` or null (not found).
+const FIELDS = [['action', 'Action'], ['participants', 'Participants'], ['location', 'Location'], ['time', 'Time']] as const
+const fieldText = (r: Row, name: string) => {
+  const t = (r.enrichment[name] as Field | null | undefined)?.text
+  return typeof t === 'string' && t ? t : '—'
+}
 const discarded = (r: Row) => Object.entries(r.discarded)
 </script>
 
@@ -178,31 +174,13 @@ const discarded = (r: Row) => Object.entries(r.discarded)
           </NuxtLink>
         </p>
         <dl class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div>
+          <div v-for="[name, label] in FIELDS" :key="name" :data-test="`field-${name}`">
             <dt class="text-sm text-muted">
-              Event type
-            </dt>
-            <dd>{{ show(r.enrichment.event_type) }}</dd>
-          </div>
-          <div>
-            <dt class="text-sm text-muted">
-              Significance
-            </dt>
-            <dd>{{ show(r.enrichment.significance) }}</dd>
-          </div>
-          <div>
-            <dt class="text-sm text-muted">
-              Participants
+              {{ label }}
             </dt>
             <dd class="break-words">
-              {{ list(r.enrichment.participants) || '—' }}
+              {{ fieldText(r, name) }}
             </dd>
-          </div>
-          <div>
-            <dt class="text-sm text-muted">
-              Location
-            </dt>
-            <dd>{{ show(r.enrichment.location) }}</dd>
           </div>
         </dl>
         <div v-if="discarded(r).length" class="text-sm">

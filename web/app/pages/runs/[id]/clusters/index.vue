@@ -2,6 +2,7 @@
 import { useApi } from '../../../../api/client'
 import type { components } from '../../../../api/schema'
 import { LANGUAGES } from '../../../../utils/languages'
+import { cardFields } from '../../../../utils/clusterCard'
 
 type Summary = components['schemas']['ClusterSummary']
 
@@ -88,7 +89,7 @@ async function load() {
 watch(() => route.fullPath, load, { immediate: true })
 
 const field = 'w-full rounded-md border border-default bg-default px-2 py-1.5 text-sm'
-const cardLine = (c: Summary['card']) => (c ? [c.action, (c.participants as string[] | undefined)?.join(', '), c.location, c.time].filter(Boolean).join(' · ') : 'No card')
+const cardLine = (c: Summary['card']) => (c ? Object.values(cardFields(c)).filter(Boolean).join(' · ') : 'No card')
 </script>
 
 <template>
