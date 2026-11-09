@@ -19,7 +19,7 @@
 - Every list uses offset >=0 and limit 1..200, default 50; over-limit requests return 422.
 - No deterministic test fetches live sites or calls real models.
 - Existing gold-data restrictions remain binding.
-- Preserve user method: subagent-driven execution; only Sonnet, Terra, Haiku and Luna children. Check availability before dispatch; do not silently substitute unavailable models.
+- Preserve user method: subagent-driven execution; only Terra and Luna children. Check availability before dispatch; do not silently substitute unavailable models.
 
 ## Review Focus
 
