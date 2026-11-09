@@ -342,3 +342,40 @@ def test_robots_txt_redirect_is_followed():
     pf, _ = polite(inner)
     assert pf.fetch("https://ex.com/private/a").error == "robots disallowed"
     assert pf.fetch("https://ex.com/ok").status == 200
+
+
+def test_validated_redirect_to_www_checks_its_robots():
+    f = FixtureFetcher({'https://ex.com/robots.txt': robots('', 404),
+                        'https://ex.com/a': redirect('https://ex.com/a', 'https://www.ex.com/a'),
+                        'https://www.ex.com/robots.txt': robots('User-agent: *\nDisallow: /a')})
+    pf, _ = polite(f, validator=lambda url: url, domain='ex.com')
+    assert pf.fetch('https://ex.com/a').error == 'robots disallowed'
+    assert 'https://www.ex.com/a' not in f.calls
+
+
+def test_www_to_apex_redirect_succeeds_after_robots_checks():
+    f = FixtureFetcher({'https://www.ex.com/robots.txt': robots('', 404),
+                        'https://www.ex.com/a': redirect('https://www.ex.com/a', 'https://ex.com/a'),
+                        'https://ex.com/robots.txt': robots('', 404),
+                        'https://ex.com/a': page('https://ex.com/a')})
+    pf, _ = polite(f, validator=lambda url: url, domain='www.ex.com')
+    assert pf.fetch('https://www.ex.com/a').status == 200
+    assert 'https://ex.com/robots.txt' in f.calls
+
+
+def test_unsafe_initial_url_never_reaches_transport():
+    f = FixtureFetcher({})
+    def deny(url):
+        raise ValueError('unsafe URL')
+    pf, _ = polite(f, validator=deny, domain='ex.com')
+    assert pf.fetch('http://127.0.0.1/a').status == 0
+    assert f.calls == []
+
+
+def test_cancel_after_redirect_stops_before_next_transport():
+    f = FixtureFetcher({'https://ex.com/robots.txt': robots('', 404),
+                        'https://ex.com/a': redirect('https://ex.com/a', 'https://ex.com/b')})
+    pf, _ = polite(f)
+    pf.cancelled = lambda: 'https://ex.com/a' in f.calls
+    assert pf.fetch('https://ex.com/a').status == 0
+    assert f.calls == ['https://ex.com/robots.txt', 'https://ex.com/a']

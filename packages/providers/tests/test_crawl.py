@@ -286,3 +286,96 @@ def test_malformed_sitemap_counted_as_discovery_error(engine):
     r[f"{BASE}/sitemap.xml"] = Fetched("x", 200, "<urlset><url>", None)
     report = crawl(engine, OUTLETS, polite(r)[0], NOW)
     assert report.discovery_errors == {"example-news": 1} and report.discovered == 0
+
+
+def test_repeat_crawl_emits_document_membership(engine):
+    events = []
+    def observe(kind, event):
+        if kind == 'article':
+            with engine.connect() as conn:
+                assert conn.scalar(sa.select(sa.func.count()).select_from(crawled_pages).where(
+                    crawled_pages.c.canonical_url == event['canonical_url'])) == 1
+        events.append((kind, event))
+    crawl(engine, OUTLETS, polite()[0], NOW, observer=observe)
+    articles = [e for k, e in events if k == 'article']
+    duplicate = next(e for e in articles if e['status'] == 'duplicate')
+    assert duplicate['document_id'] is not None
+    events.clear()
+    crawl(engine, OUTLETS, polite()[0], NOW, observer=lambda kind, event: events.append((kind, event)))
+    second_articles = [e for k, e in events if k == 'article']
+    assert any(e['status'] == 'existing' and e['document_id'] for e in second_articles)
+    repeated_duplicate = next(e for e in second_articles if e['status'] == 'duplicate')
+    assert repeated_duplicate['document_id'] == duplicate['document_id']
+    assert repeated_duplicate['fetched'] is False
+
+
+def test_missing_feed_is_reported(engine):
+    r = {f'{BASE}/robots.txt': Fetched('x', 404, None, None),
+         f'{BASE}/feed': Fetched('x', 200, '<html>not a feed</html>', None)}
+    events = []
+    outlet = Outlet('example-news', 'example-news.test', 'en', feeds=[f'{BASE}/feed'])
+    report = crawl(engine, [outlet], polite(r)[0], NOW, observer=lambda k, e: events.append((k, e)))
+    assert report.discovery_errors == {'example-news': 1}
+    assert [e['status'] for k, e in events if k == 'source'] == ['error']
+
+
+def test_all_paywalled_outcomes_and_window_exclusion(engine):
+    paths = [f'/a/wall{i}' for i in range(4)]
+    r = routes([(p, '2026-11-04T10:00:00Z') for p in paths] + [('/a/old', '2020-01-01T00:00:00Z')])
+    for p in paths:
+        r[BASE + p] = Fetched('x', 200, (FIX / 'pages' / 'paywalled.html').read_text(), None)
+    events = []
+    report = crawl(engine, OUTLETS, polite(r)[0], NOW, observer=lambda k, e: events.append((k, e)))
+    articles = [e for k, e in events if k == 'article']
+    assert (report.discovered, report.fetched, report.stored) == (4, 4, 0)
+    assert [(a['status'], a['reason'], a['fetched']) for a in articles] == [('rejected', 'paywalled', True)] * 4
+    assert next(e for k, e in events if k == 'source')['status'] == 'completed'
+
+
+def test_empty_time_window_keeps_successful_source_outcome(engine):
+    r = routes([('/a/old', '2020-01-01T00:00:00Z')])
+    events = []
+    report = crawl(engine, OUTLETS, polite(r)[0], NOW, observer=lambda k, e: events.append((k, e)))
+    assert report.discovered == report.stored == 0
+    assert [(e['status'], e['error']) for k, e in events if k == 'source'] == [('completed', None)]
+    assert not [e for k, e in events if k == 'article']
+
+
+def test_automatic_discovery_reports_probe_errors_and_fallbacks(engine):
+    from weave_providers.crawl.requests import CrawlSite
+    base = 'https://example-news.test'
+    r = {base + '/robots.txt': Fetched('x', 404, None, None),
+         base + '/': Fetched('x', 503, None, None)}
+    for path in ('/sitemap.xml', '/sitemap_index.xml', '/feed', '/rss'):
+        r[base + path] = Fetched('x', 404, None, None)
+    events = []
+    crawl(engine, [CrawlSite(domain='example-news.test', language='en')], polite(r)[0], NOW,
+          observer=lambda k, e: events.append((k, e)))
+    sources = [e for k, e in events if k == 'source']
+    assert len(sources) == 6
+    assert all(e['status'] == 'error' for e in sources)
+    assert any(e['url'] == base + '/' and '503' in e['error'] for e in sources)
+
+
+def test_cancel_during_discovery_stops_further_network_and_events(engine):
+    events = []
+    r = routes()
+    inner = FixtureFetcher(r)
+    stopped = lambda: f'{BASE}/sitemap.xml' in inner.calls
+    fetcher = PoliteFetcher(inner, min_interval=0)
+    crawl(engine, OUTLETS, fetcher, NOW, observer=lambda k, e: events.append((k, e)), cancelled=stopped)
+    assert inner.calls == [f'{BASE}/robots.txt', f'{BASE}/sitemap.xml']
+    assert events == []
+    assert rows(engine, 'select count(*) from crawled_pages') == [(0,)]
+
+
+def test_cancel_during_article_fetch_prevents_persistence_and_events(engine):
+    r = routes([('/a/reuters', '2026-11-03T10:00:00Z')])
+    inner = FixtureFetcher(r)
+    events = []
+    crawl(engine, OUTLETS, PoliteFetcher(inner, min_interval=0), NOW,
+          observer=lambda k, e: events.append((k, e)),
+          cancelled=lambda: f'{BASE}/a/reuters' in inner.calls)
+    assert not [e for k, e in events if k == 'article']
+    assert rows(engine, 'select count(*) from crawled_pages') == [(0,)]
+    assert rows(engine, 'select count(*) from documents') == [(0,)]

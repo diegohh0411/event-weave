@@ -84,15 +84,30 @@ def _parse_sitemap(xml: str, url: str, on_error: ErrorSink):
         return [], []
 
 
-def _from_sitemap(fetcher: Fetcher, url: str, on_error: ErrorSink):
-    xml = _fetch_text(fetcher, url, on_error)
-    if xml is None:
-        return []
-    children, entries = _parse_sitemap(xml, url, on_error)
-    for child in children:  # one level only
-        child_xml = _fetch_text(fetcher, child, on_error)
-        if child_xml is not None:
-            entries.extend(_parse_sitemap(child_xml, child, on_error)[1])
+def _from_sitemap(fetcher: Fetcher, url: str, on_error: ErrorSink, on_source=None, seen=None,
+                  cancelled=None):
+    seen = seen if seen is not None else set()
+    stopped = cancelled or (lambda: False)
+    entries = []
+    queue = [(url, 0)]
+    while queue and len(seen) < 100 and not stopped():
+        current, depth = queue.pop(0)
+        if current in seen:
+            continue
+        seen.add(current)
+        failed = []
+        def error(u, reason):
+            failed.append(reason)
+            on_error(u, reason)
+        xml = _fetch_text(fetcher, current, error)
+        if stopped():
+            break
+        children, found = _parse_sitemap(xml, current, error) if xml is not None else ([], [])
+        if on_source:
+            on_source(current, 'sitemap', failed[0] if failed else None)
+        entries.extend(found)
+        if depth < 2:
+            queue.extend((child, depth + 1) for child in children)
     return entries
 
 
@@ -102,8 +117,12 @@ def _from_feed(fetcher: Fetcher, url: str, on_error: ErrorSink):
         return []
     import feedparser  # extra `crawl`; imported lazily so `weave crawl` can explain its absence
 
+    parsed_feed = feedparser.parse(body)
+    if not parsed_feed.version:
+        on_error(url, 'invalid feed')
+        return []
     out = []
-    for e in feedparser.parse(body).entries:
+    for e in parsed_feed.entries:
         parsed = e.get("published_parsed") or e.get("updated_parsed")  # feedparser yields UTC
         date = datetime(*parsed[:6], tzinfo=timezone.utc) if parsed else None
         if e.get("link"):
@@ -112,18 +131,48 @@ def _from_feed(fetcher: Fetcher, url: str, on_error: ErrorSink):
 
 
 def _on_domain(url: str, domain: str) -> bool:
-    host = (urlsplit(url).hostname or "").lower()
-    domain = domain.lower()
-    return host == domain or host.endswith("." + domain)
+    try:
+        parts = urlsplit(url)
+        if parts.scheme not in ('http', 'https') or parts.username is not None or parts.password is not None:
+            return False
+        host = (parts.hostname or "").lower()
+        _ = parts.port  # reject malformed ports before canonicalization
+    except ValueError:
+        return False
+    domain = domain.lower().rstrip('.')
+    if domain.startswith('www.'):
+        domain = domain[4:]
+    return host.rstrip('.') == domain or host.rstrip('.').endswith("." + domain)
 
 
 def discover(outlet: Outlet, fetcher: Fetcher, window: tuple[datetime, datetime],
-             on_error: ErrorSink | None = None) -> list[Candidate]:
+             on_error: ErrorSink | None = None, on_source=None, source_budget=None,
+             cancelled=None) -> list[Candidate]:
     """`on_error(url, reason)` is called for each sitemap/feed that fails to fetch or parse."""
     start, end = _utc(window[0]), _utc(window[1])
     sink = on_error or (lambda url, reason: None)
-    sources = ([_from_sitemap(fetcher, u, sink) for u in outlet.sitemaps]
-               + [_from_feed(fetcher, u, sink) for u in outlet.feeds])
+    seen = source_budget if source_budget is not None else set()
+    stopped = cancelled or (lambda: False)
+    sources = []
+    for u in outlet.sitemaps:
+        if stopped():
+            break
+        sources.append(_from_sitemap(fetcher, u, sink, on_source, seen, stopped))
+    for u in outlet.feeds:
+        if stopped():
+            break
+        if u in seen or len(seen) >= 100:
+            continue
+        seen.add(u)
+        failures = []
+        def feed_error(url, reason):
+            failures.append(reason)
+            sink(url, reason)
+        sources.append(_from_feed(fetcher, u, feed_error))
+        if stopped():
+            break
+        if on_source:
+            on_source(u, 'feed', failures[0] if failures else None)
     found: dict[str, Candidate] = {}
     for entries in sources:
         has_dates = any(d for _, d, _ in entries)
