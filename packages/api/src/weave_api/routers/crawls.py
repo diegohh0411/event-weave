@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from weave_api.deps import get_engine
 from weave_api.paging import Page, Paging, paginate
 from weave_core.schema import crawl_articles, crawl_runs, crawl_sources, documents
-from weave_providers.crawl.jobs import crawl_counters, create_crawl
+from weave_providers.crawl.jobs import crawl_counters, crawl_counters_many, create_crawl
 from weave_providers.crawl.requests import CrawlRequest
 
 router = APIRouter()
@@ -72,10 +72,11 @@ def _crawl_row(conn, crawl_id: UUID):
     return conn.execute(sa.select(crawl_runs).where(crawl_runs.c.id == crawl_id)).one()
 
 
-def _crawl_out(conn, row) -> CrawlOut:
+def _crawl_out(conn, row, counters=None) -> CrawlOut:
     return CrawlOut(id=row.id, request=row.request, status=row.status, created_at=row.created_at,
                     started_at=row.started_at, finished_at=row.finished_at,
-                    counters=crawl_counters(conn, row.id), error=row.error)
+                    counters=counters if counters is not None else crawl_counters(conn, row.id),
+                    error=row.error)
 
 
 @router.post('/crawls', status_code=202)
@@ -92,7 +93,10 @@ def create(request: CrawlRequest, engine: Engine) -> CrawlOut:
 def list_crawls(paging: Annotated[Paging, Depends()], engine: Engine) -> Page[CrawlOut]:
     with engine.connect() as conn:
         query = sa.select(crawl_runs).order_by(crawl_runs.c.created_at.desc(), crawl_runs.c.id.desc())
-        return paginate(conn, query, paging, lambda row: _crawl_out(conn, row))
+        page = paginate(conn, query, paging, lambda row: row)
+        counters = crawl_counters_many(conn, [row.id for row in page.items])
+        return Page(items=[_crawl_out(conn, row, counters[row.id]) for row in page.items],
+                    total=page.total, offset=page.offset, limit=page.limit)
 
 
 @router.get('/crawls/{crawl_id}')

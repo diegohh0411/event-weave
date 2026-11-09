@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 from threading import Event, Thread
 
 from .fetch import Crawl4aiFetcher, HttpFetcher, PoliteFetcher
-from .jobs import (claim_crawl, finish_crawl, heartbeat, lock_owned, record_article,
-                   record_source, release_crawl)
+from .jobs import (LEASE_SECONDS, claim_crawl, finish_crawl, heartbeat, lock_owned,
+                   record_article, record_source, release_crawl)
 from .public_urls import validate_public_url
 from .store import crawl
 
@@ -33,13 +33,15 @@ def process_claim(engine, claim, stop, *, fetcher_factory=public_fetchers,
                   heartbeat_seconds=HEARTBEAT_SECONDS, min_interval=2.0):
     lost = Event()
     closing = Event()
+    # Survive at least two missed renewals when the interval is tuned upwards.
+    lease_seconds = max(LEASE_SECONDS, int(heartbeat_seconds * 3))
 
     def cancelled():
         return stop.is_set() or lost.is_set()
 
     def renew():
         try:
-            if not heartbeat(engine, claim.id, claim.token, _now()):
+            if not heartbeat(engine, claim.id, claim.token, _now(), lease_seconds=lease_seconds):
                 lost.set()
                 return False
         except Exception:
@@ -74,6 +76,7 @@ def process_claim(engine, claim, stop, *, fetcher_factory=public_fetchers,
     heart = Thread(target=heartbeat_loop, name=f'crawl-heartbeat-{claim.id}', daemon=True)
     heart.start()
     error = None
+    completed = False
     try:
         if not cancelled():
             with fetcher_factory() as (browser, http):
@@ -82,6 +85,7 @@ def process_claim(engine, claim, stop, *, fetcher_factory=public_fetchers,
                 # Reclaims must use the original discovery window, not a later one.
                 crawl(engine, claim.request.sites, fetcher, claim.started_at, claim.request.days,
                       observer=observe, cancelled=cancelled, write_guard=guard)
+            completed = not cancelled()
     except LeaseLost:
         lost.set()
     except Exception as exc:
@@ -91,10 +95,11 @@ def process_claim(engine, claim, stop, *, fetcher_factory=public_fetchers,
         closing.set()
         heart.join()
 
-    if stop.is_set():
-        release_crawl(engine, claim.id, claim.token, _now())
-    elif not lost.is_set():
-        finish_crawl(engine, claim.id, claim.token, error=error)
+    if not lost.is_set():
+        if stop.is_set() and not completed:
+            release_crawl(engine, claim.id, claim.token, _now())
+        else:
+            finish_crawl(engine, claim.id, claim.token, error=error)
 
 
 def run_crawl_worker(engine, stop, poll_seconds=2, once=False, fetcher_factory=public_fetchers,

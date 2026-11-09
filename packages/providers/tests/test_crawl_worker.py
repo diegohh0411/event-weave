@@ -75,7 +75,7 @@ def test_worker_records_progress_and_resumes_interrupted_claim(engine, monkeypat
     monkeypatch.setattr(worker, 'record_article', interrupt)
     worker.run_crawl_worker(engine, stop, once=True, fetcher_factory=factory(), min_interval=0)
     assert seen_progress[0]['stored'] == 1
-    assert status(engine, crawl_id)['status'] == 'running'
+    assert status(engine, crawl_id)['status'] == 'queued'
     with engine.connect() as c:
         assert c.scalar(sa.select(sa.func.count()).select_from(crawl_sources)) == 1
     monkeypatch.setattr(worker, 'record_article', original)
@@ -160,8 +160,8 @@ def test_heartbeat_uses_an_independent_connection_and_stops_after_loss(engine):
     entered, unblock, lost, renewed = Event(), Event(), Event(), Event()
     original_heartbeat = worker.heartbeat
     renewals = []
-    def observe_heartbeat(engine, id, token, now):
-        ok = original_heartbeat(engine, id, token, now)
+    def observe_heartbeat(engine, id, token, now, lease_seconds=120):
+        ok = original_heartbeat(engine, id, token, now, lease_seconds=lease_seconds)
         if not ok:
             lost.set()
         else:
@@ -203,10 +203,24 @@ def test_shutdown_during_fetch_closes_and_releases_claim(engine):
     worker.run_crawl_worker(engine, stop, once=True,
                             fetcher_factory=factory(on_fetch=shutdown, on_close=closed.set), min_interval=0)
     assert closed.is_set()
-    assert status(engine, crawl_id)['status'] == 'running'
+    assert status(engine, crawl_id)['status'] == 'queued'
     assert claim_crawl(engine, datetime.now(timezone.utc)).id == crawl_id
     with engine.connect() as c:
         assert c.scalar(sa.select(sa.func.count()).select_from(documents)) == 0
+
+
+def test_heartbeat_lease_outlives_the_configured_interval(engine, monkeypatch):
+    create_crawl(engine, request())
+    claim = claim_crawl(engine, datetime.now(timezone.utc))
+    seen = []
+    original_heartbeat = worker.heartbeat
+    def capture(engine, id, token, now, lease_seconds=120):
+        seen.append(lease_seconds)
+        return original_heartbeat(engine, id, token, now, lease_seconds=lease_seconds)
+    monkeypatch.setattr(worker, 'heartbeat', capture)
+    worker.process_claim(engine, claim, Event(), fetcher_factory=factory(), min_interval=0,
+                         heartbeat_seconds=600)
+    assert seen and min(seen) > 600
 
 
 def test_worker_validates_public_urls_before_any_fixture_transport(engine, monkeypatch):

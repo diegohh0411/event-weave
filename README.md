@@ -17,8 +17,15 @@ Status: design. The MVP specs are in [`docs/superpowers/specs/2026-11-05-mvp/`](
 
 ## Quick start
 
+Terminal 1:
+
 ```bash
-podman compose up -d --build
+podman compose up
+```
+
+Terminal 2, once the API is healthy:
+
+```bash
 curl http://127.0.0.1:8000/health   # {"status":"ok","schema":"0008_crawls"}
 open http://localhost:3000
 ```

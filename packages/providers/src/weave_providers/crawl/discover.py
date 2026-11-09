@@ -197,7 +197,7 @@ def discover(outlet: Outlet, fetcher: Fetcher, window: tuple[datetime, datetime]
             day = kept.setdefault(c.published_at.date(), [])
             if len(day) < outlet.per_day:
                 day.append(c)
-        result = sorted([c for d in kept.values() for c in d]
-                        + [c for c in result if c.published_at is None],
+        undated = [c for c in result if c.published_at is None][:outlet.per_day]
+        result = sorted([c for d in kept.values() for c in d] + undated,
                         key=lambda c: (c.published_at is None, c.published_at or start, c.url))
     return result

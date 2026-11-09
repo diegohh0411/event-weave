@@ -267,7 +267,7 @@ def test_meta_view_uses_meta_fetcher_but_same_politeness():
     assert pf.meta_view().fetch("https://ex.com/private/feed").error == "robots disallowed"
     pf.fetch("https://ex.com/a")
     assert inner.calls == ["https://ex.com/a"]
-    assert clock.sleeps == [2.0, 2.0, 2.0]
+    assert clock.sleeps == [2.0, 2.0]
 
 
 def redirect(url, to):
@@ -297,29 +297,28 @@ def test_redirect_chain_stops_at_disallowed_middle_hop():
     assert inner.calls == ["https://ex.com/robots.txt", "https://ex.com/a"]
 
 
-def test_allowed_redirect_chain_reaches_article_and_browser_gets_final_url():
-    meta = FixtureFetcher({
+def test_allowed_redirect_chain_reaches_article_and_reports_final_url():
+    inner = FixtureFetcher({
         "https://ex.com/robots.txt": ROBOTS,
         "https://ex.com/a": redirect("https://ex.com/a", "https://ex.com/b"),
         "https://ex.com/b": redirect("https://ex.com/b", "https://ex.com/c"),
         "https://ex.com/c": page("https://ex.com/c"),
     })
-    inner = FixtureFetcher({"https://ex.com/c": page("https://ex.com/c")})
-    pf, _ = polite(inner, meta=meta)
+    pf, _ = polite(inner)
     got = pf.fetch("https://ex.com/a")
     assert got.status == 200 and got.url == "https://ex.com/a" and got.final_url == "https://ex.com/c"
-    assert inner.calls == ["https://ex.com/c"]
+    assert inner.calls == ["https://ex.com/robots.txt", "https://ex.com/a",
+                           "https://ex.com/b", "https://ex.com/c"]
 
 
-def test_redirect_chain_to_disallowed_never_reaches_browser():
-    meta = FixtureFetcher({
+def test_redirect_chain_to_disallowed_is_never_followed():
+    inner = FixtureFetcher({
         "https://ex.com/robots.txt": ROBOTS,
         "https://ex.com/a": redirect("https://ex.com/a", "https://ex.com/private/b"),
     })
-    inner = FixtureFetcher({})
-    pf, _ = polite(inner, meta=meta)
+    pf, _ = polite(inner)
     assert pf.fetch("https://ex.com/a").error == "robots disallowed"
-    assert inner.calls == [] and "https://ex.com/private/b" not in meta.calls
+    assert "https://ex.com/private/b" not in inner.calls
 
 
 def test_more_than_five_redirects_is_an_error():

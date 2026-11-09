@@ -206,6 +206,18 @@ def test_undated_page_gets_max_order_key_and_sorts_last(engine, monkeypatch):
     assert replay_urls(engine, monkeypatch) == [f"{BASE}/a/elpais", f"{BASE}/a/nodate"]
 
 
+def test_undated_entries_are_capped_by_per_day(engine):
+    r = routes()
+    r[f"{BASE}/sitemap.xml"] = Fetched("x", 200, sitemap_undated("/a/nodate", "/a/nodate2", "/a/nodate3"), None)
+    page = (FIX / "pages" / "no_date.html").read_text(encoding="utf-8")
+    for path in ("/a/nodate", "/a/nodate2", "/a/nodate3"):
+        r[f"{BASE}{path}"] = Fetched("x", 200, page, None)
+    outlet = Outlet("example-news", "example-news.test", "en",
+                    sitemaps=[f"{BASE}/sitemap.xml"], per_day=2)
+    report = crawl(engine, [outlet], polite(r)[0], NOW)
+    assert report.discovered == 2
+
+
 def test_equal_timestamps_replay_in_url_order(engine, monkeypatch):
     base = (FIX / "reuters" / "article.html").read_text(encoding="utf-8")
     r = routes()
@@ -247,15 +259,14 @@ def test_meta_urls_go_to_meta_fetcher_and_articles_to_article_fetcher(engine):
     wrapped = "<html><body><pre>User-agent: *\nDisallow: /private/</pre></body></html>"
     r = routes()
     meta_routes = {u: r.pop(u) for u in (f"{BASE}/robots.txt", f"{BASE}/sitemap.xml")}
-    meta_routes.update(r)  # the HTTP fetcher resolves each article's redirect chain first
     browser_routes = dict(r)
     browser_routes[f"{BASE}/robots.txt"] = Fetched("x", 200, wrapped, None)  # traps a wrong path
     browser, meta = FixtureFetcher(browser_routes), FixtureFetcher(meta_routes)
     report = crawl(engine, OUTLETS, PoliteFetcher(browser, meta=meta, min_interval=0,
                    clock=lambda: 0.0, sleep=lambda s: None), NOW)
-    assert meta.calls[:2] == [f"{BASE}/robots.txt", f"{BASE}/sitemap.xml"]
-    assert meta.calls.count(f"{BASE}/robots.txt") == 1  # article probes follow, one per page
+    assert meta.calls == [f"{BASE}/robots.txt", f"{BASE}/sitemap.xml"]
     assert all("/a/" in u for u in browser.calls) and f"{BASE}/robots.txt" not in browser.calls
+    assert len(browser.calls) == len(set(browser.calls))  # one article request, not a probe plus a render
     assert f"{BASE}/private/secret" not in browser.calls
     assert report.stored == 2
 

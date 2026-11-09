@@ -8,6 +8,8 @@ from sqlalchemy.dialects.postgresql import insert
 from weave_core.schema import crawl_articles, crawl_runs, crawl_sources
 from .requests import CrawlRequest
 
+LEASE_SECONDS = 120
+
 
 @dataclass(frozen=True)
 class ClaimedCrawl:
@@ -26,7 +28,7 @@ def create_crawl(engine, request: CrawlRequest, *, created_at: datetime | None =
     return crawl_id
 
 
-def claim_crawl(engine, now: datetime, lease_seconds: int = 120) -> ClaimedCrawl | None:
+def claim_crawl(engine, now: datetime, lease_seconds: int = LEASE_SECONDS) -> ClaimedCrawl | None:
     with engine.begin() as conn:
         row = conn.execute(sa.select(crawl_runs).where(sa.or_(
             crawl_runs.c.status == "queued",
@@ -49,20 +51,21 @@ def lock_owned(conn, crawl_id, token):
         crawl_runs.c.claim_token == token).with_for_update()) is not None
 
 
-def heartbeat(engine, id, token, now) -> bool:
+def heartbeat(engine, id, token, now, lease_seconds: int = LEASE_SECONDS) -> bool:
     with engine.begin() as conn:
         result = conn.execute(crawl_runs.update().where(crawl_runs.c.id == id,
             crawl_runs.c.status == "running", crawl_runs.c.claim_token == token).values(
-                lease_until=now + timedelta(seconds=120)))
+                lease_until=now + timedelta(seconds=lease_seconds)))
         return result.rowcount == 1
 
 
 def release_crawl(engine, id, token, now) -> bool:
-    """Expire a stopped worker's claim without allowing it to release a newer owner."""
+    """Requeue a stopped worker's claim without allowing it to release a newer owner."""
     with engine.begin() as conn:
         result = conn.execute(crawl_runs.update().where(
             crawl_runs.c.id == id, crawl_runs.c.status == 'running',
-            crawl_runs.c.claim_token == token).values(lease_until=now))
+            crawl_runs.c.claim_token == token).values(
+                status='queued', claim_token=None, lease_until=None))
         return result.rowcount == 1
 
 
@@ -105,15 +108,27 @@ def record_source(engine, id, token, outcome) -> bool:
 
 
 def crawl_counters(conn, crawl_id):
-    rows = conn.execute(sa.select(crawl_articles.c.status, crawl_articles.c.reason, crawl_articles.c.fetched)
-                        .where(crawl_articles.c.crawl_id == crawl_id)).all()
-    counters = {key: 0 for key in ("discovered", "fetched", "stored", "existing", "duplicates", "rejected", "errors")}
-    reasons = {}
-    for status, reason, fetched in rows:
-        counters["discovered"] += 1
-        counters["fetched"] += int(fetched)
-        counters[{"duplicate": "duplicates", "error": "errors"}.get(status, status)] += 1
+    return crawl_counters_many(conn, [crawl_id])[crawl_id]
+
+
+def crawl_counters_many(conn, crawl_ids):
+    """Count article outcomes for several crawls with one query."""
+    ids = list(dict.fromkeys(crawl_ids))
+    counters = {crawl_id: _empty_counters() for crawl_id in ids}
+    if not ids:
+        return counters
+    rows = conn.execute(sa.select(crawl_articles.c.crawl_id, crawl_articles.c.status,
+                                  crawl_articles.c.reason, crawl_articles.c.fetched)
+                        .where(crawl_articles.c.crawl_id.in_(ids))).all()
+    for crawl_id, status, reason, fetched in rows:
+        current = counters[crawl_id]
+        current["discovered"] += 1
+        current["fetched"] += int(fetched)
+        current[{"duplicate": "duplicates", "error": "errors"}.get(status, status)] += 1
         if reason:
-            reasons[reason] = reasons.get(reason, 0) + 1
-    counters["reasons"] = reasons
+            current["reasons"][reason] = current["reasons"].get(reason, 0) + 1
     return counters
+
+
+def _empty_counters():
+    return {key: 0 for key in ("discovered", "fetched", "stored", "existing", "duplicates", "rejected", "errors")} | {"reasons": {}}

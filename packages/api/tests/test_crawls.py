@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
+import sqlalchemy as sa
 from fastapi.testclient import TestClient
 
 from weave_api.main import create_app
@@ -68,6 +69,21 @@ def test_create_response_stays_queued_even_if_worker_claims_immediately(client, 
 def test_invalid_requests_rejected(client, payload):
     assert client.post('/crawls', json=payload).status_code == 422
     assert client.get('/crawls').json()['total'] == 0
+
+
+def test_crawl_list_counts_articles_in_one_query(client, engine):
+    for _ in range(3):
+        create(client)
+    statements = []
+    def record(conn, cursor, statement, params, context, executemany):
+        if 'FROM crawl_articles' in statement:
+            statements.append(statement)
+    sa.event.listen(engine, 'before_cursor_execute', record)
+    try:
+        page = client.get('/crawls').json()
+    finally:
+        sa.event.remove(engine, 'before_cursor_execute', record)
+    assert page['total'] == 3 and len(statements) == 1
 
 
 def test_paging_and_unknown_ids(client):

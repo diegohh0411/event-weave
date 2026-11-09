@@ -5,7 +5,8 @@ import sqlalchemy as sa
 from pydantic import ValidationError
 
 from weave_core.db import make_engine
-from weave_providers.crawl.jobs import claim_crawl, create_crawl, finish_crawl, heartbeat, record_article, record_source
+from weave_providers.crawl.jobs import (claim_crawl, crawl_counters, crawl_counters_many, create_crawl,
+                                        finish_crawl, heartbeat, record_article, record_source)
 from weave_providers.crawl.requests import CrawlRequest
 
 
@@ -103,3 +104,30 @@ def test_successful_retries_clear_previous_failure_details(database_url):
     with engine.connect() as conn:
         assert crawl_counters(conn, crawl_id)["reasons"] == {}
         assert conn.scalar(sa.text("select error from crawl_sources where crawl_id=:id"), {"id": crawl_id}) is None
+
+
+def test_heartbeat_renews_the_configured_lease(database_url):
+    engine = make_engine(database_url)
+    crawl_id = create_crawl(engine, CrawlRequest(sites=[{"domain": "example.com", "language": "en"}]))
+    now = datetime.now(timezone.utc)
+    claim = claim_crawl(engine, now, lease_seconds=30)
+    assert heartbeat(engine, crawl_id, claim.token, now, lease_seconds=300)
+    with engine.connect() as conn:
+        assert conn.scalar(sa.text("select lease_until from crawl_runs where id=:id"), {"id": crawl_id}) == now + timedelta(seconds=300)
+
+
+def test_crawl_counters_many_batches_counts_by_crawl(database_url):
+    engine = make_engine(database_url)
+    first = create_crawl(engine, CrawlRequest(sites=[{"domain": "example.com", "language": "en"}]))
+    second = create_crawl(engine, CrawlRequest(sites=[{"domain": "example.org", "language": "en"}]))
+    claim = claim_crawl(engine, datetime.now(timezone.utc))
+    record_article(engine, first, claim.token, dict(canonical_url="https://example.com/a", url="https://example.com/a", outlet="example.com", status="rejected", reason="paywall", fetched=True))
+    assert finish_crawl(engine, first, claim.token)
+    claim = claim_crawl(engine, datetime.now(timezone.utc))
+    record_article(engine, second, claim.token, dict(canonical_url="https://example.org/a", url="https://example.org/a", outlet="example.org", status="error", reason="HTTP 500", fetched=False))
+    with engine.connect() as conn:
+        counters = crawl_counters_many(conn, [first, second])
+        assert counters[first] == crawl_counters(conn, first)
+        assert counters[second] == crawl_counters(conn, second)
+        assert counters[first]["rejected"] == 1 and counters[second]["errors"] == 1
+        assert crawl_counters_many(conn, []) == {}

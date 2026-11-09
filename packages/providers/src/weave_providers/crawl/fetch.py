@@ -229,18 +229,10 @@ class PoliteFetcher:
         return rules.can_fetch(_PRODUCT_TOKEN, url)
 
     def fetch(self, url: str) -> Fetched:
-        if self.meta is self.inner:
-            return self._guarded(self.inner, url)
-        # Resolve the redirect chain with the plain HTTP fetcher, then give only the final,
-        # allowed URL to the browser fetcher.
-        probe = self._guarded(self.meta, url)
-        if probe.error or probe.status == 0 or probe.status >= 400:
-            return probe
-        final = probe.final_url or url
-        got = self._guarded(self.inner, final)
-        if got.error == "robots disallowed" or got.final_url is None and final == url:
+        got = self._guarded(self.inner, url)
+        if got.error:
             return replace(got, url=url)
-        return replace(got, url=url, final_url=got.final_url or final)
+        return replace(got, url=url, final_url=got.final_url or url)
 
     def meta_view(self) -> Fetcher:
         """A Fetcher for sitemaps and feeds: same politeness, routed to `meta`."""
