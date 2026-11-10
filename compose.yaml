@@ -144,11 +144,15 @@ services:
     restart: unless-stopped
     environment:
       WEAVE_CRAWL_EGRESS_PROXY: http://crawl-egress:8080
+      # Keep the browser's locale and clock consistent with the egress IP's country.
+      WEAVE_CRAWL_LOCALE: ${WEAVE_CRAWL_LOCALE:-es-MX}
+      WEAVE_CRAWL_TIMEZONE: ${WEAVE_CRAWL_TIMEZONE:-America/Mexico_City}
     networks: [crawl-isolated]
+    init: true  # reap Chromium's child processes
     read_only: true
     tmpfs:
       - /tmp:size=512m,mode=1777
-    shm_size: 256m
+    shm_size: 1g
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     mem_limit: 2g

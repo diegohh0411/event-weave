@@ -2,6 +2,7 @@
 import asyncio
 import contextlib
 import os
+import random
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -16,6 +17,8 @@ _PRODUCT_TOKEN = USER_AGENT.split("/")[0]
 MAX_REDIRECTS = 5
 # Browser identity for crawl traffic: CDN WAFs block bot UAs and non-browser TLS fingerprints.
 IMPERSONATE = "safari17_0"
+BROWSER_LOCALE = os.environ.get("WEAVE_CRAWL_LOCALE", "es-MX")
+BROWSER_TIMEZONE = os.environ.get("WEAVE_CRAWL_TIMEZONE", "America/Mexico_City")
 ACCEPT_LANGUAGE = "es-MX,es;q=0.9,en-US;q=0.8,en;q=0.7"
 
 
@@ -124,6 +127,10 @@ class Crawl4aiFetcher:
     def __init__(self, crawler_factory: Callable[[], Any] | None = None, validator=None,
                  isolated_proxy: str | None = None):
         self.isolated_proxy = isolated_proxy
+        # Hard cap per page (crawl4ai's page_timeout only covers navigation), so a wedged
+        # page can never hold the renderer's single slot past the caller's own timeout.
+        self.deadline = 70.0
+        self.on_close_timeout: Callable[[], None] | None = None
         self.validator = validator
         self.navigation_guard = None
         self.cancelled: Callable[[], bool] = lambda: False
@@ -141,7 +148,10 @@ class Crawl4aiFetcher:
         try:
             if self._loop is None:
                 self._loop = asyncio.new_event_loop()
-            return self._loop.run_until_complete(self._fetch(url))
+            return self._loop.run_until_complete(
+                asyncio.wait_for(self._fetch(url), self.deadline))
+        except TimeoutError:
+            return Fetched(url, 0, None, f"render deadline exceeded ({self.deadline:.0f}s)")
         except Exception as exc:
             return Fetched(url, 0, None, f"{type(exc).__name__}: {exc}")
 
@@ -153,41 +163,45 @@ class Crawl4aiFetcher:
             if self.validator:
                 async def install(page, *, context, **kwargs):
                     async def guard(route):
-                        # Playwright routing does not reliably intercept every
-                        # redirect hop. Fetch without automatic redirects, check
-                        # each Location, and fulfill the response ourselves.
-                        current = route.request.url
+                        # Validate, then let Chromium's own network stack send the request.
+                        # route.fetch() would re-issue it from Playwright's Node client, with a
+                        # non-browser TLS fingerprint and no Sec-Fetch-* headers. The browser
+                        # follows redirect hops itself: the egress proxy enforces public-only
+                        # destinations on every hop, and PoliteFetcher discards off-domain final URLs.
                         try:
-                            for hop in range(MAX_REDIRECTS + 1):
-                                if self.cancelled():
-                                    raise ValueError('crawl cancelled')
-                                self.validator(current)
-                                if route.request.is_navigation_request() and self.navigation_guard:
-                                    if not self.navigation_guard(current):
-                                        raise ValueError('navigation disallowed')
-                                response = await route.fetch(url=current, max_redirects=0)
-                                location = response.headers.get('location')
-                                if response.status not in (301, 302, 303, 307, 308) or not location:
-                                    await route.fulfill(response=response)
-                                    return
-                                current = urljoin(current, location)
-                            raise ValueError('too many redirects')
+                            if self.cancelled():
+                                raise ValueError('crawl cancelled')
+                            current = route.request.url
+                            self.validator(current)
+                            if route.request.is_navigation_request() and self.navigation_guard:
+                                if not self.navigation_guard(current):
+                                    raise ValueError('navigation disallowed')
                         except Exception:
-                            # The route may already be fulfilled, or the page closed mid-flight.
                             with contextlib.suppress(Exception):
                                 await route.abort()
+                            return
+                        with contextlib.suppress(Exception):
+                            await route.continue_()
                     await context.route('**/*', guard)
                     async def block_socket(socket):
                         await socket.close()
                     await context.route_web_socket('**/*', block_socket)
                 crawler.crawler_strategy.set_hook('on_page_context_created', install)
+            if self.isolated_proxy:
+                crawler.crawler_strategy.set_hook('before_goto', _humanize_before_goto)
+                crawler.crawler_strategy.set_hook('after_goto', _humanize_after_goto)
             await crawler.start()
             self._crawler = crawler
         if self.validator:
             self.validator(url)
+        stealth = {}
+        if self.isolated_proxy:
+            # No magic/simulate_user/override_navigator: they inject a naive navigator
+            # override (plugins=[1..5], languages=en-US) that is itself a bot tell.
+            stealth = dict(locale=BROWSER_LOCALE, timezone_id=BROWSER_TIMEZONE)
         result = await self._crawler.arun(url=url, config=CrawlerRunConfig(
-            magic=bool(self.isolated_proxy), check_robots_txt=False,
-            page_timeout=45000, delay_before_return_html=2.0 if self.isolated_proxy else 0.1))
+            check_robots_txt=False, page_timeout=45000,
+            delay_before_return_html=2.0 if self.isolated_proxy else 0.1, **stealth))
         status = result.status_code or 0
         if not result.success:
             return Fetched(url, status, None, result.error_message or "fetch failed")
@@ -199,12 +213,50 @@ class Crawl4aiFetcher:
         try:
             if self._crawler is not None:
                 # Teardown errors (in-flight routes racing the close) must not discard a fetched page.
-                with contextlib.suppress(Exception):
-                    self._loop.run_until_complete(self._crawler.close())
+                try:
+                    self._loop.run_until_complete(asyncio.wait_for(self._crawler.close(), 15))
+                except TimeoutError:
+                    if self.on_close_timeout:
+                        self.on_close_timeout()
+                except Exception:
+                    pass
         finally:
             self._crawler = None
             self._loop.close()
             self._loop = None
+
+
+async def _humanize_before_goto(page, *, context, **kwargs):
+    # crawl4ai always plants a synthetic `cookiesEnabled` cookie; real browsers never send it.
+    with contextlib.suppress(Exception):
+        await context.clear_cookies(name="cookiesEnabled")
+    return page
+
+
+async def _humanize_after_goto(page, *, context, **kwargs):
+    # Real input events (not JS-dispatched) that behavioural sensors look for.
+    with contextlib.suppress(Exception):
+        for _ in range(random.randint(2, 4)):
+            await page.mouse.move(random.randint(80, 1500), random.randint(80, 900),
+                                  steps=random.randint(8, 25))
+            await asyncio.sleep(random.uniform(0.05, 0.3))
+        await page.mouse.wheel(0, random.randint(250, 900))
+    return page
+
+
+_GPU_KILL_SWITCHES = {"--disable-gpu", "--disable-gpu-compositing", "--disable-software-rasterizer"}
+
+
+def _strip_gpu_kill_switches(manager) -> None:
+    """crawl4ai 0.9.5 hardcodes GPU-off flags at launch even with enable_stealth, which
+    leaves WebGL unavailable (a headless tell). Drop them so SwiftShader WebGL works."""
+    build = manager._build_browser_args
+
+    def build_without_gpu_kill_switches():
+        args = build()
+        args["args"] = [a for a in args["args"] if a not in _GPU_KILL_SWITCHES]
+        return args
+    manager._build_browser_args = build_without_gpu_kill_switches
 
 
 def _default_crawler(public: bool = False, isolated_proxy: str | None = None) -> Any:
@@ -213,14 +265,27 @@ def _default_crawler(public: bool = False, isolated_proxy: str | None = None) ->
     if isolated_proxy:
         from crawl4ai import UndetectedAdapter
         from crawl4ai.async_crawler_strategy import AsyncPlaywrightCrawlerStrategy
+        # Stealth profile for the isolated renderer:
+        # - patchright (UndetectedAdapter) patches CDP/webdriver leaks at the driver level;
+        # - headful under Xvfb when a DISPLAY exists, so no "HeadlessChrome" brand/UA;
+        # - user_agent="" keeps Chromium's own UA and client hints, which stay consistent
+        #   with navigator.userAgentData (crawl4ai's default spoofs an old Chrome/116);
+        # - enable_stealth keeps WebGL (SwiftShader) instead of --disable-gpu.
+        headless = not os.environ.get("DISPLAY")
         config = BrowserConfig(
-            headless=True, java_script_enabled=True,
+            headless=headless, java_script_enabled=True, enable_stealth=True,
+            user_agent="", viewport_width=1920, viewport_height=1080,
             proxy_config={"server": isolated_proxy},
             extra_args=["--proxy-bypass-list=<-loopback>", "--disable-quic",
-                        "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"],
+                        "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+                        f"--lang={BROWSER_LOCALE}", "--window-size=1920,1080",
+                        # Software WebGL: a context-less WebGL is a classic headless tell.
+                        "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
         )
+        config.headers.pop("sec-ch-ua", None)
         strategy = AsyncPlaywrightCrawlerStrategy(browser_config=config,
                                                    browser_adapter=UndetectedAdapter())
+        _strip_gpu_kill_switches(strategy.browser_manager)
         return AsyncWebCrawler(config=config, crawler_strategy=strategy)
     # Only the isolated service can enable JS for guarded public crawls.
     return AsyncWebCrawler(config=BrowserConfig(user_agent=USER_AGENT, java_script_enabled=not public))
