@@ -3,6 +3,7 @@ import { formatChangeReport, validateSite } from '../../app/utils/site'
 describe('site helpers', () => {
   it('formats only changes', () => {
     expect(formatChangeReport({ stored: 14, updated: 2, removed: 1 })).toBe('14 new · 2 edited · 1 removed')
+    expect(formatChangeReport({ stored: 0, updated: 0, removed: 0, rejected: 3, errors: 2 })).toBe('3 rejected · 2 errors')
     expect(formatChangeReport({ stored: 0, updated: 0, removed: 0 })).toBe('No changes')
   })
   it('checks scheduling and throttle ranges', () => {

@@ -119,7 +119,7 @@ const robots = computed(() => Object.entries(crawl.value?.counters.reasons ?? {}
           <p v-if="resultsLoading" class="text-sm text-muted">Loading articles...</p><p v-else-if="articlesError" role="alert" class="text-sm text-error">Could not load articles: {{ articlesError }}</p><p v-else-if="!articles.length" class="text-sm text-muted">No articles recorded.</p>
           <div v-else class="overflow-x-auto rounded-xl border border-default bg-default">
             <table class="w-full text-left text-sm">
-              <thead class="border-b border-default text-muted"><tr><th class="px-4 py-2.5 font-medium">Article</th><th class="px-4 py-2.5 font-medium">Outcome</th><th class="px-4 py-2.5"><span class="sr-only">Document</span></th></tr></thead>
+              <thead class="border-b border-default text-muted"><tr><th scope="col" class="px-4 py-2.5 font-medium">Article</th><th scope="col" class="px-4 py-2.5 font-medium">Outcome</th><th scope="col" class="px-4 py-2.5"><span class="sr-only">Document</span></th></tr></thead>
               <tbody class="divide-y divide-default">
                 <tr v-for="a in filteredArticles" :key="a.canonical_url">
                   <td class="max-w-0 px-4 py-3"><span class="block font-medium text-highlighted">{{ a.outlet }}</span><a :href="a.url" target="_blank" rel="noopener noreferrer" class="block truncate text-muted hover:text-highlighted hover:underline">{{ a.url }}</a></td>
@@ -136,7 +136,7 @@ const robots = computed(() => Object.entries(crawl.value?.counters.reasons ?? {}
           <p v-if="resultsLoading" class="text-sm text-muted">Loading sources...</p><p v-else-if="sourcesError" role="alert" class="text-sm text-error">Could not load sources: {{ sourcesError }}</p><p v-else-if="!sources.length" class="text-sm text-muted">No sources recorded.</p>
           <div v-else class="overflow-x-auto rounded-xl border border-default bg-default">
             <table class="w-full text-left text-sm">
-              <thead class="border-b border-default text-muted"><tr><th class="px-4 py-2.5 font-medium">Source</th><th class="px-4 py-2.5 font-medium">Kind</th><th class="px-4 py-2.5 font-medium">Status</th></tr></thead>
+              <thead class="border-b border-default text-muted"><tr><th scope="col" class="px-4 py-2.5 font-medium">Source</th><th scope="col" class="px-4 py-2.5 font-medium">Kind</th><th scope="col" class="px-4 py-2.5 font-medium">Status</th></tr></thead>
               <tbody class="divide-y divide-default">
                 <tr v-for="s in sources" :key="s.url">
                   <td class="max-w-0 px-4 py-3"><span class="block font-medium text-highlighted">{{ s.site }}</span><span class="block truncate text-muted">{{ s.url }}</span></td>

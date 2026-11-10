@@ -60,7 +60,10 @@ class SiteOut(SiteCreate):
 
 def site_row(conn, site_id, lock=False):
     query = sa.select(sites).where(sites.c.id == site_id)
-    return conn.execute(query.with_for_update() if lock else query).one()
+    row = conn.execute(query.with_for_update() if lock else query).first()
+    if row is None:
+        raise HTTPException(404, "site not found")
+    return row
 
 
 def site_out(conn, row):
@@ -78,7 +81,15 @@ def conflict(exc):
 @router.get('/sites')
 def list_sites(paging: Annotated[Paging, Depends()], engine: Engine) -> Page[SiteOut]:
     with engine.connect() as conn:
-        return paginate(conn, sa.select(sites).order_by(sites.c.name, sites.c.id), paging, lambda row: site_out(conn, row))
+        page = paginate(conn, sa.select(sites).order_by(sites.c.name, sites.c.id), paging, lambda row: row)
+        ids = [row.id for row in page.items]
+        last = conn.execute(sa.select(crawl_runs).where(crawl_runs.c.site_id.in_(ids))
+                            .distinct(crawl_runs.c.site_id)
+                            .order_by(crawl_runs.c.site_id, crawl_runs.c.created_at.desc(), crawl_runs.c.id.desc())).all() if ids else []
+        counters = crawl_counters_many(conn, [row.id for row in last])
+        by_site = {row.site_id: _crawl_out(conn, row, counters[row.id]) for row in last}
+        return Page(items=[SiteOut(**row._mapping, last_crawl=by_site.get(row.id)) for row in page.items],
+                    total=page.total, offset=page.offset, limit=page.limit)
 
 
 @router.post('/sites', status_code=201)
@@ -134,7 +145,10 @@ def check_site(site_id: UUID, engine: Engine) -> CrawlOut:
     except AlreadyQueued as exc:
         raise HTTPException(409, 'crawl already active') from exc
     with engine.connect() as conn:
-        return _crawl_out(conn, conn.execute(sa.select(crawl_runs).where(crawl_runs.c.id == crawl_id)).one())
+        row = conn.execute(sa.select(crawl_runs).where(crawl_runs.c.id == crawl_id)).first()
+        if row is None:
+            raise HTTPException(404, "queued crawl no longer exists")
+        return _crawl_out(conn, row)
 
 
 @router.get('/sites/{site_id}/crawls')

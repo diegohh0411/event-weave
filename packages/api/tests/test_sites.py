@@ -47,3 +47,35 @@ def test_site_lifecycle_and_checks(client):
 ])
 def test_invalid_site(client, payload):
     assert client.post('/sites', json=payload).status_code == 422
+
+
+def test_check_handles_deleted_queued_crawl(client, monkeypatch):
+    monkeypatch.setattr('weave_api.routers.sites.queue_check', lambda engine, site_id: uuid4())
+    assert client.post(f'/sites/{uuid4()}/check').status_code == 404
+
+
+def test_patch_per_day_bounds(client):
+    sid = client.post('/sites', json={'domain': 'bounds.com', 'language': 'en'}).json()['id']
+    for value in (0, 201):
+        assert client.patch(f'/sites/{sid}', json={'per_day': value}).status_code == 422
+    for value in (1, 200, None):
+        assert client.patch(f'/sites/{sid}', json={'per_day': value}).status_code == 200
+
+
+def test_list_sites_batches_queries(client, engine):
+    import sqlalchemy as sa
+    for i in range(3):
+        sid = client.post('/sites', json={'domain': f'site{i}.com', 'language': 'en'}).json()['id']
+        assert client.post(f'/sites/{sid}/check').status_code == 202
+    statements = []
+    def count(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+    sa.event.listen(engine, 'before_cursor_execute', count)
+    try:
+        response = client.get('/sites')
+    finally:
+        sa.event.remove(engine, 'before_cursor_execute', count)
+    assert response.status_code == 200
+    assert len(response.json()['items']) == 3
+    assert all(site['last_crawl'] for site in response.json()['items'])
+    assert len(statements) <= 5

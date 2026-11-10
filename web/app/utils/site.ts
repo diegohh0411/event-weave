@@ -1,5 +1,5 @@
-export function formatChangeReport(c: { stored: number, updated: number, removed: number }) {
-  return [[c.stored, 'new'], [c.updated, 'edited'], [c.removed, 'removed']].filter(([n]) => n).map(([n, label]) => `${n} ${label}`).join(' · ') || 'No changes'
+export function formatChangeReport(c: { stored: number, updated: number, removed: number, rejected?: number, errors?: number }) {
+  return [[c.stored, 'new'], [c.updated, 'edited'], [c.removed, 'removed'], [c.rejected, 'rejected'], [c.errors, 'errors']].filter(([n]) => n).map(([n, label]) => `${n} ${label}`).join(' · ') || 'No changes'
 }
 function validDomain(input: string) {
   const value = input.trim().toLowerCase().replace(/\.$/, '')
