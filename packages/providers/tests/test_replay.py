@@ -254,3 +254,42 @@ def test_paper_run_with_replay_fails_without_a_topic(engine):
     with engine.connect() as c:
         error = c.execute(sa.select(jobs.c.error).where(jobs.c.stage == Stage.provide)).scalar()
     assert error == "paper track needs a topic for document 'crawl:a'"
+
+
+@pytest.mark.parametrize('mode,scoped,expected', [('snapshot', False, ['crawl:a']), ('current', False, ['crawl:a', 'crawl:b']), ('current', True, ['crawl:a'])])
+def test_rerun_replays_snapshot_or_current_library(engine, mode, scoped, expected):
+    seed(engine, [('a', (1,), 'crawl', 'en', 'x', day(1), 'u1')])
+    settings = {}
+    if scoped:
+        crawl = create_crawl(engine, CrawlRequest(sites=[{'domain': 'example.com', 'language': 'en'}]))
+        claim = claim_crawl(engine, datetime.now(timezone.utc))
+        assert record_article(engine, claim.id, claim.token, dict(canonical_url='https://example.com/a',
+            url='https://example.com/a', outlet='x', status='stored', document_id='crawl:a'))
+        assert finish_crawl(engine, crawl, claim.token)
+        settings = {'crawl_id': str(crawl)}
+    registry = Registry()
+    registry.register(ReplayProvider)
+    for stage, name, kind in [(Stage.extract, 'x', UnitKind.document), (Stage.enrich, 'e', UnitKind.mention),
+                              (Stage.embed, 'm', UnitKind.mention), (Stage.cluster, 'c', UnitKind.mention)]:
+        class Fake:
+            spec = AdapterSpec(name, '1', stage, kind, Empty)
+            def __init__(self, settings, ctx):
+                pass
+            def process(self, unit, upstream):
+                return StageResult({})
+        registry.register(Fake)
+    cfg = RunConfig(name='t', track='realistic', seed=1, stages={
+        Stage.provide: {'adapter': 'replay', 'settings': settings}, Stage.extract: {'adapter': 'x'},
+        Stage.enrich: {'adapter': 'e'}, Stage.embed: {'adapter': 'm'}, Stage.cluster: {'adapter': 'c'}})
+    service = RunService(engine, registry, StaticCatalog())
+    source = service.create(cfg)
+    assert [u.id for u in run_replay(engine, source.run_id, **settings).emits] == ['crawl:a']
+    seed(engine, [('b', (2,), 'crawl', 'en', 'x', day(2), 'u2')])
+    rerun = service.rerun(source.run_id, mode)
+    assert rerun.config_hash == source.config_hash
+    service.start(rerun.run_id)
+    run_worker(engine, registry, Stage.provide, 'w', stop=threading.Event(), once=True)
+    with engine.connect() as c:
+        ids = list(c.scalars(sa.select(jobs.c.unit_id).where(jobs.c.run_id == rerun.run_id,
+            jobs.c.stage == Stage.extract).order_by(jobs.c.order_key)))
+    assert ids == expected

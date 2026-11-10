@@ -86,7 +86,7 @@ def seeded(engine):
 def test_no_gold_outside_scores(service, seeded):
     app = create_app(service)
     run, crawl = seeded
-    fill = {"run_id": str(run), "crawl_id": str(crawl), "cluster_id": "c1", "document_id": "d1"}
+    fill = {"run_id": str(run), "a": str(run), "b": str(run), "crawl_id": str(crawl), "cluster_id": "c1", "document_id": "d1"}
     called = []
     with TestClient(app) as client:
         framework_paths = {app.openapi_url, app.docs_url, app.redoc_url, "/docs/oauth2-redirect"}

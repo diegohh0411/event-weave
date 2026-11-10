@@ -2027,6 +2027,23 @@
         "title": "Progress",
         "type": "object"
       },
+      "RerunIn": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "snapshot",
+              "current"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "RerunIn",
+        "type": "object"
+      },
       "RunConfig": {
         "properties": {
           "name": {
@@ -2068,6 +2085,10 @@
           "config_hash": {
             "title": "Config Hash",
             "type": "string"
+          },
+          "crawl_scoped": {
+            "title": "Crawl Scoped",
+            "type": "boolean"
           },
           "created_at": {
             "format": "date-time",
@@ -2124,6 +2145,43 @@
             "title": "Progress",
             "type": "object"
           },
+          "rerun_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "snapshot",
+                  "current"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rerun Mode"
+          },
+          "snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SnapshotOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Run Id"
+          },
           "started_at": {
             "anyOf": [
               {
@@ -2153,6 +2211,10 @@
           "started_at",
           "finished_at",
           "config",
+          "snapshot",
+          "source_run_id",
+          "rerun_mode",
+          "crawl_scoped",
           "progress",
           "dollars",
           "dollars_estimated",
@@ -2413,6 +2475,48 @@
           "report"
         ],
         "title": "ScoresOut",
+        "type": "object"
+      },
+      "SnapshotDiffOut": {
+        "properties": {
+          "added": {
+            "title": "Added",
+            "type": "integer"
+          },
+          "new_versions": {
+            "title": "New Versions",
+            "type": "integer"
+          },
+          "removed": {
+            "title": "Removed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "added",
+          "removed",
+          "new_versions"
+        ],
+        "title": "SnapshotDiffOut",
+        "type": "object"
+      },
+      "SnapshotOut": {
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "documents": {
+            "title": "Documents",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "documents",
+          "as_of"
+        ],
+        "title": "SnapshotOut",
         "type": "object"
       },
       "Stage": {
@@ -3599,6 +3703,56 @@
         "summary": "Validate Run"
       }
     },
+    "/runs/{a}/snapshot-diff/{b}": {
+      "get": {
+        "operationId": "snapshot_diff_runs__a__snapshot_diff__b__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "a",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "A",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "b",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "B",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotDiffOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Snapshot Diff"
+      }
+    },
     "/runs/{run_id}": {
       "get": {
         "operationId": "get_run_runs__run_id__get",
@@ -4286,6 +4440,56 @@
           }
         },
         "summary": "Run Failures"
+      }
+    },
+    "/runs/{run_id}/rerun": {
+      "post": {
+        "operationId": "rerun_runs__run_id__rerun_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RerunIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rerun"
       }
     },
     "/runs/{run_id}/resume": {

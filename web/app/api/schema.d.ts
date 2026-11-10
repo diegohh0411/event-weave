@@ -278,6 +278,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{a}/snapshot-diff/{b}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Snapshot Diff */
+        get: operations["snapshot_diff_runs__a__snapshot_diff__b__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{run_id}": {
         parameters: {
             query?: never;
@@ -428,6 +445,23 @@ export interface paths {
         get: operations["run_failures_runs__run_id__failures_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/rerun": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rerun */
+        post: operations["rerun_runs__run_id__rerun_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1150,6 +1184,14 @@ export interface components {
             /** Running */
             running: number;
         };
+        /** RerunIn */
+        RerunIn: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "snapshot" | "current";
+        };
         /** RunConfig */
         RunConfig: {
             /** Name */
@@ -1167,6 +1209,8 @@ export interface components {
             config: components["schemas"]["RunConfig"];
             /** Config Hash */
             config_hash: string;
+            /** Crawl Scoped */
+            crawl_scoped: boolean;
             /**
              * Created At
              * Format: date-time
@@ -1191,6 +1235,11 @@ export interface components {
             progress: {
                 [key: string]: components["schemas"]["Progress"];
             };
+            /** Rerun Mode */
+            rerun_mode: ("snapshot" | "current") | null;
+            snapshot: components["schemas"]["SnapshotOut"] | null;
+            /** Source Run Id */
+            source_run_id: string | null;
             /** Started At */
             started_at: string | null;
             state: components["schemas"]["RunState"];
@@ -1292,6 +1341,25 @@ export interface components {
             split: string;
             /** Track */
             track: string;
+        };
+        /** SnapshotDiffOut */
+        SnapshotDiffOut: {
+            /** Added */
+            added: number;
+            /** New Versions */
+            new_versions: number;
+            /** Removed */
+            removed: number;
+        };
+        /** SnapshotOut */
+        SnapshotOut: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Documents */
+            documents: number;
         };
         /**
          * Stage
@@ -1934,6 +2002,38 @@ export interface operations {
             };
         };
     };
+    snapshot_diff_runs__a__snapshot_diff__b__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                a: string;
+                b: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotDiffOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_run_runs__run_id__get: {
         parameters: {
             query?: never;
@@ -2230,6 +2330,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_FailureOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rerun_runs__run_id__rerun_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RerunIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedOut"];
                 };
             };
             /** @description Validation Error */

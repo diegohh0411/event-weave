@@ -9,7 +9,9 @@ runs = sa.Table("runs", metadata,
     sa.Column("id", UUID(as_uuid=True), primary_key=True), sa.Column("config", JSONB, nullable=False),
     sa.Column("config_hash", T, nullable=False), sa.Column("state", T, nullable=False),
     sa.Column("created_at", TZ, nullable=False), sa.Column("started_at", TZ), sa.Column("finished_at", TZ),
-    sa.Column("snapshot_at", TZ))
+    sa.Column("snapshot_at", TZ),
+    sa.Column("source_run_id", UUID(as_uuid=True), sa.ForeignKey("runs.id")),
+    sa.Column("rerun_mode", T), sa.CheckConstraint("rerun_mode IN ('snapshot', 'current')"))
 documents = sa.Table("documents", metadata,
     sa.Column("id", T, primary_key=True), *[sa.Column(n, T, nullable=False) for n in ("provider", "external_id", "language", "title", "byline", "outlet", "url")],
     sa.Column("published_at", TZ), sa.Column("text", T, nullable=False),

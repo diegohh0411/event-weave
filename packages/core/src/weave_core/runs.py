@@ -3,14 +3,14 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Protocol
+from typing import Literal, Protocol
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
 
 from weave_core.config import RunConfig, config_hash, validate
 from weave_core.db import session_scope
-from weave_core.schema import jobs, runs
+from weave_core.schema import jobs, run_documents, runs
 from weave_core.stages import JobStatus, RunState, Stage, UnitKind
 
 
@@ -71,6 +71,24 @@ class RunService:
         with session_scope(self.engine) as session:
             session.execute(runs.insert().values(id=run_id, config=cfg.model_dump(mode='json'), config_hash=digest, state=RunState.created, created_at=datetime.now(timezone.utc)))
         return RunCreated(run_id, digest, estimate)
+
+    def rerun(self, run_id: UUID, mode: Literal["snapshot", "current"]) -> RunCreated:
+        if mode not in ("snapshot", "current"):
+            raise ValueError("Invalid rerun mode")
+        new_id = uuid4()
+        with session_scope(self.engine) as session:
+            source = session.execute(sa.select(runs).where(runs.c.id == run_id).with_for_update()).one()
+            cfg = RunConfig.model_validate(source.config)
+            estimate = self.estimator.estimate(cfg)
+            session.execute(runs.insert().values(id=new_id, config=source.config, config_hash=source.config_hash,
+                state=RunState.created, created_at=datetime.now(timezone.utc), source_run_id=run_id,
+                rerun_mode=mode, snapshot_at=source.snapshot_at if mode == "snapshot" else None))
+            if mode == "snapshot":
+                session.execute(run_documents.insert().from_select(
+                    ["run_id", "position", "document_id"],
+                    sa.select(sa.literal(new_id), run_documents.c.position, run_documents.c.document_id)
+                    .where(run_documents.c.run_id == run_id)))
+        return RunCreated(new_id, source.config_hash, estimate)
 
     def _transition(self, session, run_id, old, new, **values):
         row = session.execute(runs.update().where(runs.c.id == run_id, runs.c.state == old).values(state=new, **values).returning(runs.c.config_hash)).first()

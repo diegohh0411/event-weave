@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
@@ -57,8 +57,27 @@ class Progress(BaseModel):
     failed: int
 
 
+class SnapshotOut(BaseModel):
+    documents: int
+    as_of: datetime
+
+
+class RerunIn(BaseModel):
+    mode: Literal["snapshot", "current"]
+
+
+class SnapshotDiffOut(BaseModel):
+    added: int
+    removed: int
+    new_versions: int
+
+
 class RunOut(RunSummary):
     config: RunConfig
+    snapshot: SnapshotOut | None
+    source_run_id: UUID | None
+    rerun_mode: Literal["snapshot", "current"] | None
+    crawl_scoped: bool
     progress: dict[Stage, Progress]
     dollars: Decimal
     dollars_estimated: bool
@@ -91,7 +110,12 @@ def _detail(service: RunService, run_id: UUID) -> RunOut:
     with service.engine.connect() as conn:
         row = q.run_row(conn, run_id)
         spent, estimated = q.dollars(conn, run_id)
-        return RunOut(**_summary(row).model_dump(), config=RunConfig.model_validate(row.config),
+        cfg = RunConfig.model_validate(row.config)
+        provider = cfg.stages.get(Stage.provide)
+        return RunOut(**_summary(row).model_dump(), config=cfg,
+                      snapshot=SnapshotOut(documents=q.snapshot_count(conn, run_id), as_of=row.snapshot_at) if row.snapshot_at is not None else None,
+                      source_run_id=row.source_run_id, rerun_mode=row.rerun_mode,
+                      crawl_scoped=provider is not None and provider.adapter == "replay" and provider.settings.get("crawl_id") is not None,
                       progress=q.progress(conn, run_id), dollars=spent, dollars_estimated=estimated,
                       mentions_per_hour=q.mentions_per_hour(conn, run_id, row.config, row.started_at, row.finished_at))
 
@@ -130,6 +154,23 @@ def list_runs(paging: Annotated[Paging, Depends()], service: Service) -> Page[Ru
 @router.get("/runs/{run_id}")
 def get_run(run_id: UUID, service: Service) -> RunOut:
     return _detail(service, run_id)
+
+
+@router.post("/runs/{run_id}/rerun", status_code=201)
+def rerun(run_id: UUID, body: RerunIn, service: Service) -> CreatedOut:
+    created = service.rerun(run_id, body.mode)
+    with service.engine.connect() as conn:
+        cfg = RunConfig.model_validate(q.run_row(conn, created.run_id).config)
+    return CreatedOut(run_id=created.run_id, config_hash=created.config_hash,
+                      estimate=_estimate_out(service, cfg, created.estimate))
+
+
+@router.get("/runs/{a}/snapshot-diff/{b}")
+def snapshot_diff(a: UUID, b: UUID, service: Service) -> SnapshotDiffOut:
+    with service.engine.connect() as conn:
+        q.run_row(conn, a)
+        q.run_row(conn, b)
+        return SnapshotDiffOut(**q.snapshot_diff(conn, a, b))
 
 
 @router.post("/runs/{run_id}/start")
