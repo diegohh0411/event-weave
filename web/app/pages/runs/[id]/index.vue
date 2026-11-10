@@ -136,8 +136,8 @@ async function rerun(mode: 'snapshot' | 'current') {
           </p>
         </template>
         <template #actions>
-          <UButton color="neutral" variant="outline" :disabled="acting || !run.snapshot" @click="rerun('snapshot')">Re-run snapshot</UButton>
-          <UButton color="neutral" variant="outline" :disabled="acting" @click="rerun('current')">Re-run current</UButton>
+          <UButton color="neutral" variant="outline" :disabled="acting || !run.snapshot" @click="rerun('snapshot')">Re-run</UButton>
+          <UButton color="neutral" variant="outline" :disabled="acting" @click="rerun('current')">Re-run on current library</UButton>
           <UButton v-if="action" size="lg" :color="action === 'cancel' ? 'error' : 'primary'" :variant="action === 'cancel' ? 'outline' : 'solid'" :loading="acting" :disabled="acting" @click="act">
             {{ LABEL[action] }}
           </UButton>
