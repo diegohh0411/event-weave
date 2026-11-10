@@ -58,12 +58,7 @@ def test_browser_blocks_private_subrequest():
         def __init__(self, url):
             self.request, self.action, self.calls = Request(url), None, []
         async def abort(self): self.action = 'abort'
-        async def fulfill(self, response): self.action = 'fulfill'
-        async def fetch(self, *, url, max_redirects):
-            self.calls.append((url, max_redirects))
-            if url.endswith('/redirect'):
-                return type('Response', (), {'status': 302, 'headers': {'location': 'http://169.254.169.254/'}})()
-            return type('Response', (), {'status': 200, 'headers': {}})()
+        async def continue_(self): self.action = 'continue'
     class Page:
         async def route(self, pattern, handler): self.handler = handler
         async def route_web_socket(self, pattern, handler): self.socket_handler = handler
@@ -84,44 +79,43 @@ def test_browser_blocks_private_subrequest():
     browser = Browser()
     with Crawl4aiFetcher(lambda: browser, validator=lambda u: validate_public_url(u, resolver=resolve)) as fetcher:
         assert fetcher.fetch('https://public.test/a').status == 200
+    # Allowed requests go out on the browser's own network stack (no re-fetch); redirect
+    # hops are left to the egress proxy, which enforces public-only destinations.
     assert browser.actions == [
-        ('fulfill', [('https://public.test/a', 0)]), ('abort', []), ('abort', []),
-        ('abort', [('https://public.test/redirect', 0)]),
+        ('continue', []), ('abort', []), ('abort', []), ('continue', []),
     ]
 
 
-def test_browser_navigation_redirect_checks_robots_before_next_hop():
+def test_browser_navigation_guard_aborts_disallowed_navigation():
     from weave_providers.crawl.fetch import Crawl4aiFetcher
 
     class Request:
-        url = 'https://public.test/start'
+        def __init__(self, url): self.url = url
         def is_navigation_request(self): return True
     class Route:
-        request = Request()
-        def __init__(self): self.calls, self.action = [], None
+        def __init__(self, url): self.request, self.action = Request(url), None
         async def abort(self): self.action = 'abort'
-        async def fulfill(self, response): self.action = 'fulfill'
-        async def fetch(self, *, url, max_redirects):
-            self.calls.append(url)
-            return type('Response', (), {'status': 302, 'headers': {'location': '/private'}})()
+        async def continue_(self): self.action = 'continue'
     class Context:
         async def route(self, pattern, handler): self.handler = handler
         async def route_web_socket(self, pattern, handler): pass
     class Strategy:
         def set_hook(self, name, hook): self.hook = hook
     class Browser:
-        def __init__(self): self.crawler_strategy, self.route = Strategy(), Route()
+        def __init__(self):
+            self.crawler_strategy = Strategy()
+            self.routes = [Route('https://public.test/start'), Route('https://public.test/private')]
         async def start(self): pass
         async def close(self): pass
         async def arun(self, url, config):
             context = Context()
             await self.crawler_strategy.hook(context, context=context)
-            await context.handler(self.route)
+            for route in self.routes:
+                await context.handler(route)
             return type('Result', (), dict(success=False, status_code=0, error_message='blocked'))()
     browser = Browser()
     f = Crawl4aiFetcher(lambda: browser, validator=lambda u: validate_public_url(u, resolver=resolve))
     f.navigation_guard = lambda u: not u.endswith('/private')
     with f:
         f.fetch('https://public.test/start')
-    assert browser.route.action == 'abort'
-    assert browser.route.calls == ['https://public.test/start']
+    assert [r.action for r in browser.routes] == ['continue', 'abort']

@@ -4,6 +4,7 @@ No caller-supplied scripts, browser arguments, proxy settings or hooks are accep
 Each request gets a fresh browser, and concurrent work is bounded to one crawl.
 """
 import os
+import signal
 from dataclasses import asdict
 from threading import BoundedSemaphore
 
@@ -30,6 +31,21 @@ class FetchRequest(BaseModel):
     respect_robots: StrictBool
 
 
+def kill_browsers():
+    """Last resort when a browser will not close: this container serves one fetch at a
+    time, so any Chromium left running belongs to the request that just finished."""
+    for pid in os.listdir('/proc'):
+        if not pid.isdigit():
+            continue
+        try:
+            with open(f'/proc/{pid}/comm') as f:
+                name = f.read().strip()
+            if name.startswith(('chrome', 'chromium', 'headless_shell')):
+                os.kill(int(pid), signal.SIGKILL)
+        except (OSError, ValueError):
+            pass
+
+
 @app.get('/health')
 def health():
     return {'status': 'ok'}
@@ -49,6 +65,7 @@ def fetch(request: FetchRequest):
     try:
         with Crawl4aiFetcher(validator=validate_target, isolated_proxy=proxy) as browser, \
                 HttpFetcher(proxy=proxy) as http:
+            browser.on_close_timeout = kill_browsers
             guard = PoliteFetcher(browser, meta=http, validator=validate_target,
                                   domain=request.domain, respect_robots=request.respect_robots)
             if not guard._in_domain(request.url):

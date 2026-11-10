@@ -15,9 +15,14 @@ COPY outlets.example.yaml /app/outlets.yaml
 CMD ["weave", "crawl-worker"]
 
 # No application credentials or writable application files in the renderer.
+# Headful Chromium on a virtual X display: headless mode leaks "HeadlessChrome" in client hints.
 FROM crawler AS crawl-browser
+RUN apt-get update && apt-get install -y --no-install-recommends xvfb fonts-liberation fonts-noto-color-emoji \
+    && rm -rf /var/lib/apt/lists/*
 ENV HOME=/tmp CRAWL4_AI_BASE_DIRECTORY=/tmp
 USER 10001:10001
+COPY --chmod=0755 deploy/crawl-browser/entrypoint.sh /usr/local/bin/crawl-browser-entrypoint
+ENTRYPOINT ["crawl-browser-entrypoint"]
 CMD ["uvicorn", "weave_providers.crawl.browser_service:app", "--host", "0.0.0.0", "--port", "8081", "--limit-concurrency", "8", "--timeout-keep-alive", "5"]
 
 # Stanza service: pinned stanza==1.10.1 (weave-extractors[stanza]); models live in the stanza-models volume.
