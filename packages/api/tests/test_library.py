@@ -112,3 +112,8 @@ def test_detail_recheck_history_order(marked):
     assert [(r['outcome'], r['checked_at']) for r in body['rechecks']] == [
         ('unchanged', '2024-01-08T00:00:00Z'), ('edited', '2024-01-06T00:00:00Z')]
     assert marked.get('/library/documents/old').json()['rechecks'] == body['rechecks']
+
+
+def test_exclude_filters_match_run_selection(marked):
+    assert [d['id'] for d in marked.get('/library/documents', params={'exclude_edited': True}).json()['items']] == ['other', 'third']
+    assert marked.get('/library/facets', params={'exclude_edited': True, 'exclude_removed': True}).json()['total'] == 1

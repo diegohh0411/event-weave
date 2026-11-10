@@ -16,10 +16,11 @@ class LibraryFilter:
                  languages: Annotated[list[str] | None, Query()] = None,
                  providers: Annotated[list[str] | None, Query()] = None,
                  published_from: datetime | None = None, published_to: datetime | None = None,
-                 search: str | None = None, change: Annotated[list[Change] | None, Query()] = None):
+                 search: str | None = None, change: Annotated[list[Change] | None, Query()] = None,
+                 exclude_edited: bool = False, exclude_removed: bool = False):
         self.outlets, self.languages, self.providers = outlets, languages, providers
         self.published_from, self.published_to, self.search = published_from, published_to, search
-        self.change = change
+        self.change, self.exclude_edited, self.exclude_removed = change, exclude_edited, exclude_removed
 
 
 def library_query(f: LibraryFilter) -> Select:
@@ -36,6 +37,10 @@ def library_query(f: LibraryFilter) -> Select:
         query = query.where(documents.c.published_at < f.published_to)
     if f.search:
         query = query.where(documents.c.title.icontains(f.search, autoescape=True))
+    if f.exclude_edited:
+        query = query.where(~status.edited())
+    if f.exclude_removed:
+        query = query.where(~status.removed())
     if f.change:
         clauses = {'edited': status.edited(), 'removed': status.removed(),
                    'unchanged': sa.and_(~status.edited(), ~status.removed())}

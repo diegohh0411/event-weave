@@ -2243,6 +2243,8 @@ export interface operations {
                 published_to?: string | null;
                 search?: string | null;
                 change?: ("edited" | "removed" | "unchanged")[] | null;
+                exclude_edited?: boolean;
+                exclude_removed?: boolean;
                 offset?: number;
                 limit?: number;
             };
@@ -2313,6 +2315,8 @@ export interface operations {
                 published_to?: string | null;
                 search?: string | null;
                 change?: ("edited" | "removed" | "unchanged")[] | null;
+                exclude_edited?: boolean;
+                exclude_removed?: boolean;
             };
             header?: never;
             path?: never;

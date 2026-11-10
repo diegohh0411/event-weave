@@ -4472,6 +4472,26 @@
           },
           {
             "in": "query",
+            "name": "exclude_edited",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Exclude Edited",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exclude_removed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Exclude Removed",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
             "name": "offset",
             "required": false,
             "schema": {
@@ -4691,6 +4711,26 @@
                 }
               ],
               "title": "Change"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exclude_edited",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Exclude Edited",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exclude_removed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Exclude Removed",
+              "type": "boolean"
             }
           }
         ],
