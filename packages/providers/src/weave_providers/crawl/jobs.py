@@ -17,13 +17,14 @@ class ClaimedCrawl:
     token: UUID
     request: CrawlRequest
     started_at: datetime
+    site_id: UUID | None = None
 
 
-def create_crawl(engine, request: CrawlRequest, *, created_at: datetime | None = None) -> UUID:
+def create_crawl(engine, request: CrawlRequest, *, created_at: datetime | None = None, site_id: UUID | None = None, trigger: str = "adhoc") -> UUID:
     request = CrawlRequest.model_validate(request)
     crawl_id = uuid4()
     with engine.begin() as conn:
-        conn.execute(crawl_runs.insert().values(id=crawl_id, request=request.model_dump(mode="json"),
+        conn.execute(crawl_runs.insert().values(id=crawl_id, site_id=site_id, trigger=trigger, request=request.model_dump(mode="json"),
             status="queued", created_at=created_at or datetime.now(timezone.utc), progress={}))
     return crawl_id
 
@@ -41,7 +42,7 @@ def claim_crawl(engine, now: datetime, lease_seconds: int = LEASE_SECONDS) -> Cl
             status="running", claim_token=token, lease_until=now + timedelta(seconds=lease_seconds),
             started_at=row["started_at"] or now))
         return ClaimedCrawl(row["id"], token, CrawlRequest.model_validate(row["request"]),
-                            row["started_at"] or now)
+                            row["started_at"] or now, row["site_id"])
 
 
 def lock_owned(conn, crawl_id, token):

@@ -43,16 +43,17 @@ if _inf is not None:
 
 def _crawl():
     try:
-        from weave_providers.crawl.cli import crawl_command, crawl_worker_command
+        from weave_providers.crawl.cli import crawl_command, crawl_worker_command, sites_app
     except ImportError:  # weave-providers or its `crawl` extra is not installed
         return None
-    return crawl_command, crawl_worker_command
+    return crawl_command, crawl_worker_command, sites_app
 
 
 _crawl_commands = _crawl()
 if _crawl_commands is not None:
     app.command('crawl')(_crawl_commands[0])
     app.command('crawl-worker')(_crawl_commands[1])
+    app.add_typer(_crawl_commands[2], name='sites')
 
 
 def _eval():

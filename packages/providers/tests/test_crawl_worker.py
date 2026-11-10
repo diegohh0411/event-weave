@@ -283,3 +283,23 @@ def test_invalid_robots_configuration_stops_worker_before_claiming_jobs(monkeypa
     with pytest.raises(ValueError, match='WEAVE_CRAWL_RESPECT_ROBOTS'):
         worker.run_crawl_worker(None, Event(), once=True)
     assert claimed == []
+
+
+def test_site_cap_counts_only_stored_today(engine, monkeypatch):
+    from uuid import uuid4
+    from weave_core.schema import sites
+    site_id = uuid4()
+    now = datetime.now(timezone.utc)
+    with engine.begin() as conn:
+        conn.execute(sites.insert().values(id=site_id, name='Example', domain='example.test', language='en', daily_cap=3))
+    old = create_crawl(engine, request(), site_id=site_id)
+    with engine.begin() as conn:
+        for i, (state, date) in enumerate([('stored', now), ('stored', now - timedelta(days=1)), ('updated', now)]):
+            conn.execute(crawl_articles.insert().values(crawl_id=old, canonical_url=f'https://example.test/{i}', url=f'https://example.test/{i}', outlet='Example', status=state, fetched=True, updated_at=date))
+        conn.execute(crawl_runs.update().where(crawl_runs.c.id == old).values(status='completed'))
+    create_crawl(engine, request(), site_id=site_id)
+    claim = claim_crawl(engine, now)
+    received = []
+    monkeypatch.setattr(worker, 'crawl', lambda *args, **kwargs: received.append(kwargs['caps']))
+    worker.process_claim(engine, claim, Event(), fetcher_factory=factory(), min_interval=0)
+    assert received == [{'Example': 2}]

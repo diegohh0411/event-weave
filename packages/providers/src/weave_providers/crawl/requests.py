@@ -41,7 +41,7 @@ class CrawlSite(BaseModel):
     domain: str
     name: str | None = None
     language: Literal["en", "es", "hi", "tr", "uk"]
-    per_day: int = Field(default=3, ge=1, le=200)
+    per_day: int | None = Field(default=3, ge=1, le=200)
     feeds: list[str] = Field(default_factory=list, max_length=20)
     sitemaps: list[str] = Field(default_factory=list, max_length=20)
 

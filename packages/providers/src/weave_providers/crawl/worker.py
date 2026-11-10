@@ -2,7 +2,12 @@
 import logging
 import os
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import time
+
+import sqlalchemy as sa
+from weave_core.schema import sites, crawl_runs, crawl_articles
+from .scheduler import schedule_due_sites
 from threading import Event, Thread
 
 from .throttle import DomainThrottle
@@ -83,13 +88,25 @@ def process_claim(engine, claim, stop, *, fetcher_factory=public_fetchers,
     completed = False
     try:
         if not cancelled():
+            caps = None
+            if claim.site_id is not None:
+                now = _now()
+                start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                with engine.connect() as conn:
+                    site = conn.execute(sa.select(sites).where(sites.c.id == claim.site_id)).mappings().first()
+                    if site is not None:
+                        count = conn.scalar(sa.select(sa.func.count()).select_from(
+                            crawl_articles.join(crawl_runs, crawl_articles.c.crawl_id == crawl_runs.c.id)).where(
+                            crawl_runs.c.site_id == claim.site_id, crawl_articles.c.status == "stored",
+                            crawl_articles.c.updated_at >= start, crawl_articles.c.updated_at < start + timedelta(days=1)))
+                        caps = {site["name"]: max(0, site["daily_cap"] - count)}
             with fetcher_factory() as (browser, http):
                 fetcher = PoliteFetcher(browser, meta=http, validator=validate_public_url,
                                         min_interval=min_interval, respect_robots=respect_robots_from_env(),
                                         throttle=DomainThrottle(engine))
                 # Reclaims must use the original discovery window, not a later one.
                 crawl(engine, claim.request.sites, fetcher, claim.started_at, claim.request.days,
-                      observer=observe, cancelled=cancelled, write_guard=guard)
+                      observer=observe, cancelled=cancelled, write_guard=guard, caps=caps)
             completed = not cancelled()
     except LeaseLost:
         lost.set()
@@ -108,10 +125,19 @@ def process_claim(engine, claim, stop, *, fetcher_factory=public_fetchers,
 
 
 def run_crawl_worker(engine, stop, poll_seconds=2, once=False, fetcher_factory=public_fetchers,
-                     *, min_interval=2.0):
+                     *, min_interval=2.0, clock=time.monotonic):
     # Configuration errors must never consume queued work.
     respect_robots_from_env()
+    tick_seconds = float(os.environ.get("WEAVE_SCHEDULER_TICK_SECONDS", "60"))
+    last_tick = None
     while not stop.is_set():
+        tick = clock()
+        if last_tick is None or tick - last_tick >= tick_seconds:
+            last_tick = tick
+            try:
+                schedule_due_sites(engine, _now())
+            except Exception:
+                log.exception("Crawl scheduler tick failed")
         try:
             claim = claim_crawl(engine, _now())
             if claim is not None:

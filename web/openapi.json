@@ -789,11 +789,18 @@
             "title": "Name"
           },
           "per_day": {
+            "anyOf": [
+              {
+                "maximum": 200.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "default": 3,
-            "maximum": 200.0,
-            "minimum": 1.0,
-            "title": "Per Day",
-            "type": "integer"
+            "title": "Per Day"
           },
           "sitemaps": {
             "items": {

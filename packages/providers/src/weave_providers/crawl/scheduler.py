@@ -1,0 +1,53 @@
+"""Queue site checks under row locks shared by schedulers and manual requests."""
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4
+
+import sqlalchemy as sa
+
+from weave_core.schema import crawl_runs, sites
+from .requests import CrawlRequest
+
+
+class AlreadyQueued(Exception):
+    pass
+
+
+class SiteNotFound(Exception):
+    pass
+
+
+def _queue(conn, site, trigger, now):
+    active = conn.scalar(sa.select(crawl_runs.c.id).where(
+        crawl_runs.c.site_id == site['id'], crawl_runs.c.status.in_(['queued', 'running'])).limit(1))
+    if active is not None:
+        raise AlreadyQueued(site['id'])
+    fields = {key: site[key] for key in ('name', 'domain', 'language', 'feeds', 'sitemaps', 'per_day')}
+    request = CrawlRequest(sites=[fields], days=1)
+    crawl_id = uuid4()
+    conn.execute(crawl_runs.insert().values(id=crawl_id, site_id=site['id'], trigger=trigger,
+        request=request.model_dump(mode='json'), status='queued', created_at=now, progress={}))
+    return crawl_id
+
+
+def schedule_due_sites(engine, now):
+    queued = []
+    with engine.begin() as conn:
+        rows = conn.execute(sa.select(sites).where(sites.c.enabled.is_(True),
+            sites.c.next_check_at <= now).with_for_update(skip_locked=True)).mappings()
+        for site in rows:
+            try:
+                crawl_id = _queue(conn, site, 'schedule', now)
+            except AlreadyQueued:
+                continue
+            conn.execute(sites.update().where(sites.c.id == site['id']).values(
+                last_scheduled_at=now, next_check_at=now + timedelta(minutes=site['check_every_minutes'])))
+            queued.append(crawl_id)
+    return queued
+
+
+def queue_check(engine, site_id, trigger='manual'):
+    with engine.begin() as conn:
+        site = conn.execute(sa.select(sites).where(sites.c.id == site_id).with_for_update()).mappings().first()
+        if site is None:
+            raise SiteNotFound(site_id)
+        return _queue(conn, site, trigger, datetime.now(timezone.utc))

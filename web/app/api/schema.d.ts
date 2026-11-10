@@ -790,7 +790,7 @@ export interface components {
              * Per Day
              * @default 3
              */
-            per_day: number;
+            per_day: number | null;
             /** Sitemaps */
             sitemaps?: string[];
         };
