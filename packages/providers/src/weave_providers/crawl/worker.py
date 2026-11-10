@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from threading import Event, Thread
 
+from .throttle import DomainThrottle
 from .fetch import (HttpFetcher, PoliteFetcher, browser_fetcher_from_env,
                     respect_robots_from_env)
 from .jobs import (LEASE_SECONDS, claim_crawl, finish_crawl, heartbeat, lock_owned,
@@ -84,7 +85,8 @@ def process_claim(engine, claim, stop, *, fetcher_factory=public_fetchers,
         if not cancelled():
             with fetcher_factory() as (browser, http):
                 fetcher = PoliteFetcher(browser, meta=http, validator=validate_public_url,
-                                        min_interval=min_interval, respect_robots=respect_robots_from_env())
+                                        min_interval=min_interval, respect_robots=respect_robots_from_env(),
+                                        throttle=DomainThrottle(engine))
                 # Reclaims must use the original discovery window, not a later one.
                 crawl(engine, claim.request.sites, fetcher, claim.started_at, claim.request.days,
                       observer=observe, cancelled=cancelled, write_guard=guard)

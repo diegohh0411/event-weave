@@ -366,7 +366,9 @@ class PoliteFetcher:
         validator=None,
         domain: str | None = None,
         respect_robots: bool = True,
+        throttle=None,
     ):
+        self.throttle = throttle
         self.respect_robots = respect_robots
         self.validator = validator
         self.domain = domain
@@ -476,6 +478,16 @@ class PoliteFetcher:
         if self.cancelled():
             return Fetched(url, 0, None, 'crawl cancelled')
         domain = urlsplit(url).netloc.lower()
+        if self.throttle is not None:
+            with self.throttle.acquire((urlsplit(url).hostname or "").lower()):
+                if self.cancelled():
+                    return Fetched(url, 0, None, "crawl cancelled")
+                if self.validator:
+                    try:
+                        self.validator(url)
+                    except ValueError as exc:
+                        return Fetched(url, 0, None, str(exc))
+                return fetcher.fetch(url)
         last = self._last_request.get(domain)
         if last is not None:
             wait = self.min_interval - (self._clock() - last)
