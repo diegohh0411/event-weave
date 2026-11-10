@@ -64,60 +64,37 @@ onMounted(async () => {
   }
 })
 
+const CARD_FIELDS = [['action', 'Action'], ['participants', 'Participants'], ['location', 'Location'], ['time', 'Time']] as const
 const card = computed(() => (cluster.value?.cluster.card ? cardFields(cluster.value.cluster.card) : null))
 </script>
 
 <template>
-  <div class="space-y-6">
-    <NuxtLink :to="`/runs/${id}/clusters`" class="text-sm text-primary hover:underline">
-      All clusters
-    </NuxtLink>
+  <div>
+    <Crumbs class="mb-4" :items="[{ label: 'Runs', to: '/runs' }, { label: 'This run', to: `/runs/${id}` }, { label: 'All clusters', to: `/runs/${id}/clusters` }]" />
     <p v-if="loading" class="text-muted">
       Loading cluster...
     </p>
     <UAlert v-else-if="loadError || !cluster" color="error" variant="subtle" title="Could not load the cluster" :description="loadError" />
-    <UCard v-else>
-      <template #header>
-        <h1 class="font-semibold">
-          Cluster of {{ cluster.cluster.size }} mentions
-        </h1>
-      </template>
-      <dl v-if="card" class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div>
+    <template v-else>
+      <PageHeader :title="card?.action || 'Untitled event'" :description="`Cluster of ${cluster.cluster.size} mentions`" />
+      <dl v-if="card" class="grid grid-cols-1 gap-px overflow-hidden rounded-xl border border-default bg-[var(--ui-border-muted)] sm:grid-cols-2 lg:grid-cols-4">
+        <div v-for="[k, label] in CARD_FIELDS" :key="k" class="bg-default p-4">
           <dt class="text-sm text-muted">
-            Action
+            {{ label }}
           </dt>
-          <dd>{{ card.action || '—' }}</dd>
-        </div>
-        <div>
-          <dt class="text-sm text-muted">
-            Participants
-          </dt>
-          <dd class="break-words">
-            {{ card.participants || '—' }}
+          <dd class="mt-1 break-words font-semibold text-highlighted">
+            {{ card[k] || '—' }}
           </dd>
-        </div>
-        <div>
-          <dt class="text-sm text-muted">
-            Location
-          </dt>
-          <dd>{{ card.location || '—' }}</dd>
-        </div>
-        <div>
-          <dt class="text-sm text-muted">
-            Time
-          </dt>
-          <dd>{{ card.time || '—' }}</dd>
         </div>
       </dl>
       <p v-else class="text-muted">
         No card for this cluster.
       </p>
-    </UCard>
+    </template>
 
-    <section class="space-y-3">
-      <h2 class="font-semibold">
-        Members ({{ total }})
+    <section class="mt-8 space-y-3">
+      <h2 class="text-base font-bold text-highlighted">
+        Mentions <span class="tabular font-normal text-muted">({{ total }})</span>
       </h2>
       <UAlert v-if="membersError" color="error" variant="subtle" title="Could not load members" :description="membersError" />
       <p v-else-if="membersLoading && !members.length" class="text-muted">
@@ -126,24 +103,24 @@ const card = computed(() => (cluster.value?.cluster.card ? cardFields(cluster.va
       <p v-else-if="!members.length" class="text-muted">
         This cluster has no members.
       </p>
-      <UCard v-for="m in members" :key="m.mention_id" data-test="member">
-        <div class="space-y-3">
-          <p>
+      <article v-for="m in members" :key="m.mention_id" data-test="member" class="rounded-xl border border-default bg-default">
+        <div class="space-y-3 p-5">
+          <p :lang="m.language" class="font-serif text-[1.125rem] leading-[1.65] text-highlighted">
             <HighlightedText :text="m.sentence" :ranges="[m.trigger]" />
           </p>
-          <p class="text-sm text-muted">
-            <NuxtLink :to="`/runs/${id}/documents/${m.document_id}`" class="text-primary hover:underline">
+          <div class="flex flex-wrap items-center gap-2 text-sm">
+            <NuxtLink :to="`/runs/${id}/documents/${m.document_id}`" class="mr-1 font-semibold text-primary hover:underline">
               {{ m.document_title }}
             </NuxtLink>
-            · {{ m.language }}<template v-if="m.event_type">
-              · {{ m.event_type }}
-            </template><template v-if="m.significance !== null">
-              · significance {{ m.significance }}
-            </template>
-          </p>
+            <UBadge color="neutral" variant="outline" size="sm">{{ m.language }}</UBadge>
+            <UBadge v-if="m.event_type" color="neutral" variant="soft" size="sm">{{ m.event_type }}</UBadge>
+            <UBadge v-if="m.significance !== null" color="secondary" variant="soft" size="sm">significance {{ m.significance }}</UBadge>
+          </div>
+        </div>
+        <div class="border-t border-default bg-muted px-5 py-4">
           <DecisionTable :decision="m.decision" :run-id="id" :cluster-id="cid" />
         </div>
-      </UCard>
+      </article>
       <UPagination v-if="total > PER_PAGE" v-model:page="page" :items-per-page="PER_PAGE" :total="total" />
     </section>
   </div>

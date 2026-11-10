@@ -6,8 +6,9 @@ import { clusterColors } from '../../../../utils/clusterColors'
 import { cardFields } from '../../../../utils/clusterCard'
 
 type Doc = components['schemas']['DocumentOut']
+type Mention = Doc['mentions'][number]
 type ClusterOut = components['schemas']['ClusterOut']
-interface Piece { text: string, mention?: Doc['mentions'][number] }
+interface Piece { text: string, mention?: Mention }
 
 const api = useApi()
 const route = useRoute()
@@ -34,7 +35,7 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-  // The popover shows the cluster card; a card that fails to load just leaves its fields empty.
+  // The popover and the legend show the cluster card; a card that fails to load just leaves its fields empty.
   const ids = [...new Set((doc.value?.mentions ?? []).map(m => m.cluster_id).filter((c): c is string => !!c))]
   await Promise.all(ids.map(async (cid) => {
     try {
@@ -64,78 +65,185 @@ const pieces = computed<Piece[]>(() => {
   return out
 })
 
-const fill = (m: Doc['mentions'][number]) => (m.cluster_id ? colours.value.get(m.cluster_id) : undefined)
-const cardOf = (m: Doc['mentions'][number]) => {
-  const card = m.cluster_id ? cards.value[m.cluster_id] : null
+const fill = (m: Mention) => (m.cluster_id ? colours.value.get(m.cluster_id) : undefined)
+const cardOf = (cid: string | null) => {
+  const card = cid ? cards.value[cid] : null
   return card ? cardFields(card) : null
 }
-const date = (s: string | null) => (s ? s.slice(0, 10) : '—')
+
+// The events in this document, in reading order, with how often each appears here.
+const events = computed(() => {
+  const shown = pieces.value.flatMap(p => (p.mention ? [p.mention] : []))
+  const byCluster = new Map<string, { id: string, colour: string, here: number, size: number | null }>()
+  for (const m of shown) {
+    if (!m.cluster_id) continue
+    const e = byCluster.get(m.cluster_id)
+    if (e) e.here++
+    else byCluster.set(m.cluster_id, { id: m.cluster_id, colour: colours.value.get(m.cluster_id)!, here: 1, size: m.cluster_size })
+  }
+  return { clusters: [...byCluster.values()], unclustered: shown.filter(m => !m.cluster_id).length }
+})
+
+// Hovering a mention, a thread or a legend entry lights that event up; clicking a legend entry pins it.
+const hovered = ref<string | null>(null)
+const pinned = ref<string | null>(null)
+const focused = computed(() => hovered.value ?? pinned.value)
+const mentionClass = (m: Mention) => {
+  if (!m.cluster_id) return 'border-b-2 border-dashed border-muted'
+  if (!focused.value) return 'ew-mention'
+  return m.cluster_id === focused.value ? 'ew-mention is-lit' : 'ew-mention is-dim'
+}
+
+// The thread rail: one vertical thread per event, knotted at the height of each of its mentions.
+const MAX_LANES = 6
+const LANE_GAP = 9
+const RAIL_WIDTH = 64
+const textEl = ref<HTMLElement>()
+const knots = ref<{ cluster: string, y: number }[]>([])
+const railHeight = ref(0)
+
+function measure() {
+  const el = textEl.value
+  if (!el) return
+  railHeight.value = el.offsetHeight
+  knots.value = [...el.querySelectorAll<HTMLElement>('[data-cluster]')].map(s => ({
+    cluster: s.dataset.cluster!,
+    // Offsets are relative to the reader column, which the rail shares; an inline span wrapped
+    // across lines reports its first line's top, so centre on one line height.
+    y: s.offsetTop + Math.min(s.offsetHeight, 33) / 2
+  }))
+}
+
+const threads = computed(() => events.value.clusters.slice(0, MAX_LANES).map((c, lane) => {
+  const ys = knots.value.filter(k => k.cluster === c.id).map(k => k.y)
+  return { ...c, x: RAIL_WIDTH - 12 - lane * LANE_GAP, ys, top: Math.min(...ys), bottom: Math.max(...ys) }
+}).filter(t => t.ys.length))
+
+let observer: ResizeObserver | undefined
+watch(textEl, (el) => {
+  observer?.disconnect()
+  if (!el) return
+  nextTick(measure)
+  if (typeof ResizeObserver !== 'undefined') {
+    observer = new ResizeObserver(() => measure())
+    observer.observe(el)
+  }
+  document.fonts?.ready.then(measure).catch(() => {})
+})
+onBeforeUnmount(() => observer?.disconnect())
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div>
+    <Crumbs class="mb-5" :items="[{ label: 'Runs', to: '/runs' }, { label: 'This run', to: `/runs/${id}` }, { label: 'Clusters', to: `/runs/${id}/clusters` }]" />
     <p v-if="loading" class="text-muted">
       Loading document...
     </p>
     <UAlert v-else-if="loadError || !doc" color="error" variant="subtle" title="Could not load the document" :description="loadError" />
-    <template v-else>
-      <UCard>
-        <template #header>
-          <h1 class="font-semibold">
-            {{ doc.title }}
-          </h1>
-        </template>
-        <dl class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <dt class="text-sm text-muted">
-              Outlet
-            </dt>
-            <dd>{{ doc.outlet || '—' }}</dd>
-          </div>
-          <div>
-            <dt class="text-sm text-muted">
-              Date
-            </dt>
-            <dd>{{ date(doc.published_at) }}</dd>
-          </div>
-          <div class="sm:col-span-2">
-            <dt class="text-sm text-muted">
-              URL
-            </dt>
-            <dd class="break-all">
-              {{ doc.url }}
-            </dd>
-          </div>
-        </dl>
-      </UCard>
+    <DocumentReader
+      v-else
+      :title="doc.title"
+      :outlet="doc.outlet"
+      :byline="doc.byline"
+      :published-at="doc.published_at"
+      :url="doc.url"
+      :language="doc.language"
+      :words-from="doc.text"
+    >
+      <template #rail>
+        <svg :width="RAIL_WIDTH" :height="railHeight" class="overflow-visible" aria-hidden="true">
+          <g
+            v-for="t in threads"
+            :key="t.id"
+            class="cursor-pointer transition-opacity duration-150"
+            :style="{ opacity: focused && focused !== t.id ? 0.25 : 1 }"
+            @pointerenter="hovered = t.id"
+            @pointerleave="hovered = null"
+          >
+            <line :x1="t.x" :x2="t.x" :y1="t.top" :y2="t.bottom" :stroke="t.colour" :stroke-width="focused === t.id ? 3 : 2" stroke-linecap="round" />
+            <g v-for="y in t.ys" :key="y">
+              <line :x1="t.x" :x2="RAIL_WIDTH + 8" :y1="y" :y2="y" :stroke="t.colour" stroke-width="1" stroke-dasharray="1 3" />
+              <circle :cx="t.x" :cy="y" r="4" :fill="t.colour" stroke="var(--ui-bg)" stroke-width="2" />
+            </g>
+            <!-- A wide invisible hit area so the thread is easy to hover. -->
+            <rect :x="t.x - 4" :y="t.top - 6" width="8" :height="t.bottom - t.top + 12" fill="transparent" />
+          </g>
+        </svg>
+      </template>
 
-      <UCard>
-        <p data-test="text" class="whitespace-pre-wrap break-words leading-8"><template v-for="(p, i) in pieces" :key="i"><UPopover
+      <template #body>
+        <p ref="textEl" data-test="text" class="whitespace-pre-wrap break-words"><template v-for="(p, i) in pieces" :key="i"><UPopover
           v-if="p.mention"
           mode="hover"
           :open-delay="0"
           :close-delay="150"
         ><span
           data-test="mention"
-          class="cursor-help rounded px-0.5 text-black"
-          :class="p.mention.cluster_id ? '' : 'border-b-2 border-dashed border-muted'"
-          :style="fill(p.mention) ? { backgroundColor: fill(p.mention) } : undefined"
-        >{{ p.text }}</span><template #content><div class="space-y-1 p-3 text-sm" data-test="popover">
+          :data-cluster="p.mention.cluster_id ?? undefined"
+          class="cursor-help"
+          :class="mentionClass(p.mention)"
+          :style="fill(p.mention) ? { '--thread': fill(p.mention) } : undefined"
+          @pointerenter="hovered = p.mention.cluster_id"
+          @pointerleave="hovered = null"
+        >{{ p.text }}</span><template #content><div class="w-72 space-y-3 p-4 font-sans text-sm" data-test="popover">
           <template v-if="p.mention.cluster_id">
-            <template v-if="cardOf(p.mention)">
-              <p><span class="text-muted">Action</span> {{ cardOf(p.mention)?.action || '—' }}</p>
-              <p><span class="text-muted">Participants</span> {{ cardOf(p.mention)?.participants || '—' }}</p>
-              <p><span class="text-muted">Location</span> {{ cardOf(p.mention)?.location || '—' }}</p>
-              <p><span class="text-muted">Time</span> {{ cardOf(p.mention)?.time || '—' }}</p>
-            </template>
+            <dl v-if="cardOf(p.mention.cluster_id)" class="grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-1.5">
+              <dt class="text-muted">Action</dt><dd class="font-semibold text-highlighted">{{ cardOf(p.mention.cluster_id)?.action || '—' }}</dd>
+              <dt class="text-muted">Participants</dt><dd>{{ cardOf(p.mention.cluster_id)?.participants || '—' }}</dd>
+              <dt class="text-muted">Location</dt><dd>{{ cardOf(p.mention.cluster_id)?.location || '—' }}</dd>
+              <dt class="text-muted">Time</dt><dd>{{ cardOf(p.mention.cluster_id)?.time || '—' }}</dd>
+            </dl>
             <p v-else class="text-muted">No card for this cluster.</p>
-            <NuxtLink :to="`/runs/${id}/clusters/${p.mention.cluster_id}`" class="text-primary hover:underline">
+            <NuxtLink :to="`/runs/${id}/clusters/${p.mention.cluster_id}`" class="block border-t border-default pt-2.5 font-semibold text-primary hover:underline">
               Cluster of {{ p.mention.cluster_size }} mentions
             </NuxtLink>
           </template>
           <p v-else class="text-muted">Not clustered.</p>
         </div></template></UPopover><template v-else>{{ p.text }}</template></template></p>
-      </UCard>
-    </template>
+      </template>
+
+      <template #aside>
+        <section aria-labelledby="events-heading" class="rounded-xl border border-default bg-default p-5">
+          <h2 id="events-heading" class="text-sm font-bold text-highlighted">
+            Events in this document
+          </h2>
+          <p v-if="!events.clusters.length && !events.unclustered" class="mt-2 text-sm text-muted">
+            No event mentions were found in this document.
+          </p>
+          <ul class="mt-3 space-y-1">
+            <li v-for="e in events.clusters" :key="e.id" class="group rounded-md" :class="focused === e.id ? 'bg-elevated' : ''">
+              <button
+                type="button"
+                class="flex w-full items-start gap-3 rounded-md px-2 py-2 text-left"
+                :aria-pressed="pinned === e.id"
+                @click="pinned = pinned === e.id ? null : e.id"
+                @pointerenter="hovered = e.id"
+                @pointerleave="hovered = null"
+                @focus="hovered = e.id"
+                @blur="hovered = null"
+              >
+                <span aria-hidden="true" class="mt-1 h-4 w-1 shrink-0 rounded-full" :style="{ background: e.colour }" />
+                <span class="min-w-0">
+                  <span class="block break-words text-sm font-semibold text-highlighted">{{ cardOf(e.id)?.action || 'Untitled event' }}</span>
+                  <span class="block text-xs text-muted">
+                    <span class="tabular">{{ e.here }}</span> here<template v-if="e.size !== null">, <span class="tabular">{{ e.size }}</span> across the run</template>
+                  </span>
+                </span>
+              </button>
+              <NuxtLink :to="`/runs/${id}/clusters/${e.id}`" class="ml-6 block px-2 pb-2 text-xs font-semibold text-primary hover:underline">
+                Open cluster
+              </NuxtLink>
+            </li>
+          </ul>
+          <p v-if="events.unclustered" class="mt-3 flex items-center gap-3 border-t border-default px-2 pt-3 text-xs text-muted">
+            <span aria-hidden="true" class="w-4 border-b-2 border-dashed border-muted" />
+            {{ events.unclustered }} {{ events.unclustered === 1 ? 'mention' : 'mentions' }} not clustered
+          </p>
+          <p v-if="events.clusters.length" class="mt-4 text-xs leading-relaxed text-dimmed">
+            Each colour is one event. Select an event to trace its mentions through the text.
+          </p>
+        </section>
+      </template>
+    </DocumentReader>
   </div>
 </template>

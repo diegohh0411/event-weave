@@ -39,23 +39,35 @@ const columns: TableColumn<RunSummary>[] = [
 </script>
 
 <template>
-  <div class="space-y-4">
-    <h1 class="text-xl font-semibold">
-      Runs
-    </h1>
-    <UAlert v-if="error" color="error" variant="subtle" title="Could not load runs" :description="error" />
-    <div class="overflow-x-auto">
-      <UTable :data="rows" :columns="columns" :loading="loading">
+  <div>
+    <PageHeader title="Runs" description="Every pipeline run, newest first.">
+      <template #actions>
+        <UButton to="/" size="lg">
+          New run
+        </UButton>
+      </template>
+    </PageHeader>
+    <UAlert v-if="error" class="mb-4" color="error" variant="subtle" title="Could not load runs" :description="error" />
+    <div class="overflow-x-auto rounded-xl border border-default bg-default">
+      <UTable :data="rows" :columns="columns" :loading="loading" :ui="{ th: 'font-medium text-muted', td: 'text-default' }">
         <template #name-cell="{ row }">
-          <NuxtLink :to="`/runs/${row.original.id}`" class="font-medium text-primary hover:underline">
+          <NuxtLink :to="`/runs/${row.original.id}`" class="font-semibold text-highlighted hover:text-primary hover:underline">
             {{ row.original.name }}
           </NuxtLink>
         </template>
+        <template #state-cell="{ row }">
+          <StatusBadge :status="row.original.state" />
+        </template>
         <template #created_at-cell="{ row }">
-          {{ new Date(row.original.created_at).toLocaleString() }}
+          <span class="tabular text-muted">{{ new Date(row.original.created_at).toLocaleString() }}</span>
+        </template>
+        <template #empty>
+          <p class="py-6 text-center text-sm text-muted">
+            No runs yet. Configure one under New run.
+          </p>
         </template>
       </UTable>
     </div>
-    <UPagination v-if="total > PER_PAGE" v-model:page="page" :items-per-page="PER_PAGE" :total="total" />
+    <UPagination v-if="total > PER_PAGE" class="mt-4" v-model:page="page" :items-per-page="PER_PAGE" :total="total" />
   </div>
 </template>

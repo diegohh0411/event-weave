@@ -1,2 +1,155 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
+
+/*
+ * Event Weave identity: natural dyes on a loom.
+ *   Woad   #26306B  indigo ink: primary actions, headings
+ *   Madder #B23A5E  the brand thread: logo, active navigation
+ *   Weld   #E2B33C  yellow dye: trigger highlights
+ *   Loom   #EEF0F4  the canvas behind everything
+ *   Warp   #FFFFFF  surfaces
+ *   Ink    #171B33  text
+ */
+@theme {
+  --font-sans: 'Schibsted Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Newsreader', Georgia, 'Times New Roman', serif;
+}
+
+@theme static {
+  --color-woad-50: #eff1f9;
+  --color-woad-100: #dfe3f2;
+  --color-woad-200: #bfc6e4;
+  --color-woad-300: #96a1d0;
+  --color-woad-400: #6b78b6;
+  --color-woad-500: #4b589c;
+  --color-woad-600: #3a4685;
+  --color-woad-700: #2f3a76;
+  --color-woad-800: #26306b;
+  --color-woad-900: #1d2552;
+  --color-woad-950: #131834;
+
+  --color-madder-50: #fbf0f3;
+  --color-madder-100: #f6dee5;
+  --color-madder-200: #ecbccb;
+  --color-madder-300: #df8fa7;
+  --color-madder-400: #cc6383;
+  --color-madder-500: #b23a5e;
+  --color-madder-600: #9a2f50;
+  --color-madder-700: #7f2743;
+  --color-madder-800: #642037;
+  --color-madder-900: #4a1828;
+  --color-madder-950: #2d0e18;
+
+  --color-weld-300: #f0d27f;
+  --color-weld-400: #e8c25a;
+  --color-weld-500: #e2b33c;
+  --color-weld-600: #c4952a;
+}
+
+:root {
+  --ui-primary: var(--color-woad-800);
+  --ui-secondary: var(--color-madder-500);
+  --ui-bg: #ffffff;
+  --ui-bg-muted: #f6f7fa;
+  --ui-bg-elevated: #f1f3f7;
+  --ui-bg-accented: #e5e8f0;
+  --ui-border: #e1e4ec;
+  --ui-border-muted: #eceef3;
+  --ui-border-accented: #cfd4e1;
+  --ui-text: #2c3150;
+  --ui-text-muted: #636a87;
+  --ui-text-dimmed: #8a90a8;
+  --ui-text-highlighted: #171b33;
+  --ui-radius: 0.375rem;
+
+  --ew-loom: #eef0f4;
+  --ew-sidebar: #f7f8fa;
+  --ew-sidebar-border: #e3e6ed;
+  --ew-sidebar-hover: #eceef3;
+  --ew-sidebar-active: #e3e6ef;
+  --ew-thread: var(--color-madder-500);
+  --ew-weld: color-mix(in oklab, var(--color-weld-500) 38%, transparent);
+}
+
+.dark {
+  --ui-primary: var(--color-woad-300);
+  --ui-secondary: var(--color-madder-400);
+  --ui-bg: #191d33;
+  --ui-bg-muted: #1e2340;
+  --ui-bg-elevated: #232946;
+  --ui-bg-accented: #2c3354;
+  --ui-border: #2e3556;
+  --ui-border-muted: #262c4b;
+  --ui-border-accented: #3b4369;
+  --ui-text: #cdd2e6;
+  --ui-text-muted: #969db9;
+  --ui-text-dimmed: #737a98;
+  --ui-text-highlighted: #f2f3f9;
+
+  --ew-loom: #13162a;
+  --ew-sidebar: #0f1224;
+  --ew-sidebar-border: #232842;
+  --ew-sidebar-hover: #1b1f38;
+  --ew-sidebar-active: #232846;
+  --ew-thread: var(--color-madder-400);
+  --ew-weld: color-mix(in oklab, var(--color-weld-500) 30%, transparent);
+}
+
+html {
+  background: var(--ew-loom);
+}
+
+body {
+  background: var(--ew-loom);
+  color: var(--ui-text);
+  font-feature-settings: 'ss01';
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ew-thread);
+  outline-offset: 2px;
+}
+
+/* Native form controls that tests drive directly keep their elements; this gives them the same look as Nuxt UI inputs. */
+.ew-field {
+  display: block;
+  width: 100%;
+  border-radius: var(--ui-radius);
+  border: 1px solid var(--ui-border-accented);
+  background: var(--ui-bg);
+  color: var(--ui-text-highlighted);
+  padding: 0.4375rem 0.625rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+.ew-field:focus-visible {
+  outline: 2px solid var(--ui-primary);
+  outline-offset: 0;
+  border-color: transparent;
+}
+
+/* A mention inside a document: a tint of its cluster colour with the thread drawn underneath. */
+.ew-mention {
+  border-radius: 2px;
+  padding: 0 1px;
+  background: color-mix(in oklab, var(--thread) 20%, transparent);
+  box-shadow: inset 0 -2px 0 var(--thread);
+  transition: opacity 160ms ease, background-color 160ms ease;
+}
+.ew-mention.is-dim {
+  opacity: 0.35;
+}
+.ew-mention.is-lit {
+  background: color-mix(in oklab, var(--thread) 34%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+  }
+}

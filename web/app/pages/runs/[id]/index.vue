@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui'
-import { useApi } from '../../api/client'
-import type { components } from '../../api/schema'
+import { useApi } from '../../../api/client'
+import type { components } from '../../../api/schema'
 
 type RunOut = components['schemas']['RunOut']
 type Failure = components['schemas']['FailureOut']
@@ -100,85 +100,73 @@ async function act() {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div>
+    <Crumbs class="mb-4" :items="[{ label: 'Runs', to: '/runs' }]" />
     <p v-if="loading" class="text-muted">
       Loading run...
     </p>
     <UAlert v-else-if="loadError || !run" color="error" variant="subtle" title="Could not load the run" :description="loadError" />
     <template v-else>
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="min-w-0">
-          <h1 class="break-words text-xl font-semibold">
-            {{ run.name }}
-          </h1>
-          <p class="text-sm text-muted">
-            {{ run.track }} · {{ run.state }}
+      <PageHeader :title="run.name">
+        <template #meta>
+          <p class="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted">
+            <StatusBadge :status="run.state" />
+            <span>{{ run.track }} track</span>
           </p>
-        </div>
-        <UButton v-if="action" :color="action === 'cancel' ? 'error' : 'primary'" :loading="acting" :disabled="acting" @click="act">
-          {{ LABEL[action] }}
-        </UButton>
-      </div>
+        </template>
+        <template #actions>
+          <UButton v-if="action" size="lg" :color="action === 'cancel' ? 'error' : 'primary'" :variant="action === 'cancel' ? 'outline' : 'solid'" :loading="acting" :disabled="acting" @click="act">
+            {{ LABEL[action] }}
+          </UButton>
+        </template>
+      </PageHeader>
+      <RunNav :run-id="id" />
 
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <UCard>
-          <p class="text-sm text-muted">
-            Dollars so far
-          </p>
-          <p class="text-lg font-semibold">
-            ${{ run.dollars }}<span v-if="run.dollars_estimated" class="ml-2 text-sm font-normal text-muted">estimated</span>
-          </p>
-        </UCard>
-        <UCard>
-          <p class="text-sm text-muted">
-            Mentions per hour
-          </p>
-          <p class="text-lg font-semibold">
-            {{ run.mentions_per_hour === null ? '—' : Math.round(run.mentions_per_hour) }}
-          </p>
-        </UCard>
-      </div>
+      <div class="grid gap-8 lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <dl class="grid h-fit grid-cols-2 gap-px overflow-hidden rounded-xl border border-default bg-[var(--ui-border-muted)] lg:grid-cols-1">
+          <div class="bg-default p-5">
+            <dt class="text-sm text-muted">
+              Dollars so far
+            </dt>
+            <dd class="mt-1 text-2xl font-bold tracking-tight text-highlighted">
+              <span class="tabular">${{ run.dollars }}</span><span v-if="run.dollars_estimated" class="ml-2 text-sm font-normal text-muted">estimated</span>
+            </dd>
+          </div>
+          <div class="bg-default p-5">
+            <dt class="text-sm text-muted">
+              Mentions per hour
+            </dt>
+            <dd class="tabular mt-1 text-2xl font-bold tracking-tight text-highlighted">
+              {{ run.mentions_per_hour === null ? '—' : Math.round(run.mentions_per_hour) }}
+            </dd>
+          </div>
+        </dl>
 
-      <nav class="flex flex-wrap gap-4">
-        <NuxtLink :to="`/runs/${id}/clusters`" class="text-primary hover:underline">
-          Clusters
-        </NuxtLink>
-        <NuxtLink :to="`/runs/${id}/spot-check`" class="text-primary hover:underline">
-          Spot check
-        </NuxtLink>
-        <NuxtLink :to="`/compare?run_id=${id}`" class="text-primary hover:underline">
-          Scores
-        </NuxtLink>
-      </nav>
-
-      <UCard>
-        <template #header>
-          <h2 class="font-semibold">
+        <section class="min-w-0 rounded-xl border border-default bg-default p-5">
+          <h2 class="mb-4 text-base font-bold text-highlighted">
             Progress
           </h2>
-        </template>
-        <StageProgress :progress="run.progress" />
-      </UCard>
+          <StageProgress :progress="run.progress" />
+        </section>
+      </div>
 
-      <UCard>
-        <template #header>
-          <h2 class="font-semibold">
-            Failures ({{ failureTotal }})
-          </h2>
-        </template>
+      <section class="mt-8 space-y-3">
+        <h2 class="text-base font-bold text-highlighted">
+          Failures <span class="tabular font-normal text-muted">({{ failureTotal }})</span>
+        </h2>
         <UAlert v-if="failuresError" color="error" variant="subtle" :title="`Could not load failures: ${failuresError}`" />
-        <p v-else-if="!failures.length" class="text-muted">
+        <p v-else-if="!failures.length" class="rounded-xl border border-dashed border-accented p-5 text-sm text-muted">
           No failed jobs.
         </p>
-        <div v-if="failures.length" class="overflow-x-auto">
-          <UTable :data="failures" :columns="failureColumns">
+        <div v-if="failures.length" class="overflow-x-auto rounded-xl border border-default bg-default">
+          <UTable :data="failures" :columns="failureColumns" :ui="{ th: 'font-medium text-muted' }">
             <template #error-cell="{ row }">
               <span class="whitespace-normal break-words">{{ row.original.error ?? 'No error recorded' }}</span>
             </template>
           </UTable>
         </div>
-        <UPagination v-if="failureTotal > PER_PAGE" v-model:page="failurePage" class="mt-3" :items-per-page="PER_PAGE" :total="failureTotal" />
-      </UCard>
+        <UPagination v-if="failureTotal > PER_PAGE" v-model:page="failurePage" :items-per-page="PER_PAGE" :total="failureTotal" />
+      </section>
     </template>
   </div>
 </template>

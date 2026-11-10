@@ -47,7 +47,7 @@ describe('document view', () => {
     const spans = w.findAll('[data-test=mention]')
     expect(spans.map(s => s.text())).toEqual(['flooded', 'evacuated', 'walked out', 'strike', 'holding'])
     const colours = clusterColors(docEn.mentions.map(m => m.cluster_id))
-    const fill = (i: number) => (spans[i]!.element as HTMLElement).style.backgroundColor
+    const fill = (i: number) => (spans[i]!.element as HTMLElement).style.getPropertyValue('--thread')
     expect(fill(0)).not.toBe('')
     expect(fill(0)).toBe(fill(1))
     expect(fill(2)).toBe(fill(3))

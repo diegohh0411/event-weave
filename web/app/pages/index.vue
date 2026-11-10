@@ -16,6 +16,14 @@ const NONE = '__none__'
 const STAGE_LABEL: Record<Stage, string> = {
   provide: 'Provider', extract: 'Extract', tag: 'Tag', enrich: 'Enrich', embed: 'Embed', cluster: 'Cluster'
 }
+const STAGE_HINT: Record<Stage, string> = {
+  provide: 'Where the documents come from.',
+  extract: 'Finds event mentions in each document.',
+  tag: 'Optional. Labels each mention with an event type.',
+  enrich: 'Describes each mention by action, participants, location and time.',
+  embed: 'Turns mentions into vectors for retrieval.',
+  cluster: 'Groups mentions of the same real-world event.'
+}
 
 const adapters = ref<AdapterOut[]>([])
 const deployments = ref<DeploymentOut[]>([])
@@ -182,123 +190,159 @@ const blocked = computed(() => launching.value || busy.value || probing.value ||
 </script>
 
 <template>
-  <div class="space-y-6">
-    <h1 class="text-xl font-semibold">
-      Builder
-    </h1>
+  <div>
+    <PageHeader title="New run" description="Pick an implementation for each stage of the pipeline, validate to see the estimate, then launch.">
+      <template #actions>
+        <UButton type="button" color="neutral" variant="outline" :loading="probing" :disabled="loading || probing || launching || busy" @click="reprobe">
+          Re-probe deployments
+        </UButton>
+      </template>
+    </PageHeader>
+
+    <UAlert v-if="probeError" class="mb-6" color="error" variant="subtle" title="Could not re-probe deployments" :description="probeError" />
 
     <p v-if="loading" class="text-muted">
       Loading adapters and deployments...
     </p>
     <UAlert v-else-if="loadError" color="error" variant="subtle" title="Could not reach the API" :description="loadError" />
 
-    <form v-else class="space-y-6" @submit.prevent="validate">
-      <p v-if="crawlId">Crawl context: {{ crawlId }}. Replay uses only this crawl's documents. Validate the configuration before launch; no run starts automatically.</p>
-      <UAlert v-if="crawlId && !optionsFor('provide').some(a => a.name === 'replay')" color="error" title="Replay provider is unavailable" description="The API must offer the replay provider to use this crawl." />
-      <div class="space-y-2"><UButton type="button" variant="outline" :loading="probing" :disabled="probing || launching || busy" @click="reprobe">Re-probe deployments</UButton>
-        <UAlert v-if="probeError" color="error" title="Could not re-probe deployments" :description="probeError" />
+    <form v-else @submit.prevent="validate">
+      <div v-if="crawlId" class="mb-6 rounded-xl border border-default bg-default p-4 text-sm">
+        <p class="font-semibold text-highlighted">
+          Using crawl <span class="break-all">{{ crawlId }}</span>
+        </p>
+        <p class="mt-1 text-muted">
+          Replay reads only this crawl's documents. Validate the configuration before launch; no run starts on its own.
+        </p>
       </div>
-      <fieldset :disabled="launching" class="min-w-0 space-y-6 border-0 p-0">
-      <UCard>
-        <template #header>
-          <h2 class="font-semibold">
-            Run
-          </h2>
-        </template>
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <UFormField label="Name">
-            <UInput v-model="name" class="w-full" />
-          </UFormField>
-          <UFormField label="Track">
-            <USelect v-model="track" class="w-full" :items="[{ label: 'paper (Track 1)', value: 'paper' }, { label: 'realistic', value: 'realistic' }]" />
-          </UFormField>
-          <UFormField label="Seed">
-            <UInput v-model.number="seed" class="w-full" type="number" step="1" />
-          </UFormField>
-        </div>
-      </UCard>
+      <UAlert v-if="crawlId && !optionsFor('provide').some(a => a.name === 'replay')" class="mb-6" color="error" variant="subtle" title="Replay provider is unavailable" description="The API must offer the replay provider to use this crawl." />
 
-      <UCard v-for="stage in STAGES" :key="stage">
-        <template #header>
-          <h2 class="font-semibold">
-            {{ STAGE_LABEL[stage] }}
-          </h2>
-        </template>
-        <div class="space-y-4">
-          <UFormField :label="stage === 'provide' ? 'Provider' : 'Adapter'">
-            <USelect
-              class="w-full"
-              :items="[...(stage === 'tag' ? [{ label: 'None', value: NONE }] : []), ...optionsFor(stage).map(a => ({ label: a.name, value: a.name }))]"
-              :model-value="chosen[stage] ?? (stage === 'tag' ? NONE : undefined)"
-              @update:model-value="(v: string) => setAdapter(stage, v)"
-            />
-          </UFormField>
-          <SchemaForm
-            v-if="chosen[stage]"
-            :key="chosen[stage]"
-            v-model="settings[stage]"
-            :fields="fieldsFor(stage)"
-            @update:invalid="(v: boolean) => (jsonInvalid[stage] = v)"
-          />
-          <div v-if="capabilities(stage).length" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <DeploymentPicker
-              v-for="cap in capabilities(stage)"
-              :key="`${chosen[stage]}-${cap}`"
-              :capability="cap"
-              :deployments="deployments"
-              :model-value="picked[stage][cap]"
-              @update:model-value="(id: string | undefined) => { if (id) picked[stage][cap] = id; else delete picked[stage][cap] }"
-            />
+      <fieldset :disabled="launching" class="min-w-0 border-0 p-0">
+        <div class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <div class="min-w-0 space-y-8">
+            <section class="rounded-xl border border-default bg-default p-5">
+              <h2 class="mb-4 text-base font-bold text-highlighted">
+                Run
+              </h2>
+              <div class="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1.3fr)_minmax(0,1fr)]">
+                <UFormField label="Name">
+                  <UInput v-model="name" class="w-full" />
+                </UFormField>
+                <UFormField label="Track">
+                  <USelect v-model="track" class="w-full" :items="[{ label: 'paper (Track 1)', value: 'paper' }, { label: 'realistic', value: 'realistic' }]" />
+                </UFormField>
+                <UFormField label="Seed">
+                  <UInput v-model.number="seed" class="w-full" type="number" step="1" />
+                </UFormField>
+              </div>
+            </section>
+
+            <section>
+              <h2 class="mb-4 text-base font-bold text-highlighted">
+                Pipeline
+              </h2>
+              <!-- The stages run in this order; the thread on the left ties them together. -->
+              <ol class="relative space-y-4">
+                <span aria-hidden="true" class="absolute bottom-6 left-[0.9375rem] top-6 w-px bg-[var(--ew-thread)] opacity-30" />
+                <li v-for="(stage, n) in STAGES" :key="stage" class="relative pl-11">
+                  <span
+                    aria-hidden="true"
+                    class="tabular absolute left-0 top-4 grid size-8 place-items-center rounded-full border-2 text-xs font-bold"
+                    :class="chosen[stage] ? 'border-[var(--ew-thread)] bg-[var(--ew-thread)] text-white' : 'border-[var(--ew-thread)]/40 bg-[var(--ew-loom)] text-muted'"
+                  >{{ n + 1 }}</span>
+                  <div class="rounded-xl border border-default bg-default p-5">
+                    <div class="mb-4">
+                      <h3 class="font-bold text-highlighted">
+                        {{ STAGE_LABEL[stage] }}
+                      </h3>
+                      <p class="text-sm text-muted">
+                        {{ STAGE_HINT[stage] }}
+                      </p>
+                    </div>
+                    <div class="space-y-4">
+                      <UFormField :label="stage === 'provide' ? 'Provider' : 'Adapter'">
+                        <USelect
+                          class="w-full"
+                          :items="[...(stage === 'tag' ? [{ label: 'None', value: NONE }] : []), ...optionsFor(stage).map(a => ({ label: a.name, value: a.name }))]"
+                          :model-value="chosen[stage] ?? (stage === 'tag' ? NONE : undefined)"
+                          @update:model-value="(v: string) => setAdapter(stage, v)"
+                        />
+                      </UFormField>
+                      <SchemaForm
+                        v-if="chosen[stage]"
+                        :key="chosen[stage]"
+                        v-model="settings[stage]"
+                        :fields="fieldsFor(stage)"
+                        @update:invalid="(v: boolean) => (jsonInvalid[stage] = v)"
+                      />
+                      <div v-if="capabilities(stage).length" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <DeploymentPicker
+                          v-for="cap in capabilities(stage)"
+                          :key="`${chosen[stage]}-${cap}`"
+                          :capability="cap"
+                          :deployments="deployments"
+                          :model-value="picked[stage][cap]"
+                          @update:model-value="(id: string | undefined) => { if (id) picked[stage][cap] = id; else delete picked[stage][cap] }"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </li>
+              </ol>
+            </section>
           </div>
+
+          <aside class="min-w-0">
+            <div class="space-y-4 lg:sticky lg:top-8">
+              <EstimatePanel :estimate="estimate" />
+
+              <UAlert
+                v-if="problems.length"
+                color="error"
+                variant="subtle"
+                title="This run cannot be launched yet"
+              >
+                <template #description>
+                  <ul class="list-disc pl-5">
+                    <li v-for="p in problems" :key="p">
+                      {{ p }}
+                    </li>
+                  </ul>
+                </template>
+              </UAlert>
+              <UAlert
+                v-else-if="validated"
+                color="success"
+                variant="subtle"
+                title="Configuration is valid"
+              />
+              <UAlert
+                v-if="missing.length"
+                color="warning"
+                variant="subtle"
+                title="Launch is disabled"
+              >
+                <template #description>
+                  <ul class="list-disc pl-5">
+                    <li v-for="m in missing" :key="m">
+                      {{ m }}
+                    </li>
+                  </ul>
+                </template>
+              </UAlert>
+
+              <div class="grid grid-cols-2 gap-2">
+                <UButton type="button" color="neutral" variant="outline" size="lg" block :loading="busy" :disabled="launching || busy || probing || Object.values(jsonInvalid).some(Boolean)" @click="validate">
+                  Validate
+                </UButton>
+                <UButton type="button" size="lg" block :disabled="blocked" @click="launch">
+                  Launch
+                </UButton>
+              </div>
+            </div>
+          </aside>
         </div>
-      </UCard>
-
-      <EstimatePanel :estimate="estimate" />
-
-      <UAlert
-        v-if="problems.length"
-        color="error"
-        variant="subtle"
-        title="This run cannot be launched yet"
-      >
-        <template #description>
-          <ul class="list-disc pl-5">
-            <li v-for="p in problems" :key="p">
-              {{ p }}
-            </li>
-          </ul>
-        </template>
-      </UAlert>
-      <UAlert
-        v-else-if="validated"
-        color="success"
-        variant="subtle"
-        title="Configuration is valid"
-      />
-      <UAlert
-        v-if="missing.length"
-        color="warning"
-        variant="subtle"
-        title="Launch is disabled"
-      >
-        <template #description>
-          <ul class="list-disc pl-5">
-            <li v-for="m in missing" :key="m">
-              {{ m }}
-            </li>
-          </ul>
-        </template>
-      </UAlert>
-
-      <div class="flex flex-wrap gap-3">
-        <UButton type="button" variant="outline" :loading="busy" :disabled="launching || busy || probing || Object.values(jsonInvalid).some(Boolean)" @click="validate">
-          Validate
-        </UButton>
-        <UButton type="button" :disabled="blocked" @click="launch">
-          Launch
-        </UButton>
-      </div>
-    </fieldset>
+      </fieldset>
     </form>
   </div>
 </template>

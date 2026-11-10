@@ -59,34 +59,61 @@ async function submit() {
 </script>
 
 <template>
-  <div class="space-y-6">
-    <h1 class="text-xl font-semibold">Crawls</h1>
-    <p>Collect articles without configuring inference. Discovery uses feeds and sitemaps, not arbitrary links.</p>
-    <form class="space-y-4" @submit.prevent="submit">
-      <UCard v-for="(site, i) in sites" :key="i">
-        <fieldset :disabled="submitting" class="space-y-3">
-          <legend class="font-semibold">Site {{ i + 1 }}</legend>
-          <div class="grid gap-3 sm:grid-cols-3">
-            <label>Domain or site URL <input v-model="site.domain" :name="`domain-${i}`" class="block w-full rounded border border-default p-2" required placeholder="example.com"></label>
-            <label>Language <select v-model="site.language" :name="`language-${i}`" class="block w-full rounded border border-default p-2"><option value="en">English</option><option value="es">Spanish</option><option value="hi">Hindi</option><option value="tr">Turkish</option><option value="uk">Ukrainian</option></select></label>
-            <label>Max articles per day <input v-model.number="site.per_day" :name="`per-day-${i}`" type="number" min="1" max="200" required class="block w-full rounded border border-default p-2"></label>
-          </div>
-          <details><summary>Advanced sources</summary><p class="text-sm text-muted">One public HTTP(S) URL per line; explicit sources override automatic discovery.</p>
-            <label>Feed URLs <textarea v-model="site.feeds" :name="`feeds-${i}`" class="block w-full rounded border border-default p-2" /></label>
-            <label>Sitemap URLs <textarea v-model="site.sitemaps" :name="`sitemaps-${i}`" class="block w-full rounded border border-default p-2" /></label>
-          </details>
-          <UButton v-if="sites.length > 1" type="button" variant="outline" @click="sites.splice(i, 1)">Remove site</UButton>
-        </fieldset>
-      </UCard>
-      <label>Lookback days <input v-model.number="days" name="days" type="number" min="1" max="30" required class="ml-2 rounded border border-default p-2"></label>
-      <div class="flex gap-3"><UButton type="button" variant="outline" :disabled="sites.length >= 20 || submitting" @click="sites.push(newSite())">Add site</UButton><UButton type="submit" :loading="submitting" :disabled="submitting">Start crawl</UButton></div>
-      <UAlert v-if="error" color="error" title="Could not start crawl" :description="error" />
-    </form>
-    <section class="space-y-3"><h2 class="text-lg font-semibold">Recent crawls</h2>
-      <UAlert v-if="historyError" color="error" title="Could not load crawl history" :description="historyError" />
-      <p v-else-if="!history.length">No crawls yet.</p>
-      <ul v-else class="space-y-2"><li v-for="crawl in history" :key="crawl.id"><NuxtLink :to="`/crawls/${crawl.id}`" class="text-primary hover:underline">{{ crawl.request.sites.map(s => s.domain).join(', ') }} — {{ crawl.status }}</NuxtLink> ({{ crawl.counters.fetched }} fetched, {{ crawl.counters.stored }} stored)</li></ul>
-      <UPagination v-if="total > pageSize" v-model:page="page" :items-per-page="pageSize" :total="total" />
-    </section>
+  <div>
+    <PageHeader title="Crawls" description="Collect recent articles from news sites. Discovery follows each site's feeds and sitemaps, never arbitrary links." />
+
+    <div class="grid gap-8 xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <form class="min-w-0 space-y-4" @submit.prevent="submit">
+        <h2 class="text-base font-bold text-highlighted">New crawl</h2>
+        <div v-for="(site, i) in sites" :key="i" class="rounded-xl border border-default bg-default p-5">
+          <fieldset :disabled="submitting" class="space-y-4">
+            <legend class="sr-only">Site {{ i + 1 }}</legend>
+            <div class="flex items-center justify-between gap-3">
+              <span aria-hidden="true" class="text-sm font-semibold text-highlighted">Site {{ i + 1 }}</span>
+              <UButton v-if="sites.length > 1" type="button" color="neutral" variant="ghost" size="xs" @click="sites.splice(i, 1)">Remove site</UButton>
+            </div>
+            <div class="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+              <label class="space-y-1.5 text-sm font-medium text-highlighted">Domain or site URL <input v-model="site.domain" :name="`domain-${i}`" class="ew-field font-normal" required placeholder="example.com"></label>
+              <label class="space-y-1.5 text-sm font-medium text-highlighted">Language <select v-model="site.language" :name="`language-${i}`" class="ew-field font-normal"><option value="en">English</option><option value="es">Spanish</option><option value="hi">Hindi</option><option value="tr">Turkish</option><option value="uk">Ukrainian</option></select></label>
+              <label class="space-y-1.5 text-sm font-medium text-highlighted">Articles per day <input v-model.number="site.per_day" :name="`per-day-${i}`" type="number" min="1" max="200" required class="ew-field tabular font-normal"></label>
+            </div>
+            <details class="group rounded-md bg-muted px-3 py-2">
+              <summary class="cursor-pointer select-none text-sm font-medium text-muted group-open:text-highlighted">Feeds and sitemaps</summary>
+              <div class="mt-3 space-y-3 pb-1">
+                <p class="text-sm text-muted">One public HTTP(S) URL per line. Sources you list replace automatic discovery.</p>
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <label class="space-y-1.5 text-sm font-medium text-highlighted">Feed URLs <textarea v-model="site.feeds" :name="`feeds-${i}`" rows="3" class="ew-field font-normal" /></label>
+                  <label class="space-y-1.5 text-sm font-medium text-highlighted">Sitemap URLs <textarea v-model="site.sitemaps" :name="`sitemaps-${i}`" rows="3" class="ew-field font-normal" /></label>
+                </div>
+              </div>
+            </details>
+          </fieldset>
+        </div>
+        <UButton type="button" color="neutral" variant="outline" block class="border-dashed" :disabled="sites.length >= 20 || submitting" @click="sites.push(newSite())">Add site</UButton>
+        <div class="flex flex-wrap items-end justify-between gap-4 border-t border-default pt-4">
+          <label class="flex items-center gap-3 text-sm font-medium text-highlighted">Look back <input v-model.number="days" name="days" type="number" min="1" max="30" required class="ew-field tabular w-20 font-normal"> days</label>
+          <UButton type="submit" size="lg" :loading="submitting" :disabled="submitting">Start crawl</UButton>
+        </div>
+        <UAlert v-if="error" color="error" variant="subtle" title="Could not start crawl" :description="error" />
+      </form>
+
+      <section class="min-w-0 space-y-3">
+        <h2 class="text-base font-bold text-highlighted">Recent crawls</h2>
+        <UAlert v-if="historyError" color="error" variant="subtle" title="Could not load crawl history" :description="historyError" />
+        <p v-else-if="!history.length" class="rounded-xl border border-dashed border-accented p-5 text-sm text-muted">No crawls yet. Add a site and start your first crawl.</p>
+        <ul v-else class="divide-y divide-default overflow-hidden rounded-xl border border-default bg-default">
+          <li v-for="crawl in history" :key="crawl.id">
+            <NuxtLink :to="`/crawls/${crawl.id}`" class="block space-y-1.5 px-4 py-3 hover:bg-muted">
+              <span class="flex items-start justify-between gap-3">
+                <span class="min-w-0 break-words text-sm font-semibold text-highlighted">{{ crawl.request.sites.map(s => s.domain).join(', ') }}</span>
+                <StatusBadge :status="crawl.status" />
+              </span>
+              <span class="block text-xs text-muted"><span class="tabular">{{ crawl.counters.fetched }}</span> fetched, <span class="tabular">{{ crawl.counters.stored }}</span> stored</span>
+            </NuxtLink>
+          </li>
+        </ul>
+        <UPagination v-if="total > pageSize" v-model:page="page" :items-per-page="pageSize" :total="total" />
+      </section>
+    </div>
   </div>
 </template>

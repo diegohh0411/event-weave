@@ -25,6 +25,7 @@
     "vue-router": "5.4.0"
   },
   "devDependencies": {
+    "@iconify-json/lucide": "^1.2.152",
     "@nuxt/test-utils": "4.3.4",
     "@types/node": "26.6.6",
     "@vue/test-utils": "2.5.1",
