@@ -449,4 +449,16 @@ def test_refetch_same_text_is_unchanged(engine):
     newer[url] = Fetched(url, 200, html.replace('regional water board', 'regional   water board'), None)
     report = crawl(engine, OUTLETS, polite(newer)[0], NOW + timedelta(days=2))
     assert report.unchanged == 1
+    assert report.duplicates == 0
+    assert rows(engine, 'select count(*) from documents') == [(1,)]
+
+
+def test_refetch_exact_content_is_unchanged_not_duplicate(engine):
+    from datetime import timedelta
+    initial = routes([('/a/reuters', '2026-11-03T10:00:00Z')])
+    crawl(engine, OUTLETS, polite(initial)[0], NOW)
+    newer = routes([('/a/reuters', '2026-11-06T10:00:00Z')])
+    report = crawl(engine, OUTLETS, polite(newer)[0], NOW + timedelta(days=2))
+    assert report.unchanged == 1
+    assert report.duplicates == 0
     assert rows(engine, 'select count(*) from documents') == [(1,)]

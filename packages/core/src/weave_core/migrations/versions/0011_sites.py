@@ -55,6 +55,8 @@ def upgrade():
 
 
 def downgrade():
+    if op.get_bind().scalar(sa.text("SELECT EXISTS (SELECT 1 FROM documents WHERE version > 1)")):
+        raise RuntimeError("cannot downgrade 0011 with versioned documents")
     op.drop_constraint("documents_provider_external_id_version_key", "documents", type_="unique")
     op.create_unique_constraint("documents_provider_external_id_key", "documents", ["provider", "external_id"])
     op.drop_column("documents", "text_hash")
