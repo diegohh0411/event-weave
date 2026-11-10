@@ -2,7 +2,7 @@
 import logging
 import os
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import time
 
 import sqlalchemy as sa
@@ -72,6 +72,22 @@ def process_claim(engine, claim, stop, *, fetcher_factory=public_fetchers,
             lost.set()
             raise LeaseLost()
 
+    def consume_cap(conn, candidate, doc_id, record=False):
+        if record:
+            conn.execute(crawl_articles.insert().values(crawl_id=claim.id, canonical_url=candidate.url,
+                url=candidate.url, outlet=candidate.outlet, status='stored', document_id=doc_id,
+                fetched=True, updated_at=sa.func.now()))
+            return True
+        conn.execute(sa.text("SELECT pg_advisory_xact_lock(hashtextextended(CAST(:site AS text), 0))"), {'site': str(claim.site_id)})
+        site = conn.execute(sa.select(sites).where(sites.c.id == claim.site_id)).mappings().one()
+        count = conn.scalar(sa.text("""SELECT count(*) FROM crawl_articles a JOIN crawl_runs r ON r.id = a.crawl_id
+            WHERE r.site_id = :site AND a.status = 'stored'
+            AND a.updated_at >= (date_trunc('day', now() AT TIME ZONE 'utc') AT TIME ZONE 'utc')
+            AND a.updated_at < (date_trunc('day', now() AT TIME ZONE 'utc') + interval '1 day') AT TIME ZONE 'utc'"""), {'site': claim.site_id})
+        if count >= site['daily_cap']:
+            return False
+        return True
+
     def observe(kind, outcome):
         if cancelled():
             raise LeaseLost()
@@ -90,15 +106,13 @@ def process_claim(engine, claim, stop, *, fetcher_factory=public_fetchers,
         if not cancelled():
             caps = None
             if claim.site_id is not None:
-                now = _now()
-                start = now.replace(hour=0, minute=0, second=0, microsecond=0)
                 with engine.connect() as conn:
                     site = conn.execute(sa.select(sites).where(sites.c.id == claim.site_id)).mappings().first()
                     if site is not None:
                         count = conn.scalar(sa.select(sa.func.count()).select_from(
                             crawl_articles.join(crawl_runs, crawl_articles.c.crawl_id == crawl_runs.c.id)).where(
                             crawl_runs.c.site_id == claim.site_id, crawl_articles.c.status == "stored",
-                            crawl_articles.c.updated_at >= start, crawl_articles.c.updated_at < start + timedelta(days=1)))
+                            crawl_articles.c.updated_at >= sa.text("(date_trunc('day', now() AT TIME ZONE 'utc') AT TIME ZONE 'utc')"), crawl_articles.c.updated_at < sa.text("((date_trunc('day', now() AT TIME ZONE 'utc') + interval '1 day') AT TIME ZONE 'utc')")))
                         caps = {site["name"]: max(0, site["daily_cap"] - count)}
             with fetcher_factory() as (browser, http):
                 fetcher = PoliteFetcher(browser, meta=http, validator=validate_public_url,
@@ -106,7 +120,8 @@ def process_claim(engine, claim, stop, *, fetcher_factory=public_fetchers,
                                         throttle=DomainThrottle(engine))
                 # Reclaims must use the original discovery window, not a later one.
                 crawl(engine, claim.request.sites, fetcher, claim.started_at, claim.request.days,
-                      observer=observe, cancelled=cancelled, write_guard=guard, caps=caps)
+                      observer=observe, cancelled=cancelled, write_guard=guard, caps=caps,
+                      consume_cap=consume_cap if claim.site_id is not None else None)
             completed = not cancelled()
     except LeaseLost:
         lost.set()

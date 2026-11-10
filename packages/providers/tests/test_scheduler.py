@@ -60,3 +60,36 @@ def test_scheduler_tick_interval(monkeypatch):
     monkeypatch.setenv('WEAVE_SCHEDULER_TICK_SECONDS', '60')
     worker.run_crawl_worker(None, stop, poll_seconds=0, clock=lambda: next(ticks))
     assert len(calls) == 2
+
+
+def test_scheduler_limits_each_tick_to_bounded_batches(database_url, monkeypatch):
+    from weave_providers.crawl import scheduler
+    engine = make_engine(database_url)
+    now = datetime.now(timezone.utc)
+    with engine.begin() as conn:
+        for i in range(5):
+            conn.execute(sites.insert().values(id=uuid4(), name=f'batch{i}', domain=f'batch{i}.test',
+                language='en', next_check_at=now - timedelta(minutes=5-i)))
+    monkeypatch.setattr(scheduler, 'BATCH_SIZE', 2, raising=False)
+    monkeypatch.setattr(scheduler, 'MAX_BATCHES', 2, raising=False)
+    assert len(scheduler.schedule_due_sites(engine, now)) == 4
+    with engine.connect() as conn:
+        assert conn.scalar(sa.select(sa.func.count()).select_from(crawl_runs)) == 4
+    engine.dispose()
+
+
+def test_worker_recovers_after_scheduler_database_error(monkeypatch):
+    from weave_providers.crawl import worker
+    from threading import Event
+    stop = Event()
+    ticks = iter([0, 61])
+    calls = []
+    def schedule(engine, now):
+        calls.append(now)
+        if len(calls) == 1:
+            raise RuntimeError('database unavailable')
+        stop.set()
+    monkeypatch.setattr(worker, 'schedule_due_sites', schedule)
+    monkeypatch.setattr(worker, 'claim_crawl', lambda *args: None)
+    worker.run_crawl_worker(None, stop, poll_seconds=0, clock=lambda: next(ticks))
+    assert len(calls) == 2

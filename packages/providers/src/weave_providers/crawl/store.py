@@ -42,7 +42,7 @@ class CrawlReport:
 
 def crawl(engine: Engine, outlets: list[Outlet | CrawlSite], fetcher: Fetcher, now: datetime,
           days: int = 7, meta_fetcher: Fetcher | None = None, observer=None, cancelled=None,
-          write_guard=None, caps: dict[str, int] | None = None) -> CrawlReport:
+          write_guard=None, caps: dict[str, int] | None = None, consume_cap=None) -> CrawlReport:
     """Crawl configured outlets or CrawlSites, emitting ``(kind, outcome)`` events.
 
     Pass a source-less CrawlSite for automatic discovery; legacy Outlet/CLI
@@ -57,12 +57,12 @@ def crawl(engine: Engine, outlets: list[Outlet | CrawlSite], fetcher: Fetcher, n
     previous_cancelled = fetcher.cancelled
     fetcher.cancelled = cancelled or (lambda: False)
     try:
-        return _run_crawl(engine, outlets, fetcher, now, days, observer, fetcher.cancelled, write_guard, caps)
+        return _run_crawl(engine, outlets, fetcher, now, days, observer, fetcher.cancelled, write_guard, caps, consume_cap)
     finally:
         fetcher.cancelled = previous_cancelled
 
 
-def _run_crawl(engine, outlets, fetcher, now, days, observer, stopped, write_guard, caps):
+def _run_crawl(engine, outlets, fetcher, now, days, observer, stopped, write_guard, caps, consume_cap):
     remaining = dict(caps or {})
     meta = fetcher.meta_view()
     window = (now - timedelta(days=days), now)
@@ -141,7 +141,7 @@ def _run_crawl(engine, outlets, fetcher, now, days, observer, stopped, write_gua
                                      document_id=None, fetched=False))
                 continue
             outcome = _crawl_page(engine, candidate, outlet.language, fetcher, now, report, rejected, stopped,
-                                  write_guard)
+                                  write_guard, consume_cap)
             if outcome is None:
                 break
             if outcome['status'] == 'stored' and outlet.name in remaining:
@@ -162,7 +162,7 @@ def _prior_page(engine: Engine, canonical: str):
 
 
 def _crawl_page(engine, candidate: Candidate, language: str, fetcher: Fetcher, now: datetime,
-                report: CrawlReport, rejected: Counter, cancelled, write_guard) -> dict | None:
+                report: CrawlReport, rejected: Counter, cancelled, write_guard, consume_cap=None) -> dict | None:
     got = fetcher.fetch(candidate.url)
     if cancelled():
         return None
@@ -201,6 +201,9 @@ def _crawl_page(engine, candidate: Candidate, language: str, fetcher: Fetcher, n
             _upsert_page(conn, candidate, now, "rejected", f"duplicate of {dup}", raw, None)
             report.duplicates += 1
             return dict(status='duplicate', reason=f'duplicate of {dup}', document_id=dup, fetched=True)
+        if consume_cap and not consume_cap(conn, candidate, doc_id):
+            rejected['daily cap reached'] += 1
+            return dict(status='rejected', reason='daily cap reached', document_id=None, fetched=True)
         conn.execute(sa.insert(documents).values(
             id=doc_id, article_id=doc_id, provider=PROVIDER, external_id=external_id, language=language,
             title=result.title, byline=result.byline, outlet=candidate.outlet, url=candidate.url,
@@ -208,6 +211,8 @@ def _crawl_page(engine, candidate: Candidate, language: str, fetcher: Fetcher, n
             content_hash=digest, text_hash=edit_hash(result.title, result.text),
             order_key=[int(published.timestamp()) if published else UNDATED_ORDER]))
         _upsert_page(conn, candidate, now, "stored", None, raw, doc_id)
+        if consume_cap:
+            consume_cap(conn, candidate, doc_id, record=True)
     report.stored += 1
     return dict(status="stored", reason=None, document_id=doc_id, fetched=True)
 

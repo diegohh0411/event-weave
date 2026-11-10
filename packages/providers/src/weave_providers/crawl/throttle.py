@@ -39,10 +39,10 @@ class DomainThrottle:
                     VALUES (:domain, now() + :seconds * interval '1 second')
                     ON CONFLICT (domain) DO UPDATE SET next_request_at =
                         greatest(domain_throttle.next_request_at, now()) + :seconds * interval '1 second'
-                    RETURNING next_request_at - :seconds * interval '1 second'
+                    RETURNING greatest(0, extract(epoch from (next_request_at - :seconds * interval '1 second') - clock_timestamp()))
                 '''), {'domain': domain, 'seconds': interval})
                 conn.commit()
-                delay = (reserved - self.clock()).total_seconds()
+                delay = float(reserved)
                 if delay > 0:
                     self.sleep(delay)
                 yield
