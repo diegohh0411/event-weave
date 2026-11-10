@@ -62,3 +62,26 @@ def test_settings_changes_preserve_frontier_until_start(client, engine):
     assert client.post(f'/sites/{sid}/backfill', json={'action': 'start'}).status_code == 200
     with engine.connect() as conn:
         assert conn.scalar(sa.select(sa.func.count()).select_from(backfill_sitemaps)) == 0
+
+
+@pytest.mark.parametrize('state', ['done', 'failed'])
+def test_restart_terminal_run_clears_unchanged_frontier(client, engine, state):
+    import sqlalchemy as sa
+    from weave_core.schema import backfill_sitemaps, sites
+    sid = client.post('/sites', json={'domain': 'example.com', 'language': 'en', 'backfill_mode': 'all'}).json()['id']
+    client.post(f'/sites/{sid}/backfill', json={'action': 'start'})
+    with engine.begin() as conn:
+        conn.execute(sites.update().where(sites.c.id == sid).values(backfill_state=state))
+        conn.execute(backfill_sitemaps.insert().values(site_id=sid, url='https://example.com/map', depth=0, status='done'))
+    assert client.post(f'/sites/{sid}/backfill', json={'action': 'start'}).status_code == 200
+    with engine.connect() as conn:
+        assert conn.scalar(sa.select(sa.func.count()).select_from(backfill_sitemaps).where(backfill_sitemaps.c.site_id == sid)) == 0
+
+
+@pytest.mark.parametrize('state', ['running', 'paused', 'done', 'failed'])
+def test_cancel_allowed_with_mode_off(client, engine, state):
+    from weave_core.schema import sites
+    sid = client.post('/sites', json={'domain': 'example.com', 'language': 'en'}).json()['id']
+    with engine.begin() as conn:
+        conn.execute(sites.update().where(sites.c.id == sid).values(backfill_state=state))
+    assert client.post(f'/sites/{sid}/backfill', json={'action': 'cancel'}).status_code == 200

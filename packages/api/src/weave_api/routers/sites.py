@@ -262,7 +262,7 @@ def control_backfill(site_id: UUID, body: BackfillAction, engine: Engine) -> Bac
         row = site_row(conn, site_id, lock=True)
         if not row.enabled:
             raise HTTPException(409, 'site disabled')
-        if row.backfill_mode == 'off':
+        if row.backfill_mode == 'off' and body.action != 'cancel':
             raise HTTPException(422, 'backfill mode is off')
         transitions = {'start': ('off', 'done', 'failed'), 'pause': ('running',), 'resume': ('paused',), 'cancel': ('running', 'paused', 'done', 'failed')}
         if row.backfill_state not in transitions[body.action]:
@@ -270,7 +270,7 @@ def control_backfill(site_id: UUID, body: BackfillAction, engine: Engine) -> Bac
         now = datetime.now(timezone.utc)
         values = {'backfill_state': {'start': 'running', 'pause': 'paused', 'resume': 'running', 'cancel': 'off'}[body.action]}
         if body.action == 'start':
-            if (row.backfill_mode, row.backfill_from) != (row.backfill_frontier_mode, row.backfill_frontier_from):
+            if row.backfill_state in ('done', 'failed') or (row.backfill_mode, row.backfill_from) != (row.backfill_frontier_mode, row.backfill_frontier_from):
                 conn.execute(backfill_urls.delete().where(backfill_urls.c.site_id == site_id))
                 conn.execute(backfill_sitemaps.delete().where(backfill_sitemaps.c.site_id == site_id))
             values.update(backfill_frontier_mode=row.backfill_mode, backfill_frontier_from=row.backfill_from)
