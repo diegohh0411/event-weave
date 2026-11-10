@@ -63,6 +63,10 @@
   --ui-radius: 0.375rem;
 
   --ew-loom: #eef0f4;
+  --ew-sidebar: #f7f8fa;
+  --ew-sidebar-border: #e3e6ed;
+  --ew-sidebar-hover: #eceef3;
+  --ew-sidebar-active: #e3e6ef;
   --ew-thread: var(--color-madder-500);
   --ew-weld: color-mix(in oklab, var(--color-weld-500) 38%, transparent);
 }
@@ -83,6 +87,10 @@
   --ui-text-highlighted: #f2f3f9;
 
   --ew-loom: #13162a;
+  --ew-sidebar: #0f1224;
+  --ew-sidebar-border: #232842;
+  --ew-sidebar-hover: #1b1f38;
+  --ew-sidebar-active: #232846;
   --ew-thread: var(--color-madder-400);
   --ew-weld: color-mix(in oklab, var(--color-weld-500) 30%, transparent);
 }

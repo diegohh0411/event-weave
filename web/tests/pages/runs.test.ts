@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { mockNuxtImport, mountSuspended } from '@nuxt/test-utils/runtime'
 import RunsList from '../../app/pages/runs/index.vue'
-import RunPage from '../../app/pages/runs/[id].vue'
+import RunPage from '../../app/pages/runs/[id]/index.vue'
 import { createMockHandler } from '../../mock/server'
 import { runCancelled, runLlm, runNew, runPaper } from '../../mock/fixtures/runs'
 

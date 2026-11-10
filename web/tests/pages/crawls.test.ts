@@ -24,7 +24,7 @@ beforeEach(() => {
 afterEach(() => { mounted.splice(0).forEach(w => w.unmount()); vi.useRealTimers(); vi.unstubAllGlobals() })
 
 async function list() { const { default: Page } = await import('../../app/pages/crawls/index.vue'); return track(await mountSuspended(Page)) }
-async function detail(id: string) { const { default: Page } = await import('../../app/pages/crawls/[id].vue'); return track(await mountSuspended(Page, { route: `/crawls/${id}` })) }
+async function detail(id: string) { const { default: Page } = await import('../../app/pages/crawls/[id]/index.vue'); return track(await mountSuspended(Page, { route: `/crawls/${id}` })) }
 async function doc(id: string, did: string) { const { default: Page } = await import('../../app/pages/crawls/[id]/documents/[did].vue'); return track(await mountSuspended(Page, { route: `/crawls/${id}/documents/${did}` })) }
 
 describe('crawl pages', () => {

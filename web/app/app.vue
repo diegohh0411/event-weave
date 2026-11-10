@@ -1,73 +1,90 @@
 <script setup lang="ts">
 const route = useRoute()
+const { runs, crawls, collapsed, setCollapsed, refresh } = useWorkspace()
 
-// In the order the work happens: collect articles, configure a run, watch it, compare results.
-const links = computed(() => [
-  { label: 'Crawls', to: '/crawls', active: route.path.startsWith('/crawls') },
-  { label: 'New run', to: '/', active: route.path === '/' },
-  { label: 'Runs', to: '/runs', active: route.path.startsWith('/runs') },
-  { label: 'Compare', to: '/compare', active: route.path.startsWith('/compare') }
-])
+const mobileOpen = ref(false)
+const searchOpen = ref(false)
 
-const menuOpen = ref(false)
-watch(() => route.fullPath, () => { menuOpen.value = false })
+// Keep the recents fresh as you move around; a new run or crawl shows up as soon as you open it.
+onMounted(() => refresh())
+watch(() => route.path, () => {
+  mobileOpen.value = false
+  void refresh()
+})
+
+defineShortcuts({
+  meta_k: () => { searchOpen.value = !searchOpen.value },
+  meta_b: () => setCollapsed(!collapsed.value)
+})
+
+const groups = computed(() => [
+  {
+    id: 'pages',
+    label: 'Go to',
+    items: [
+      { label: 'New run', icon: 'i-lucide-plus', to: '/' },
+      { label: 'Crawls', icon: 'i-lucide-radar', to: '/crawls' },
+      { label: 'Runs', icon: 'i-lucide-workflow', to: '/runs' },
+      { label: 'Compare', icon: 'i-lucide-chart-column', to: '/compare' }
+    ]
+  },
+  { id: 'runs', label: 'Runs', items: runs.value.map(r => ({ label: r.label, suffix: r.status, icon: 'i-lucide-workflow', to: r.to })) },
+  { id: 'crawls', label: 'Crawls', items: crawls.value.map(c => ({ label: c.label, suffix: c.status, icon: 'i-lucide-radar', to: c.to })) }
+].filter(g => g.items.length))
+
+function go(item: { to?: unknown }) {
+  if (typeof item.to !== 'string') return
+  searchOpen.value = false
+  void navigateTo(item.to)
+}
+watch(searchOpen, (open) => { if (open) void refresh(30) })
 </script>
 
 <template>
   <UApp>
-    <div class="min-h-dvh lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]">
-      <header class="sticky top-0 z-30 border-b border-default bg-[var(--ew-loom)]/90 backdrop-blur lg:static lg:h-dvh lg:border-b-0 lg:border-r lg:bg-transparent lg:backdrop-blur-none">
-        <div class="lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col">
-          <div class="flex items-center justify-between gap-3 px-4 py-3 lg:px-5 lg:pb-6 lg:pt-6">
-            <NuxtLink to="/crawls" class="flex items-center gap-2.5 rounded-md text-highlighted" aria-label="Event Weave home">
-              <BrandMark class="size-7" />
-              <span class="text-[1.0625rem] font-bold tracking-[-0.01em]">Event Weave</span>
-            </NuxtLink>
-            <UButton
-              class="lg:hidden"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              :aria-expanded="menuOpen"
-              aria-controls="primary-nav"
-              @click="menuOpen = !menuOpen"
-            >
-              {{ menuOpen ? 'Close' : 'Menu' }}
-            </UButton>
+    <div class="flex h-dvh overflow-hidden">
+      <aside
+        class="hidden shrink-0 border-r border-[var(--ew-sidebar-border)] bg-[var(--ew-sidebar)] transition-[width] duration-200 lg:block"
+        :class="collapsed ? 'w-14' : 'w-64'"
+      >
+        <AppSidebar :collapsed="collapsed" collapsible @search="searchOpen = true" />
+      </aside>
+
+      <div class="flex min-w-0 flex-1 flex-col">
+        <header class="flex h-12 shrink-0 items-center gap-2 border-b border-default bg-[var(--ew-sidebar)] px-3 lg:hidden">
+          <UButton color="neutral" variant="ghost" size="sm" square icon="i-lucide-menu" aria-label="Open navigation" @click="mobileOpen = true" />
+          <NuxtLink to="/runs" class="flex items-center gap-2 text-highlighted">
+            <BrandMark class="size-5" />
+            <span class="text-sm font-bold">Event Weave</span>
+          </NuxtLink>
+          <UButton class="ml-auto" color="neutral" variant="ghost" size="sm" square icon="i-lucide-search" aria-label="Search" @click="searchOpen = true" />
+        </header>
+
+        <main class="min-h-0 flex-1 overflow-y-auto">
+          <div class="mx-auto max-w-6xl px-4 pb-16 pt-6 sm:px-6 lg:px-10 lg:pt-8">
+            <NuxtPage />
           </div>
-
-          <nav id="primary-nav" aria-label="Primary" :class="menuOpen ? 'block' : 'hidden lg:block'" class="px-3 pb-4 lg:flex-1 lg:px-4">
-            <ol class="relative space-y-0.5">
-              <!-- The thread every section hangs on; the active section is knotted to it. -->
-              <span aria-hidden="true" class="absolute bottom-4 left-[0.9375rem] top-4 w-px bg-[var(--ew-thread)] opacity-30" />
-              <li v-for="l in links" :key="l.to">
-                <NuxtLink
-                  :to="l.to"
-                  :aria-current="l.active ? 'page' : undefined"
-                  class="group relative flex items-center gap-3 rounded-md py-2 pl-8 pr-3 transition-colors"
-                  :class="l.active ? 'bg-default text-highlighted shadow-[0_1px_0_var(--ui-border)]' : 'text-muted hover:bg-default/60 hover:text-highlighted'"
-                >
-                  <span
-                    aria-hidden="true"
-                    class="absolute left-[0.6875rem] top-1/2 size-2 -translate-y-1/2 rounded-full border-2 border-[var(--ew-thread)]"
-                    :class="l.active ? 'bg-[var(--ew-thread)]' : 'bg-[var(--ew-loom)]'"
-                  /><span class="text-sm font-semibold">{{ l.label }}</span>
-                </NuxtLink>
-              </li>
-            </ol>
-          </nav>
-
-          <p class="hidden px-5 pb-5 text-xs leading-relaxed text-dimmed lg:block">
-            Finds event mentions in the news and weaves the ones about the same event together, across outlets and languages.
-          </p>
-        </div>
-      </header>
-
-      <main class="min-w-0 px-4 pb-16 pt-6 sm:px-6 lg:px-10 lg:pt-8">
-        <div class="mx-auto max-w-6xl">
-          <NuxtPage />
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
+
+    <USlideover v-model:open="mobileOpen" side="left" title="Navigation" :ui="{ content: 'max-w-72 bg-[var(--ew-sidebar)]', header: 'sr-only', body: 'p-0 sm:p-0' }">
+      <template #body>
+        <AppSidebar @search="mobileOpen = false; searchOpen = true" />
+      </template>
+    </USlideover>
+
+    <UModal v-model:open="searchOpen" title="Search" description="Jump to a page, run or crawl" :ui="{ content: 'max-w-xl', header: 'sr-only' }">
+      <template #content>
+        <UCommandPalette
+          :groups="groups"
+          placeholder="Search runs, crawls and pages"
+          class="h-96"
+          close
+          @update:model-value="go"
+          @update:open="searchOpen = $event"
+        />
+      </template>
+    </UModal>
   </UApp>
 </template>

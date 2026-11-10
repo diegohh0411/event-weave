@@ -3,11 +3,23 @@ import { mountSuspended } from '@nuxt/test-utils/runtime'
 import App from '../../app/app.vue'
 
 describe('layout', () => {
-  it('shows the sections in workflow order and marks the current one', async () => {
+  it('puts the new-run action first, then the sections, and marks the current one', async () => {
     const wrapper = await mountSuspended(App, { route: '/' })
     const nav = wrapper.find('nav[aria-label=Primary]')
     const links = nav.findAll('a').map(a => [a.text(), a.attributes('href')])
-    expect(links).toEqual([['Crawls', '/crawls'], ['New run', '/'], ['Runs', '/runs'], ['Compare', '/compare']])
+    expect(links).toEqual([['New run', '/'], ['Crawls', '/crawls'], ['Runs', '/runs'], ['Compare', '/compare']])
     expect(nav.find('a[aria-current=page]').text()).toBe('New run')
+    expect(nav.find('button').text()).toContain('Search')
+  })
+
+  it('collapses the sidebar to icons and remembers it', async () => {
+    const wrapper = await mountSuspended(App, { route: '/runs' })
+    const toggle = wrapper.find('button[aria-label="Collapse sidebar"]')
+    await toggle.trigger('click')
+    const nav = wrapper.find('nav[aria-label=Primary]')
+    expect(nav.findAll('a').map(a => a.text())).toEqual(['', '', '', ''])
+    expect(localStorage.getItem('ew-sidebar-collapsed')).toBe('1')
+    await wrapper.find('button[aria-label="Expand sidebar"]').trigger('click')
+    expect(localStorage.getItem('ew-sidebar-collapsed')).toBe('0')
   })
 })

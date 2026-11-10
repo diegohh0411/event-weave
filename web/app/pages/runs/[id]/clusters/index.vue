@@ -88,7 +88,7 @@ async function load() {
 }
 watch(() => route.fullPath, load, { immediate: true })
 
-const field = 'ew-field h-10'
+const field = 'ew-field h-9 py-0'
 const fieldsOf = (c: Summary['card']) => (c ? cardFields(c) : null)
 </script>
 
@@ -119,10 +119,10 @@ const fieldsOf = (c: Summary['card']) => (c ? cardFields(c) : null)
         </select>
       </div>
       <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <UInput data-test="min-size" type="number" min="0" placeholder="Min size" aria-label="Minimum size" :model-value="params.min_size" @update:model-value="setQuery({ min_size: String($event) })" />
-        <UInput data-test="max-size" type="number" min="0" placeholder="Max size" aria-label="Maximum size" :model-value="params.max_size" @update:model-value="setQuery({ max_size: String($event) })" />
-        <UInput data-test="event-type" placeholder="Event type" aria-label="Event type" :model-value="params.event_type" @update:model-value="setQuery({ event_type: String($event) })" />
-        <UInput data-test="min-significance" type="number" min="0" max="1" step="0.05" placeholder="Min significance" aria-label="Minimum significance" :model-value="params.min_significance" @update:model-value="setQuery({ min_significance: String($event) })" />
+        <UInput data-test="min-size" size="lg" type="number" min="0" placeholder="Min size" aria-label="Minimum size" :model-value="params.min_size" @update:model-value="setQuery({ min_size: String($event) })" />
+        <UInput data-test="max-size" size="lg" type="number" min="0" placeholder="Max size" aria-label="Maximum size" :model-value="params.max_size" @update:model-value="setQuery({ max_size: String($event) })" />
+        <UInput data-test="event-type" size="lg" placeholder="Event type" aria-label="Event type" :model-value="params.event_type" @update:model-value="setQuery({ event_type: String($event) })" />
+        <UInput data-test="min-significance" size="lg" type="number" min="0" max="1" step="0.05" placeholder="Min significance" aria-label="Minimum significance" :model-value="params.min_significance" @update:model-value="setQuery({ min_significance: String($event) })" />
       </div>
     </form>
 
@@ -155,7 +155,7 @@ const fieldsOf = (c: Summary['card']) => (c ? cardFields(c) : null)
               </span>
             </span>
             <span class="text-right text-sm text-muted">
-              <span class="tabular block text-2xl font-bold tracking-tight text-highlighted">{{ c.size }}</span> mentions
+              <span class="tabular block text-2xl font-bold tracking-tight text-highlighted">{{ c.size }}</span> {{ c.size === 1 ? 'mention' : 'mentions' }}
             </span>
           </NuxtLink>
         </li>

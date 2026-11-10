@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { useApi } from '../../api/client'
-import { fetchAll } from '../../api/fetchAll'
-import type { components } from '../../api/schema'
-import { apiError } from '../../utils/apiError'
+import { useApi } from '../../../api/client'
+import { fetchAll } from '../../../api/fetchAll'
+import type { components } from '../../../api/schema'
+import { apiError } from '../../../utils/apiError'
 
 type Crawl = components['schemas']['CrawlOut']
 type Article = components['schemas']['CrawlArticleOut']

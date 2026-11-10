@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui'
-import { useApi } from '../../api/client'
-import type { components } from '../../api/schema'
+import { useApi } from '../../../api/client'
+import type { components } from '../../../api/schema'
 
 type RunOut = components['schemas']['RunOut']
 type Failure = components['schemas']['FailureOut']
