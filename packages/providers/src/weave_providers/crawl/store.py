@@ -182,7 +182,7 @@ def _crawl_page(engine, candidate: Candidate, language: str, fetcher: Fetcher, n
             report.duplicates += 1
             return dict(status='duplicate', reason=f'duplicate of {dup}', document_id=dup, fetched=True)
         conn.execute(sa.insert(documents).values(
-            id=doc_id, provider=PROVIDER, external_id=external_id, language=language,
+            id=doc_id, article_id=doc_id, provider=PROVIDER, external_id=external_id, language=language,
             title=result.title, byline=result.byline, outlet=candidate.outlet, url=candidate.url,
             published_at=published, text=result.text, token_offsets=tokens, sentence_offsets=sentences,
             content_hash=digest,

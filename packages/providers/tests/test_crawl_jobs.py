@@ -19,7 +19,7 @@ def test_claim_reclaim_and_owner_writes(database_url):
     assert first.id == crawl_id and first.request.sites[0].domain == "example.com"
     assert claim_crawl(engine, now) is None
     with engine.begin() as conn:
-        conn.execute(sa.text("insert into documents (id, provider, external_id, language, title, byline, outlet, url, text, token_offsets, sentence_offsets, content_hash) values ('d', 'p', 'e', 'en', 'title', '', 'outlet', 'https://example.com/a', 'body', '[]', '[]', 'hash')"))
+        conn.execute(sa.text("insert into documents (id, article_id, provider, external_id, language, title, byline, outlet, url, text, token_offsets, sentence_offsets, content_hash) values ('d', 'd', 'p', 'e', 'en', 'title', '', 'outlet', 'https://example.com/a', 'body', '[]', '[]', 'hash')"))
     outcome = dict(canonical_url="https://example.com/a", url="https://example.com/a", outlet="example.com", status="stored", document_id="d", fetched=True)
     assert record_article(engine, crawl_id, first.token, outcome)
     assert record_article(engine, crawl_id, first.token, outcome)
@@ -94,7 +94,7 @@ def test_successful_retries_clear_previous_failure_details(database_url):
     crawl_id = create_crawl(engine, CrawlRequest(sites=[{"domain": "example.com", "language": "en"}]))
     claim = claim_crawl(engine, datetime.now(timezone.utc))
     with engine.begin() as conn:
-        conn.execute(sa.text("insert into documents (id, provider, external_id, language, title, byline, outlet, url, text, token_offsets, sentence_offsets, content_hash) values ('d', 'p', 'e', 'en', 'title', '', 'outlet', 'https://example.com/a', 'body', '[]', '[]', 'hash')"))
+        conn.execute(sa.text("insert into documents (id, article_id, provider, external_id, language, title, byline, outlet, url, text, token_offsets, sentence_offsets, content_hash) values ('d', 'd', 'p', 'e', 'en', 'title', '', 'outlet', 'https://example.com/a', 'body', '[]', '[]', 'hash')"))
     article = dict(canonical_url="https://example.com/a", url="https://example.com/a", outlet="example.com", status="error", reason="temporary")
     record_article(engine, crawl_id, claim.token, article)
     record_article(engine, crawl_id, claim.token, {k: v for k, v in {**article, "status": "stored", "document_id": "d", "fetched": True}.items() if k != "reason"})

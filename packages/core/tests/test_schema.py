@@ -37,7 +37,7 @@ def test_migration_creates_ledger_and_run_deployments(database_url):
     assert insp.get_pk_constraint("run_deployments")["constrained_columns"] == ["run_id", "deployment"]
     cfg = Config()
     cfg.set_main_option("script_location", str(Path(weave_core.__file__).parent / "migrations"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["0008_crawls"]
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0009_library"]
 
 
 def test_documents_have_order_key_and_no_gold_columns(database_url):
@@ -95,8 +95,8 @@ def test_member_vector_roundtrip(database_url):
     from weave_core.schema import documents, enrichments, member_vectors, mentions
     engine = make_engine(database_url)
     with engine.begin() as c:
-        c.execute(sa.text("insert into documents (id, provider, external_id, language, title, byline, outlet, url, text,"
-                          " token_offsets, sentence_offsets, content_hash) values ('d','p','e','en','t','b','o','u','x','[]','[]','h')"))
+        c.execute(sa.text("insert into documents (id, article_id, provider, external_id, language, title, byline, outlet, url, text,"
+                          " token_offsets, sentence_offsets, content_hash) values ('d','d','p','e','en','t','b','o','u','x','[]','[]','h')"))
         c.execute(sa.text("insert into mentions (id, document_id, start, \"end\", tok_start, tok_end, sentence, text, extractor,"
                           " extractor_version) values ('m','d',0,1,0,1,0,'x','x','1')"))
         c.execute(sa.text("insert into enrichments (id, mention_id) values ('e','m')"))
@@ -126,4 +126,4 @@ def test_crawl_migration_preserves_existing_tables(database_url):
     assert inspector.get_pk_constraint("crawl_articles")["constrained_columns"] == ["crawl_id", "canonical_url"]
     assert inspector.get_pk_constraint("crawl_sources")["constrained_columns"] == ["crawl_id", "url"]
     with engine.connect() as conn:
-        assert conn.scalar(sa.text("select version_num from alembic_version")) == "0008_crawls"
+        assert conn.scalar(sa.text("select version_num from alembic_version")) == "0009_library"

@@ -39,7 +39,7 @@ def seed(engine, rows):
     for key, order_key, provider, lang, outlet, when, url in rows:
         text = f"text {key}"
         recs.append({
-            "id": f"{provider}:{key}", "provider": provider, "external_id": key, "language": lang,
+            "id": f"{provider}:{key}", "article_id": f"{provider}:{key}", "provider": provider, "external_id": key, "language": lang,
             "title": "", "byline": "", "outlet": outlet, "url": url, "published_at": when,
             "text": text, "token_offsets": [], "sentence_offsets": [],
             "content_hash": content_hash(text), "order_key": list(order_key)})
