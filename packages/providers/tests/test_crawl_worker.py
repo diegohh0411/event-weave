@@ -397,3 +397,20 @@ def test_backfill_stored_articles_do_not_consume_daily_cap(engine, monkeypatch):
     monkeypatch.setattr(worker, 'crawl', lambda *args, **kwargs: received.append(kwargs['caps']))
     worker.process_claim(engine, claim, Event(), fetcher_factory=factory(), min_interval=0)
     assert received == [{'Example': 1}]
+
+
+def test_consume_cap_excludes_backfill_articles(engine):
+    from uuid import uuid4
+    from weave_core.schema import sites
+    site_id = uuid4()
+    now = datetime.now(timezone.utc)
+    with engine.begin() as conn:
+        conn.execute(sites.insert().values(id=site_id, name='Example', domain='example.test', language='en', daily_cap=1))
+    old = create_crawl(engine, request(), site_id=site_id)
+    with engine.begin() as conn:
+        conn.execute(crawl_runs.update().where(crawl_runs.c.id == old).values(status='completed', trigger='backfill'))
+        conn.execute(crawl_articles.insert().values(crawl_id=old, canonical_url=BASE+'/old', url=BASE+'/old', outlet='Example', status='stored', fetched=True, updated_at=now))
+    create_crawl(engine, request(), site_id=site_id)
+    worker.process_claim(engine, claim_crawl(engine, now), Event(), fetcher_factory=factory(), min_interval=0)
+    with engine.connect() as conn:
+        assert conn.scalar(sa.select(sa.func.count()).select_from(documents)) == 1

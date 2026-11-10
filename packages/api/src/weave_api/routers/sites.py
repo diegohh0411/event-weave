@@ -145,9 +145,8 @@ def update_site(site_id: UUID, body: SitePatch, engine: Engine) -> SiteOut:
                 validate_backfill(values.get('backfill_mode', row.backfill_mode), values.get('backfill_from', row.backfill_from))
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
-            if any(k in values and values[k] != getattr(row, k) for k in ('backfill_mode', 'backfill_from')):
-                conn.execute(backfill_urls.delete().where(backfill_urls.c.site_id == site_id))
-                conn.execute(backfill_sitemaps.delete().where(backfill_sitemaps.c.site_id == site_id))
+            if row.backfill_state in ('running', 'paused') and any(k in values for k in ('backfill_mode', 'backfill_from')):
+                raise HTTPException(409, 'cancel backfill before changing settings')
             now = datetime.now(timezone.utc)
             if 'check_every_minutes' in values and values['check_every_minutes'] != row.check_every_minutes:
                 values['next_check_at'] = (row.last_scheduled_at or now) + timedelta(minutes=values['check_every_minutes'])
@@ -271,6 +270,10 @@ def control_backfill(site_id: UUID, body: BackfillAction, engine: Engine) -> Bac
         now = datetime.now(timezone.utc)
         values = {'backfill_state': {'start': 'running', 'pause': 'paused', 'resume': 'running', 'cancel': 'off'}[body.action]}
         if body.action == 'start':
+            if (row.backfill_mode, row.backfill_from) != (row.backfill_frontier_mode, row.backfill_frontier_from):
+                conn.execute(backfill_urls.delete().where(backfill_urls.c.site_id == site_id))
+                conn.execute(backfill_sitemaps.delete().where(backfill_sitemaps.c.site_id == site_id))
+            values.update(backfill_frontier_mode=row.backfill_mode, backfill_frontier_from=row.backfill_from)
             values.update(backfill_until=now, backfill_started_at=now, backfill_finished_at=None, backfill_error=None)
         if body.action == 'cancel':
             conn.execute(backfill_urls.delete().where(backfill_urls.c.site_id == site_id))
