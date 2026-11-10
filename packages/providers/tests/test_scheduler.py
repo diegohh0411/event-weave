@@ -93,3 +93,41 @@ def test_worker_recovers_after_scheduler_database_error(monkeypatch):
     monkeypatch.setattr(worker, 'claim_crawl', lambda *args: None)
     worker.run_crawl_worker(None, stop, poll_seconds=0, clock=lambda: next(ticks))
     assert len(calls) == 2
+
+
+def test_backfill_and_check_queue_independently_and_prioritize_check(database_url):
+    from weave_providers.crawl.scheduler import schedule_due_backfills
+    from weave_providers.crawl.jobs import claim_crawl
+    engine = make_engine(database_url)
+    now = datetime.now(timezone.utc)
+    site_id = uuid4()
+    with engine.begin() as conn:
+        conn.execute(sites.insert().values(id=site_id, name='archive', domain='archive.test', language='en',
+            backfill_state='running', backfill_mode='all', backfill_until=now))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: schedule_due_backfills(engine, now), range(2)))
+    assert sum(map(len, results)) == 1
+    check = queue_check(engine, site_id)
+    assert claim_crawl(engine, now).id == check
+    assert schedule_due_backfills(engine, now) == []
+    engine.dispose()
+
+
+def test_backfill_scheduler_excludes_paused_disabled_and_exhausted(database_url):
+    from weave_providers.crawl.scheduler import schedule_due_backfills
+    from weave_core.schema import crawl_articles
+    from weave_providers.crawl.jobs import create_crawl
+    from weave_providers.crawl.requests import CrawlRequest
+    engine = make_engine(database_url)
+    now = datetime.now(timezone.utc)
+    paused, disabled, exhausted = [uuid4() for _ in range(3)]
+    with engine.begin() as conn:
+        for id, state, enabled in [(paused, 'paused', True), (disabled, 'running', False), (exhausted, 'running', True)]:
+            conn.execute(sites.insert().values(id=id, name=str(id), domain=f'{id}.test', language='en',
+                enabled=enabled, backfill_state=state, backfill_per_hour=1))
+    run = create_crawl(engine, CrawlRequest(sites=[{'domain': 'example.test', 'language': 'en'}]), site_id=exhausted, trigger='backfill')
+    with engine.begin() as conn:
+        conn.execute(crawl_runs.update().where(crawl_runs.c.id == run).values(status='completed'))
+        conn.execute(crawl_articles.insert().values(crawl_id=run, canonical_url='https://example.test/a', url='https://example.test/a', outlet='example', status='stored', fetched=True, updated_at=now))
+    assert schedule_due_backfills(engine, now) == []
+    engine.dispose()

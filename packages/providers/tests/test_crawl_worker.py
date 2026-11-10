@@ -340,3 +340,21 @@ def test_concurrent_site_crawls_consume_cap_atomically(engine, monkeypatch):
         assert conn.scalar(sa.select(sa.func.count()).select_from(documents)) == 1
         assert conn.scalar(sa.select(sa.func.count()).select_from(crawl_articles).where(crawl_articles.c.status == 'stored')) == 1
         assert conn.scalar(sa.select(sa.func.count()).select_from(crawl_articles).where(crawl_articles.c.reason == 'daily cap reached')) >= 1
+
+
+def test_backfill_worker_completes_and_records_claim_id(engine):
+    from uuid import uuid4
+    from weave_core.schema import sites, backfill_urls
+    from weave_providers.crawl.scheduler import schedule_due_backfills
+    now = datetime.now(timezone.utc)
+    site_id = uuid4()
+    with engine.begin() as conn:
+        conn.execute(sites.insert().values(id=site_id, name='example.test', domain='example.test', language='en',
+            sitemaps=[BASE + '/sitemap.xml'], backfill_state='running', backfill_mode='all', backfill_until=now))
+    crawl_id = schedule_due_backfills(engine, now)[0]
+    claim = claim_crawl(engine, now)
+    worker.process_claim(engine, claim, Event(), fetcher_factory=factory(), min_interval=0)
+    assert status(engine, crawl_id)['status'] == 'completed'
+    with engine.connect() as conn:
+        assert conn.scalar(sa.select(sites.c.backfill_state).where(sites.c.id == site_id)) == 'done'
+        assert conn.scalars(sa.select(backfill_urls.c.crawl_id)).all() == [crawl_id, crawl_id]
