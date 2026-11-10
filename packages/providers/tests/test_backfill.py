@@ -265,3 +265,17 @@ def test_concurrent_batches_recheck_budget_without_locking_site(database_url, mo
         second.result(timeout=10)
     assert len(calls) == 1
     engine.dispose()
+
+
+def test_scan_continues_into_children_found_in_same_job(database_url):
+    engine = sa.create_engine(database_url)
+    site = SimpleNamespace(id=uuid.uuid4(), name='example', domain='example.com', language='en', sitemaps=[BASE+'index'], feeds=[], backfill_mode='all', backfill_from=None, backfill_until=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    with engine.begin() as c:
+        c.execute(sites.insert().values(id=site.id, name=site.name, domain=site.domain, language='en'))
+    index = f'<sitemapindex xmlns="{NS}"><sitemap><loc>{BASE}a</loc></sitemap><sitemap><loc>{BASE}b</loc></sitemap></sitemapindex>'
+    empty = f'<urlset xmlns="{NS}"></urlset>'
+    f = FixtureFetcher({BASE+'index': fetched(index), BASE+'a': fetched(empty), BASE+'b': fetched(empty)})
+    seed_frontier(engine, site, f)
+    scan_sitemaps(engine, site, f, 5, lambda: False)
+    assert f.calls == [BASE+'index', BASE+'a', BASE+'b']
+    engine.dispose()

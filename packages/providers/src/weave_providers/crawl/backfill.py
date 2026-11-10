@@ -43,12 +43,15 @@ def scan_sitemaps(engine, site, fetcher, limit, cancelled, write_guard=None, run
 def _scan_locked(engine, site, fetcher, limit, cancelled, write_guard, running, cap, start):
     from defusedxml import DefusedXmlException  # extra `crawl`; the API imports this module without it
 
-    with engine.begin() as conn:
-        rows = conn.execute(sa.select(backfill_sitemaps).where(
-            backfill_sitemaps.c.site_id == site.id, backfill_sitemaps.c.status == 'pending'
-        ).order_by(backfill_sitemaps.c.depth, backfill_sitemaps.c.url).limit(limit)).mappings().all()
-    for row in rows:
+    # Claim one row at a time so children found by this scan can be scanned in the same job.
+    for _ in range(limit):
         if cancelled() or not running():
+            break
+        with engine.begin() as conn:
+            row = conn.execute(sa.select(backfill_sitemaps).where(
+                backfill_sitemaps.c.site_id == site.id, backfill_sitemaps.c.status == 'pending'
+            ).order_by(backfill_sitemaps.c.depth, backfill_sitemaps.c.url).limit(1)).mappings().first()
+        if row is None:
             break
         got = fetcher.fetch(row['url'])
         if cancelled():
