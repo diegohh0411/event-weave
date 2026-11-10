@@ -5,7 +5,6 @@ from datetime import datetime, time, timezone
 from types import SimpleNamespace
 
 import sqlalchemy as sa
-from defusedxml import DefusedXmlException
 from sqlalchemy.dialects.postgresql import insert
 
 from weave_core.schema import backfill_sitemaps, backfill_urls, sites
@@ -42,6 +41,8 @@ def scan_sitemaps(engine, site, fetcher, limit, cancelled, write_guard=None, run
 
 
 def _scan_locked(engine, site, fetcher, limit, cancelled, write_guard, running, cap, start):
+    from defusedxml import DefusedXmlException  # extra `crawl`; the API imports this module without it
+
     with engine.begin() as conn:
         rows = conn.execute(sa.select(backfill_sitemaps).where(
             backfill_sitemaps.c.site_id == site.id, backfill_sitemaps.c.status == 'pending'
