@@ -6,6 +6,10 @@ const one = (prop: Record<string, unknown>, key = 'f') =>
   fieldsFromSchema({ type: 'object', properties: { [key]: prop } })[0]!
 
 describe('fieldsFromSchema', () => {
+  it('hides specified fields', () => {
+    expect(fieldsFromSchema({ properties: { crawl_id: { type: 'string' }, search: { type: 'string' } } }, ['crawl_id']).map(f => f.key)).toEqual(['search'])
+  })
+
   it('maps strings, integers, numbers and booleans', () => {
     expect(one({ type: 'string', title: 'Name', default: 'x' })).toMatchObject({ key: 'f', label: 'Name', kind: 'text', nullable: false, default: 'x' })
     expect(one({ type: 'integer' })).toMatchObject({ kind: 'int', label: 'f' })

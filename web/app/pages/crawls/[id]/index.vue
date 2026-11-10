@@ -78,7 +78,7 @@ const robots = computed(() => Object.entries(crawl.value?.counters.reasons ?? {}
           </p>
         </template>
         <template #actions>
-          <UButton v-if="crawl.status === 'completed'" :to="`/?crawl_id=${crawl.id}`" size="lg">Use crawl in a new run</UButton>
+          <UButton v-if="crawl.status === 'completed'" :to="{ path: '/library', query: { outlets: crawl.request.sites.map(s => s.name || s.domain) } }" size="lg">View in library</UButton>
         </template>
       </PageHeader>
 

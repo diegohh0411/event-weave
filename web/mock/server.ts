@@ -42,6 +42,11 @@ function seedHash(text: string) {
 }
 // Query filters the real routes support, applied to the fixture rows before paging.
 const filters: Record<string, (item: Row, q: URLSearchParams) => boolean> = {
+  'GET /library/documents': (i, q) => (!q.getAll('outlets').length || q.getAll('outlets').includes(String(i.outlet)))
+    && (!q.getAll('languages').length || q.getAll('languages').includes(String(i.language)))
+    && (!q.get('search') || String(i.title).toLowerCase().includes(q.get('search')!.toLowerCase()))
+    && (!q.get('published_from') || String(i.published_at ?? '') >= q.get('published_from')!)
+    && (!q.get('published_to') || (!!i.published_at && String(i.published_at) < q.get('published_to')!)),
   'GET /adapters': (i, q) => !q.get('stage') || i.stage === q.get('stage'),
   'GET /deployments': (i, q) => (!q.get('capability') || i.capability === q.get('capability'))
     && (!q.get('ready') || String(i.ready) === q.get('ready')),
@@ -141,6 +146,11 @@ export function respond(method: string, pathname: string, query: URLSearchParams
     }
     if (route.template === '/compare' && query.getAll('run_id').length === 0) {
       return { status: 422, body: validation('run_id', 'Field required', 'missing', null) }
+    }
+    if (route.template === '/library/facets') {
+      const docs = (fixtures['GET /library/documents']![0]!.body as { items: Row[] }).items.filter(i => filters['GET /library/documents']!(i, query))
+      const counts = (key: string) => [...new Set(docs.map(d => String(d[key])))].sort().map(value => ({ value, count: docs.filter(d => d[key] === value).length }))
+      return { status: 200, body: { outlets: counts('outlet'), languages: counts('language'), total: docs.length } }
     }
     const fixture = pick(route, params, query, body)
     if (!fixture) {

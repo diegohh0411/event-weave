@@ -6,7 +6,8 @@ import RunPage from '../../app/pages/runs/[id]/index.vue'
 import { createMockHandler } from '../../mock/server'
 import { runCancelled, runLlm, runNew, runPaper } from '../../mock/fixtures/runs'
 
-const { add } = vi.hoisted(() => ({ add: vi.fn() }))
+const { add, navigateTo } = vi.hoisted(() => ({ add: vi.fn(), navigateTo: vi.fn() }))
+mockNuxtImport('navigateTo', () => navigateTo)
 mockNuxtImport('useToast', () => () => ({ add }))
 
 type Override = (req: Request) => Response | undefined
@@ -57,7 +58,34 @@ describe('runs list', () => {
 })
 
 describe('run page', () => {
-  it('shows_only_valid_action', async () => {
+  it('shows the snapshot and posts each rerun mode', async () => {
+    const bodies: unknown[] = []
+    const handler = createMockHandler()
+    vi.stubGlobal('fetch', async (input: Request | string, init?: RequestInit) => {
+      const req = input instanceof Request ? input : new Request(input, init)
+      if (new URL(req.url).pathname.endsWith('/rerun')) { bodies.push(await req.clone().json()); return json({ run_id: runNew.id, config_hash: 'hash', estimate: null }, 201) }
+      if (new URL(req.url).pathname === `/runs/${runPaper.id}`) return json({ ...runPaper, snapshot: { documents: 312, as_of: '2026-11-01T00:00:00Z' } })
+      return handler(req)
+    })
+    const w = await mountRun(runPaper.id)
+    expect(w.text()).toContain('312 documents, library as of')
+    await w.findAll('button').find(b => b.text().includes('Re-run snapshot'))!.trigger('click')
+    await vi.waitFor(() => expect(navigateTo).toHaveBeenCalled())
+    await w.findAll('button').find(b => b.text().includes('Re-run current'))!.trigger('click')
+    await vi.waitFor(() => expect(bodies).toHaveLength(2))
+    expect(bodies).toEqual([{ mode: 'snapshot' }, { mode: 'current' }])
+    expect(navigateTo).toHaveBeenCalledWith(`/runs/${runNew.id}`)
+  })
+
+  it('shows source and snapshot differences for a current rerun', async () => {
+    overrides.push(r => new URL(r.url).pathname === `/runs/${runPaper.id}` ? json({ ...runPaper, source_run_id: runLlm.id, rerun_mode: 'current', crawl_scoped: true }) : undefined)
+    const w = await mountRun(runPaper.id)
+    await vi.waitFor(() => expect(w.text()).toContain('vs source run: +2 added, −1 removed, 3 new versions'))
+    expect(w.text()).toContain('Crawl-scoped')
+    expect(w.find(`a[href="/runs/${runLlm.id}"]`).text()).toBe('Source run')
+  })
+
+  it('shows_only_valid_action'  , async () => {
     expect(labels(await mountRun(runNew.id))).toEqual(['Start'])
     expect(labels(await mountRun(runLlm.id))).toEqual(['Cancel'])
     expect(labels(await mountRun(runCancelled.id))).toEqual(['Resume'])

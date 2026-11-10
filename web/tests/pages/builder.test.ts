@@ -49,27 +49,16 @@ const button = (w: Awaited<ReturnType<typeof mountBuilder>>, label: string) =>
   w.findAll('button').find(b => b.text().includes(label))!
 
 describe('builder page', () => {
-  it('hands a crawl to replay on the realistic track without launching and requires validation', async () => {
-    const bodies: unknown[] = []
-    const handler = createMockHandler()
-    vi.stubGlobal('fetch', async (input: Request | string, init?: RequestInit) => {
-      const req = input instanceof Request ? input : new Request(input, init)
-      calls.push(`${req.method} ${new URL(req.url).pathname}`)
-      if (req.method === 'POST') bodies.push(await req.clone().json())
-      return handler(req)
-    })
+  it('ignores crawl IDs and previews matching library documents', async () => {
     const w = await mountSuspended(Builder, { route: `/?crawl_id=${CRAWL_STORED}` })
     mounted.push(w)
     await vi.waitFor(() => expect(w.text()).not.toContain('Loading'))
-    expect(w.text()).toContain(CRAWL_STORED)
-    expect(w.text()).toContain('realistic')
-    expect(w.text()).toContain('replay')
-    expect(button(w, 'Launch').attributes('disabled')).toBeDefined()
-    expect(calls.some(c => c.startsWith('POST'))).toBe(false)
-    await button(w, 'Validate').trigger('click')
-    await vi.waitFor(() => expect(bodies.length).toBe(2))
-    expect(bodies[0]).toMatchObject({ track: 'realistic', stages: { provide: { adapter: 'replay', settings: { crawl_id: CRAWL_STORED } } } })
-    expect(calls).not.toContain('POST /runs')
+    const provider = w.findAllComponents({ name: 'USelect' }).find(c => (c.props('items') as { value: string }[]).some(i => i.value === 'replay'))!
+    provider.vm.$emit('update:modelValue', 'replay')
+    await vi.waitFor(() => expect(w.text()).toContain('documents match'))
+    expect(w.text()).not.toContain('Using crawl')
+    expect(w.text()).not.toContain(CRAWL_STORED)
+    expect(calls).toContain('GET /library/facets')
   })
 
   it('reprobes deployments and displays failures', async () => {

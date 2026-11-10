@@ -11,6 +11,7 @@ const isActive = (to: string) => route.path === to || route.path.startsWith(`${t
 // A section is highlighted only when no recent item below already marks where you are.
 const inRecents = computed(() => !props.collapsed && [...runs.value, ...crawls.value].some(r => isActive(r.to)))
 const nav = computed(() => [
+  { label: 'Library', icon: 'i-lucide-library', to: '/library' },
   { label: 'Crawls', icon: 'i-lucide-radar', to: '/crawls' },
   { label: 'Runs', icon: 'i-lucide-workflow', to: '/runs' },
   { label: 'Compare', icon: 'i-lucide-chart-column', to: '/compare' }

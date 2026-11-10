@@ -10,8 +10,6 @@ type AdapterOut = components['schemas']['AdapterOut']
 type EstimateOut = components['schemas']['EstimateOut']
 
 const api = useApi()
-const route = useRoute()
-const crawlId = computed(() => typeof route.query.crawl_id === 'string' ? route.query.crawl_id : '')
 const NONE = '__none__'
 const STAGE_LABEL: Record<Stage, string> = {
   provide: 'Provider', extract: 'Extract', tag: 'Tag', enrich: 'Enrich', embed: 'Embed', cluster: 'Cluster'
@@ -31,7 +29,7 @@ const loading = ref(true)
 const loadError = ref<string>()
 
 const name = ref('my-run')
-const track = ref<'paper' | 'realistic'>(crawlId.value ? 'realistic' : 'paper')
+const track = ref<'paper' | 'realistic'>('paper')
 const seed = ref(0)
 const chosen = reactive<Record<Stage, string | undefined>>({ provide: undefined, extract: undefined, tag: undefined, enrich: undefined, embed: undefined, cluster: undefined })
 const settings = reactive<Record<Stage, Record<string, unknown>>>({ provide: {}, extract: {}, tag: {}, enrich: {}, embed: {}, cluster: {} })
@@ -40,7 +38,7 @@ const jsonInvalid = reactive<Record<Stage, boolean>>({ provide: false, extract: 
 
 const adapterFor = (stage: Stage) => adapters.value.find(a => a.stage === stage && a.name === chosen[stage])
 const optionsFor = (stage: Stage) => adapters.value.filter(a => a.stage === stage)
-const fieldsFor = (stage: Stage) => fieldsFromSchema(adapterFor(stage)?.settings_schema ?? {})
+const fieldsFor = (stage: Stage) => fieldsFromSchema(adapterFor(stage)?.settings_schema ?? {}, stage === 'provide' ? ['crawl_id'] : [])
 
 function setAdapter(stage: Stage, value: string | undefined) {
   const next = value === NONE ? undefined : value
@@ -62,11 +60,6 @@ async function load() {
     deployments.value = d
     for (const stage of STAGES) {
       if (stage !== 'tag' && !chosen[stage]) chosen[stage] = optionsFor(stage)[0]?.name
-    }
-    if (crawlId.value && optionsFor('provide').some(a => a.name === 'replay')) {
-      chosen.provide = 'replay'
-      settings.provide = { crawl_id: crawlId.value }
-      if (optionsFor('extract').some(a => a.name === 'stanza-srl')) chosen.extract = 'stanza-srl'
     }
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : String(e)
@@ -115,6 +108,25 @@ const state = computed<BuilderState>(() => {
   return { name: name.value, track: track.value, seed: seed.value, stages }
 })
 const config = computed(() => buildRunConfig(state.value))
+const matchCount = ref<number | null>(null)
+const matchError = ref('')
+let facetGeneration = 0
+watch(() => [chosen.provide, settings.provide] as const, async () => {
+  const mine = ++facetGeneration
+  if (chosen.provide !== 'replay') { matchCount.value = null; return }
+  const { outlets, languages, published_from, published_to, search } = settings.provide
+  try {
+    const result = await api.GET('/library/facets', { params: { query: {
+      outlets: Array.isArray(outlets) ? outlets as string[] : undefined,
+      languages: Array.isArray(languages) ? languages as string[] : undefined,
+      published_from: typeof published_from === 'string' ? published_from : undefined,
+      published_to: typeof published_to === 'string' ? published_to : undefined,
+      search: typeof search === 'string' ? search : undefined
+    } } })
+    if (!result.data) throw new Error(apiError(result.error))
+    if (mine === facetGeneration) { matchCount.value = result.data.total; matchError.value = '' }
+  } catch (e) { if (mine === facetGeneration) { matchCount.value = null; matchError.value = e instanceof Error ? e.message : String(e) } }
+}, { deep: true, immediate: true })
 
 const problems = ref<string[]>([])
 const estimate = ref<EstimateOut | null>(null)
@@ -185,7 +197,6 @@ async function launch() {
 }
 
 const blocked = computed(() => launching.value || busy.value || probing.value || problems.value.length > 0 || missing.value.length > 0
-  || (crawlId.value && (!validated.value || chosen.provide !== 'replay' || settings.provide.crawl_id !== crawlId.value))
   || Object.values(jsonInvalid).some(Boolean) || !name.value.trim())
 </script>
 
@@ -207,16 +218,6 @@ const blocked = computed(() => launching.value || busy.value || probing.value ||
     <UAlert v-else-if="loadError" color="error" variant="subtle" title="Could not reach the API" :description="loadError" />
 
     <form v-else @submit.prevent="validate">
-      <div v-if="crawlId" class="mb-6 rounded-xl border border-default bg-default p-4 text-sm">
-        <p class="font-semibold text-highlighted">
-          Using crawl <span class="break-all">{{ crawlId }}</span>
-        </p>
-        <p class="mt-1 text-muted">
-          Replay reads only this crawl's documents. Validate the configuration before launch; no run starts on its own.
-        </p>
-      </div>
-      <UAlert v-if="crawlId && !optionsFor('provide').some(a => a.name === 'replay')" class="mb-6" color="error" variant="subtle" title="Replay provider is unavailable" description="The API must offer the replay provider to use this crawl." />
-
       <fieldset :disabled="launching" class="min-w-0 border-0 p-0">
         <div class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <div class="min-w-0 space-y-8">
@@ -275,6 +276,8 @@ const blocked = computed(() => launching.value || busy.value || probing.value ||
                         :fields="fieldsFor(stage)"
                         @update:invalid="(v: boolean) => (jsonInvalid[stage] = v)"
                       />
+                      <p v-if="stage === 'provide' && chosen.provide === 'replay' && matchCount !== null" class="text-sm text-muted">{{ matchCount }} documents match</p>
+                      <p v-if="stage === 'provide' && matchError" class="text-sm text-error">Could not load library count: {{ matchError }}</p>
                       <div v-if="capabilities(stage).length" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <DeploymentPicker
                           v-for="cap in capabilities(stage)"
