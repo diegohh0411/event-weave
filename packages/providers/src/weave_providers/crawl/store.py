@@ -220,10 +220,18 @@ def _crawl_page(engine, candidate: Candidate, language: str, fetcher: Fetcher, n
             content_hash=digest, text_hash=edit_hash(result.title, result.text),
             order_key=[int(published.timestamp()) if published else UNDATED_ORDER]))
         _upsert_page(conn, candidate, now, "stored", None, raw, doc_id)
+        _schedule_first_recheck(conn, candidate.url, now)
         if consume_cap:
             consume_cap(conn, candidate, doc_id, record=True)
     report.stored += 1
     return dict(status="stored", reason=None, document_id=doc_id, fetched=True)
+
+
+def _schedule_first_recheck(conn, canonical: str, now: datetime) -> None:
+    from weave_providers.crawl.recheck import next_due, recheck_days
+    now = now.astimezone(timezone.utc)
+    conn.execute(crawled_pages.update().where(crawled_pages.c.canonical_url == canonical).values(
+        first_fetched_at=now, recheck_stage=0, recheck_attempts=0, recheck_due_at=next_due(now, 0, recheck_days())))
 
 
 def _record(engine, candidate, now, reason, raw, rejected: Counter, count_as: str | None = None,
@@ -270,20 +278,33 @@ def _refetch(engine, candidate, fetcher, now, report, cancelled, write_guard, do
     with engine.begin() as conn:
         if write_guard:
             write_guard(conn)
-        old = conn.execute(sa.select(documents).where(documents.c.id == doc_id).with_for_update()).mappings().one()
-        digest = edit_hash(result.title, result.text)
-        if digest == old["text_hash"]:
-            conn.execute(documents.update().where(documents.c.id == doc_id).values(byline=result.byline, published_at=result.published_at))
-            _upsert_page(conn, candidate, now, "stored", None, raw, doc_id)
-            report.unchanged += 1
-            return dict(status="unchanged", reason=None, document_id=doc_id, fetched=True)
-        version = old["version"] + 1
-        new_id = f'{old["article_id"]}@v{version}'
-        tokens, sentences = tokenize(result.text)
-        values = dict(old)
-        values.update(id=new_id, version=version, superseded_at=None, title=result.title, text=result.text, byline=result.byline, published_at=result.published_at, text_hash=digest, content_hash=content_hash(result.text), token_offsets=tokens, sentence_offsets=sentences, order_key=[int(result.published_at.timestamp()) if result.published_at else UNDATED_ORDER])
-        conn.execute(documents.update().where(documents.c.id == doc_id).values(superseded_at=now))
-        conn.execute(documents.insert().values(**values))
-        _upsert_page(conn, candidate, now, "stored", None, raw, new_id)
-    report.updated += 1
-    return dict(status="updated", reason=None, document_id=new_id, fetched=True)
+        status, current = apply_text(conn, candidate, result, raw, now, doc_id)
+    if status == "unchanged":
+        report.unchanged += 1
+    else:
+        report.updated += 1
+    return dict(status=status, reason=None, document_id=current, fetched=True)
+
+
+def apply_text(conn, candidate, result, raw, now, doc_id, url=None):
+    """Store a re-fetched extraction: in place when the text is the same, else as a new version."""
+    old = conn.execute(sa.select(documents).where(documents.c.id == doc_id).with_for_update()).mappings().one()
+    digest = edit_hash(result.title, result.text)
+    url = url or old["url"]
+    if digest == old["text_hash"]:
+        conn.execute(documents.update().where(documents.c.id == doc_id).values(
+            byline=result.byline, published_at=result.published_at, url=url))
+        _upsert_page(conn, candidate, now, "stored", None, raw, doc_id)
+        return "unchanged", doc_id
+    version = old["version"] + 1
+    new_id = f'{old["article_id"]}@v{version}'
+    tokens, sentences = tokenize(result.text)
+    values = dict(old)
+    values.update(id=new_id, version=version, superseded_at=None, title=result.title, text=result.text,
+                  byline=result.byline, published_at=result.published_at, url=url, text_hash=digest,
+                  content_hash=content_hash(result.text), token_offsets=tokens, sentence_offsets=sentences,
+                  order_key=[int(result.published_at.timestamp()) if result.published_at else UNDATED_ORDER])
+    conn.execute(documents.update().where(documents.c.id == doc_id).values(superseded_at=now))
+    conn.execute(documents.insert().values(**values))
+    _upsert_page(conn, candidate, now, "stored", None, raw, new_id)
+    return "updated", new_id
