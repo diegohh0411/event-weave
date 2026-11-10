@@ -37,7 +37,7 @@ def test_migration_creates_ledger_and_run_deployments(database_url):
     assert insp.get_pk_constraint("run_deployments")["constrained_columns"] == ["run_id", "deployment"]
     cfg = Config()
     cfg.set_main_option("script_location", str(Path(weave_core.__file__).parent / "migrations"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["0011_sites"]
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0012_backfill"]
 
 
 def test_documents_have_order_key_and_no_gold_columns(database_url):
@@ -126,7 +126,7 @@ def test_crawl_migration_preserves_existing_tables(database_url):
     assert inspector.get_pk_constraint("crawl_articles")["constrained_columns"] == ["crawl_id", "canonical_url"]
     assert inspector.get_pk_constraint("crawl_sources")["constrained_columns"] == ["crawl_id", "url"]
     with engine.connect() as conn:
-        assert conn.scalar(sa.text("select version_num from alembic_version")) == "0011_sites"
+        assert conn.scalar(sa.text("select version_num from alembic_version")) == "0012_backfill"
 
 
 def test_sites_constraints_and_document_versions(database_url):
