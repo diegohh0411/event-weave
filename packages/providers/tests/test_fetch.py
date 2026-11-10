@@ -203,9 +203,6 @@ class Redirecting:
         return Fetched(url, 200, "<html>secret</html>", None, self.final_url)
 
 
-def test_redirect_to_other_origin_is_discarded():
-    pf, _ = polite(Redirecting("https://elsewhere.com/a"))
-    assert pf.fetch("https://ex.com/a") == Fetched("https://ex.com/a", 0, None, "robots disallowed")
 
 
 def test_redirect_to_disallowed_path_is_discarded():
@@ -414,3 +411,32 @@ def test_robots_environment_defaults_disabled_and_rejects_typos(monkeypatch):
     import pytest
     with pytest.raises(ValueError):
         respect_robots_from_env()
+
+
+def test_offsite_redirect_distinct_from_robots():
+    from weave_providers.crawl.fetch import REDIRECTED_AWAY
+    inner = FixtureFetcher({"https://ex.com/robots.txt": ROBOTS,
+                            "https://ex.com/x": redirect("https://ex.com/x", "https://b.com/y")})
+    pf, _ = polite(inner)
+    got = pf.fetch("https://ex.com/x")
+    assert (got.error, got.final_url) == (REDIRECTED_AWAY, "https://b.com/y")
+    assert "https://b.com/y" not in inner.calls
+    inner = FixtureFetcher({"https://ex.com/robots.txt": ROBOTS,
+                            "https://ex.com/x": redirect("https://ex.com/x", "https://ex.com/private")})
+    pf, _ = polite(inner)
+    assert pf.fetch("https://ex.com/x").error == "robots disallowed"
+
+
+def test_browser_offsite_final_url_is_redirected_away():
+    from weave_providers.crawl.fetch import REDIRECTED_AWAY
+    pf, _ = polite(Redirecting("https://elsewhere.com/a"))
+    assert pf.fetch("https://ex.com/a") == Fetched("https://ex.com/a", 0, None, REDIRECTED_AWAY, "https://elsewhere.com/a")
+
+
+def test_same_domain_redirect_keeps_final_url():
+    inner = FixtureFetcher({"https://ex.com/robots.txt": ROBOTS,
+                            "https://ex.com/old": redirect("https://ex.com/old", "https://ex.com/new-slug"),
+                            "https://ex.com/new-slug": page("https://ex.com/new-slug")})
+    pf, _ = polite(inner)
+    got = pf.fetch("https://ex.com/old")
+    assert (got.status, got.final_url) == (200, "https://ex.com/new-slug")
