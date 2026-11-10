@@ -904,7 +904,8 @@
               "adhoc",
               "manual",
               "schedule",
-              "backfill"
+              "backfill",
+              "recheck"
             ],
             "title": "Trigger",
             "type": "string"
@@ -1552,6 +1553,30 @@
             "title": "Language",
             "type": "string"
           },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "next_check_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Check At"
+          },
           "outlet": {
             "title": "Outlet",
             "type": "string"
@@ -1567,6 +1592,29 @@
               }
             ],
             "title": "Published At"
+          },
+          "removed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Removed At"
+          },
+          "removed_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Removed Reason"
           },
           "title": {
             "title": "Title",
@@ -1624,6 +1672,30 @@
             "title": "Language",
             "type": "string"
           },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "next_check_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Check At"
+          },
           "outlet": {
             "title": "Outlet",
             "type": "string"
@@ -1639,6 +1711,36 @@
               }
             ],
             "title": "Published At"
+          },
+          "rechecks": {
+            "items": {
+              "$ref": "#/components/schemas/RecheckOut"
+            },
+            "title": "Rechecks",
+            "type": "array"
+          },
+          "removed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Removed At"
+          },
+          "removed_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Removed Reason"
           },
           "text": {
             "title": "Text",
@@ -1673,13 +1775,21 @@
           "versions",
           "byline",
           "text",
-          "history"
+          "history",
+          "rechecks"
         ],
         "title": "LibraryDocumentDetail",
         "type": "object"
       },
       "LibraryFacets": {
         "properties": {
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/Facet"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
           "languages": {
             "items": {
               "$ref": "#/components/schemas/Facet"
@@ -1702,6 +1812,7 @@
         "required": [
           "outlets",
           "languages",
+          "changes",
           "total"
         ],
         "title": "LibraryFacets",
@@ -2263,6 +2374,158 @@
         "title": "Progress",
         "type": "object"
       },
+      "RecheckOut": {
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "final_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Url"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
+          },
+          "outcome": {
+            "enum": [
+              "unchanged",
+              "edited",
+              "gone",
+              "redirected",
+              "error"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "checked_at",
+          "stage",
+          "outcome",
+          "http_status",
+          "final_url",
+          "reason",
+          "document_id"
+        ],
+        "title": "RecheckOut",
+        "type": "object"
+      },
+      "RecheckOutcomes": {
+        "properties": {
+          "edited": {
+            "title": "Edited",
+            "type": "integer"
+          },
+          "error": {
+            "title": "Error",
+            "type": "integer"
+          },
+          "gone": {
+            "title": "Gone",
+            "type": "integer"
+          },
+          "redirected": {
+            "title": "Redirected",
+            "type": "integer"
+          },
+          "unchanged": {
+            "title": "Unchanged",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unchanged",
+          "edited",
+          "gone",
+          "redirected",
+          "error"
+        ],
+        "title": "RecheckOutcomes",
+        "type": "object"
+      },
+      "RecheckSummary": {
+        "properties": {
+          "by_outcome": {
+            "$ref": "#/components/schemas/RecheckOutcomes"
+          },
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "due_now": {
+            "title": "Due Now",
+            "type": "integer"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "scheduled": {
+            "title": "Scheduled",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "due_now",
+          "scheduled",
+          "done",
+          "by_outcome",
+          "last_checked_at"
+        ],
+        "title": "RecheckSummary",
+        "type": "object"
+      },
       "RerunIn": {
         "properties": {
           "mode": {
@@ -2822,6 +3085,11 @@
             "default": 3,
             "title": "Per Day"
           },
+          "recheck_backfilled": {
+            "default": true,
+            "title": "Recheck Backfilled",
+            "type": "boolean"
+          },
           "sitemaps": {
             "items": {
               "type": "string"
@@ -2995,6 +3263,11 @@
             ],
             "default": 3,
             "title": "Per Day"
+          },
+          "recheck_backfilled": {
+            "default": true,
+            "title": "Recheck Backfilled",
+            "type": "boolean"
           },
           "sitemaps": {
             "items": {
@@ -3192,6 +3465,17 @@
               }
             ],
             "title": "Per Day"
+          },
+          "recheck_backfilled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recheck Backfilled"
           },
           "sitemaps": {
             "anyOf": [
@@ -4164,6 +4448,30 @@
           },
           {
             "in": "query",
+            "name": "change",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "edited",
+                      "removed",
+                      "unchanged"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Change"
+            }
+          },
+          {
+            "in": "query",
             "name": "offset",
             "required": false,
             "schema": {
@@ -4359,6 +4667,30 @@
                 }
               ],
               "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "change",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "edited",
+                      "removed",
+                      "unchanged"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Change"
             }
           }
         ],
@@ -5832,7 +6164,8 @@
                     "adhoc",
                     "manual",
                     "schedule",
-                    "backfill"
+                    "backfill",
+                    "recheck"
                   ],
                   "type": "string"
                 },
@@ -5890,6 +6223,47 @@
           }
         },
         "summary": "Site Crawls"
+      }
+    },
+    "/sites/{site_id}/rechecks": {
+      "get": {
+        "description": "Recheck schedule for the site's stored pages, and outcomes from the last 30 days.",
+        "operationId": "get_rechecks_sites__site_id__rechecks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecheckSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Rechecks"
       }
     }
   }

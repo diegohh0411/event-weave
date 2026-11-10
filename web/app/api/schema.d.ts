@@ -608,6 +608,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sites/{site_id}/rechecks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Rechecks
+         * @description Recheck schedule for the site's stored pages, and outcomes from the last 30 days.
+         */
+        get: operations["get_rechecks_sites__site_id__rechecks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -904,7 +924,7 @@ export interface components {
              * Trigger
              * @enum {string}
              */
-            trigger: "adhoc" | "manual" | "schedule" | "backfill";
+            trigger: "adhoc" | "manual" | "schedule" | "backfill" | "recheck";
         };
         /** CrawlRequest */
         CrawlRequest: {
@@ -1101,10 +1121,18 @@ export interface components {
             id: string;
             /** Language */
             language: string;
+            /** Last Checked At */
+            last_checked_at?: string | null;
+            /** Next Check At */
+            next_check_at?: string | null;
             /** Outlet */
             outlet: string;
             /** Published At */
             published_at: string | null;
+            /** Removed At */
+            removed_at?: string | null;
+            /** Removed Reason */
+            removed_reason?: string | null;
             /** Title */
             title: string;
             /** Url */
@@ -1126,10 +1154,20 @@ export interface components {
             id: string;
             /** Language */
             language: string;
+            /** Last Checked At */
+            last_checked_at?: string | null;
+            /** Next Check At */
+            next_check_at?: string | null;
             /** Outlet */
             outlet: string;
             /** Published At */
             published_at: string | null;
+            /** Rechecks */
+            rechecks: components["schemas"]["RecheckOut"][];
+            /** Removed At */
+            removed_at?: string | null;
+            /** Removed Reason */
+            removed_reason?: string | null;
             /** Text */
             text: string;
             /** Title */
@@ -1143,6 +1181,8 @@ export interface components {
         };
         /** LibraryFacets */
         LibraryFacets: {
+            /** Changes */
+            changes: components["schemas"]["Facet"][];
             /** Languages */
             languages: components["schemas"]["Facet"][];
             /** Outlets */
@@ -1337,6 +1377,54 @@ export interface components {
             queued: number;
             /** Running */
             running: number;
+        };
+        /** RecheckOut */
+        RecheckOut: {
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+            /** Document Id */
+            document_id: string | null;
+            /** Final Url */
+            final_url: string | null;
+            /** Http Status */
+            http_status: number | null;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "unchanged" | "edited" | "gone" | "redirected" | "error";
+            /** Reason */
+            reason: string | null;
+            /** Stage */
+            stage: number;
+        };
+        /** RecheckOutcomes */
+        RecheckOutcomes: {
+            /** Edited */
+            edited: number;
+            /** Error */
+            error: number;
+            /** Gone */
+            gone: number;
+            /** Redirected */
+            redirected: number;
+            /** Unchanged */
+            unchanged: number;
+        };
+        /** RecheckSummary */
+        RecheckSummary: {
+            by_outcome: components["schemas"]["RecheckOutcomes"];
+            /** Done */
+            done: number;
+            /** Due Now */
+            due_now: number;
+            /** Last Checked At */
+            last_checked_at: string | null;
+            /** Scheduled */
+            scheduled: number;
         };
         /** RerunIn */
         RerunIn: {
@@ -1552,6 +1640,11 @@ export interface components {
              * @default 3
              */
             per_day: number | null;
+            /**
+             * Recheck Backfilled
+             * @default true
+             */
+            recheck_backfilled: boolean;
             /** Sitemaps */
             sitemaps?: string[];
         };
@@ -1638,6 +1731,11 @@ export interface components {
              * @default 3
              */
             per_day: number | null;
+            /**
+             * Recheck Backfilled
+             * @default true
+             */
+            recheck_backfilled: boolean;
             /** Sitemaps */
             sitemaps?: string[];
             /**
@@ -1674,6 +1772,8 @@ export interface components {
             name?: string | null;
             /** Per Day */
             per_day?: number | null;
+            /** Recheck Backfilled */
+            recheck_backfilled?: boolean | null;
             /** Sitemaps */
             sitemaps?: string[] | null;
         };
@@ -2142,6 +2242,7 @@ export interface operations {
                 published_from?: string | null;
                 published_to?: string | null;
                 search?: string | null;
+                change?: ("edited" | "removed" | "unchanged")[] | null;
                 offset?: number;
                 limit?: number;
             };
@@ -2211,6 +2312,7 @@ export interface operations {
                 published_from?: string | null;
                 published_to?: string | null;
                 search?: string | null;
+                change?: ("edited" | "removed" | "unchanged")[] | null;
             };
             header?: never;
             path?: never;
@@ -3100,7 +3202,7 @@ export interface operations {
     site_crawls_sites__site_id__crawls_get: {
         parameters: {
             query?: {
-                trigger?: ("adhoc" | "manual" | "schedule" | "backfill") | null;
+                trigger?: ("adhoc" | "manual" | "schedule" | "backfill" | "recheck") | null;
                 offset?: number;
                 limit?: number;
             };
@@ -3119,6 +3221,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_CrawlOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rechecks_sites__site_id__rechecks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecheckSummary"];
                 };
             };
             /** @description Validation Error */
