@@ -245,3 +245,10 @@ def test_crawl_scoped_detail(client):
     rerun = client.post(f'/runs/{source}/rerun', json={'mode': 'current'})
     assert rerun.status_code == 201
     assert client.get(f"/runs/{rerun.json()['run_id']}").json()['crawl_scoped'] is True
+
+
+def test_snapshot_rerun_without_snapshot_returns_conflict(client):
+    run = create(client)
+    response = client.post(f'/runs/{run}/rerun', json={'mode': 'snapshot'})
+    assert response.status_code == 409
+    assert response.json()['detail'] == "Run has no snapshot yet; use mode 'current'"

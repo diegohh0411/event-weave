@@ -78,6 +78,8 @@ class RunService:
         new_id = uuid4()
         with session_scope(self.engine) as session:
             source = session.execute(sa.select(runs).where(runs.c.id == run_id).with_for_update()).one()
+            if mode == "snapshot" and source.snapshot_at is None:
+                raise RunStateError("Run has no snapshot yet; use mode 'current'")
             cfg = RunConfig.model_validate(source.config)
             estimate = self.estimator.estimate(cfg)
             session.execute(runs.insert().values(id=new_id, config=source.config, config_hash=source.config_hash,

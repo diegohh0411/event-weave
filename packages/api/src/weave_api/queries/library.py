@@ -11,14 +11,17 @@ from weave_core.schema import documents
 class LibraryFilter:
     def __init__(self, outlets: Annotated[list[str] | None, Query()] = None,
                  languages: Annotated[list[str] | None, Query()] = None,
+                 providers: Annotated[list[str] | None, Query()] = None,
                  published_from: datetime | None = None, published_to: datetime | None = None,
                  search: str | None = None):
-        self.outlets, self.languages = outlets, languages
+        self.outlets, self.languages, self.providers = outlets, languages, providers
         self.published_from, self.published_to, self.search = published_from, published_to, search
 
 
 def library_query(f: LibraryFilter) -> Select:
     query = sa.select(documents).where(documents.c.superseded_at.is_(None))
+    if f.providers is not None:
+        query = query.where(documents.c.provider.in_(f.providers))
     if f.outlets is not None:
         query = query.where(documents.c.outlet.in_(f.outlets))
     if f.languages is not None:

@@ -17,7 +17,7 @@ def seed(db, deployments=None):
         for did, lang in (("fake:en", "en"), ("fake:es", "es")):
             if c.scalar(sa.select(documents.c.id).where(documents.c.id == did)) is None:
                 c.execute(sa.insert(documents).values(
-                    id=did, provider="fake", external_id=did[5:], language=lang, title="T", byline="", outlet="",
+                    id=did, article_id=did, provider="fake", external_id=did[5:], language=lang, title="T", byline="", outlet="",
                     url="", text=TEXT, token_offsets=[], sentence_offsets=[[0, 24], [25, 38]], content_hash="x",
                     order_key=[0]))
     return run_id

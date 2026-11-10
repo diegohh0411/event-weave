@@ -51,3 +51,10 @@ def test_library_facets_counts_match_filter(api):
 
 def test_library_unknown_document_404(api):
     assert api.get('/library/documents/missing').status_code == 404
+
+
+def test_library_provider_filter_applies_to_listing_and_facets(api, engine):
+    with engine.begin() as conn:
+        conn.execute(documents.update().where(documents.c.id == 'other').values(provider='crawl'))
+    assert [d['id'] for d in api.get('/library/documents', params={'providers': 'crawl'}).json()['items']] == ['other']
+    assert api.get('/library/facets', params={'providers': 'crawl'}).json()['total'] == 1

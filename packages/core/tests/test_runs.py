@@ -102,3 +102,9 @@ def test_start_refuses_run_pinned_to_other_version(service, good_config):
     _set_version(service, run, "extract", "0")
     with pytest.raises(ConfigError, match="pinned to version '0'"):
         service.start(run)
+
+
+def test_snapshot_rerun_requires_existing_snapshot(service, good_config):
+    run = service.create(good_config).run_id
+    with pytest.raises(RunStateError, match="Run has no snapshot yet; use mode 'current'"):
+        service.rerun(run, 'snapshot')

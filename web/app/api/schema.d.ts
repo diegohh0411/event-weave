@@ -1773,6 +1773,7 @@ export interface operations {
             query?: {
                 outlets?: string[] | null;
                 languages?: string[] | null;
+                providers?: string[] | null;
                 published_from?: string | null;
                 published_to?: string | null;
                 search?: string | null;
@@ -1841,6 +1842,7 @@ export interface operations {
             query?: {
                 outlets?: string[] | null;
                 languages?: string[] | null;
+                providers?: string[] | null;
                 published_from?: string | null;
                 published_to?: string | null;
                 search?: string | null;

@@ -114,9 +114,10 @@ let facetGeneration = 0
 watch(() => [chosen.provide, settings.provide] as const, async () => {
   const mine = ++facetGeneration
   if (chosen.provide !== 'replay') { matchCount.value = null; return }
-  const { outlets, languages, published_from, published_to, search, limit } = settings.provide
+  const { provider, outlets, languages, published_from, published_to, search, limit } = settings.provide
   try {
     const result = await api.GET('/library/facets', { params: { query: {
+      providers: [typeof provider === 'string' ? provider : 'crawl'],
       outlets: Array.isArray(outlets) ? outlets as string[] : undefined,
       languages: Array.isArray(languages) ? languages as string[] : undefined,
       published_from: typeof published_from === 'string' ? published_from : undefined,

@@ -50,6 +50,12 @@ const button = (w: Awaited<ReturnType<typeof mountBuilder>>, label: string) =>
 
 describe('builder page', () => {
   it('ignores crawl IDs and previews matching library documents', async () => {
+    const providers: string[][] = []
+    overrides.push(r => {
+      const url = new URL(r.url)
+      if (url.pathname === '/library/facets') providers.push(url.searchParams.getAll('providers'))
+      return undefined
+    })
     const w = await mountSuspended(Builder, { route: `/?crawl_id=${CRAWL_STORED}` })
     mounted.push(w)
     await vi.waitFor(() => expect(w.text()).not.toContain('Loading'))
@@ -59,6 +65,7 @@ describe('builder page', () => {
     expect(w.text()).not.toContain('Using crawl')
     expect(w.text()).not.toContain(CRAWL_STORED)
     expect(calls).toContain('GET /library/facets')
+    expect(providers).toContainEqual(['crawl'])
   })
 
   it('reprobes deployments and displays failures', async () => {

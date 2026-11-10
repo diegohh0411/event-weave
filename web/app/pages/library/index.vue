@@ -3,6 +3,7 @@ import type { TableColumn } from '@nuxt/ui'
 import { useApi } from '../../api/client'
 import type { components } from '../../api/schema'
 import { apiError } from '../../utils/apiError'
+import { exclusiveEndOfDate } from '../../utils/inclusiveDate'
 
 type Document = components['schemas']['LibraryDocument']
 const api = useApi(), route = useRoute(), router = useRouter()
@@ -21,7 +22,7 @@ async function load() {
   const mine = ++generation
   loading.value = true
   const f = filters.value
-  const query = { outlets: f.outlets.length ? f.outlets : undefined, languages: f.languages.length ? f.languages : undefined, published_from: f.published_from || undefined, published_to: f.published_to || undefined, search: f.search || undefined }
+  const query = { outlets: f.outlets.length ? f.outlets : undefined, languages: f.languages.length ? f.languages : undefined, published_from: f.published_from || undefined, published_to: exclusiveEndOfDate(f.published_to), search: f.search || undefined }
   try {
     const [docs, counts] = await Promise.all([
       api.GET('/library/documents', { params: { query: { ...query, offset: (page.value - 1) * PER_PAGE, limit: PER_PAGE } } }),

@@ -3284,6 +3284,25 @@
           },
           {
             "in": "query",
+            "name": "providers",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Providers"
+            }
+          },
+          {
+            "in": "query",
             "name": "published_from",
             "required": false,
             "schema": {
@@ -3460,6 +3479,25 @@
                 }
               ],
               "title": "Languages"
+            }
+          },
+          {
+            "in": "query",
+            "name": "providers",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Providers"
             }
           },
           {
