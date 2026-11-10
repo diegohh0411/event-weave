@@ -30,32 +30,43 @@ def seed_frontier(engine, site, meta_fetcher):
                 count += 1
 
 
-def scan_sitemaps(engine, site, fetcher, limit, cancelled):
+def scan_sitemaps(engine, site, fetcher, limit, cancelled, write_guard=None, running=lambda: True):
     cap = int(os.environ.get('WEAVE_BACKFILL_MAX_SITEMAPS', '5000'))
     start = datetime.combine(site.backfill_from, time.min, tzinfo=timezone.utc) if site.backfill_mode == 'date' and site.backfill_from else None
+    with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as lock:
+        lock.execute(sa.text("SELECT pg_advisory_lock(hashtextextended(:key, 0))"), {'key': 'backfill-map:' + str(site.id)})
+        try:
+            _scan_locked(engine, site, fetcher, limit, cancelled, write_guard, running, cap, start)
+        finally:
+            lock.execute(sa.text("SELECT pg_advisory_unlock(hashtextextended(:key, 0))"), {'key': 'backfill-map:' + str(site.id)})
+
+
+def _scan_locked(engine, site, fetcher, limit, cancelled, write_guard, running, cap, start):
     with engine.begin() as conn:
-        # Serialize insertions for a site so concurrent scanners respect the cap.
-        conn.execute(sa.select(sites.c.id).where(sites.c.id == site.id).with_for_update())
         rows = conn.execute(sa.select(backfill_sitemaps).where(
             backfill_sitemaps.c.site_id == site.id, backfill_sitemaps.c.status == 'pending'
-        ).order_by(backfill_sitemaps.c.depth, backfill_sitemaps.c.url).limit(limit).with_for_update(skip_locked=True)).mappings().all()
-        count = conn.scalar(sa.select(sa.func.count()).select_from(backfill_sitemaps).where(
-            backfill_sitemaps.c.site_id == site.id, backfill_sitemaps.c.status != 'skipped'))
-        for row in rows:
-            if cancelled():
-                break
-            got = fetcher.fetch(row['url'])
-            if cancelled():
-                break
-            error = None
-            children, entries = [], []
-            if got.status != 200 or not got.html:
-                error = got.error or ('empty response' if got.status == 200 else f'HTTP {got.status}')
-            else:
-                try:
-                    children, entries = _sitemap_entries(got.html)
-                except (ET.ParseError, DefusedXmlException) as exc:
-                    error = f'XML {type(exc).__name__}: {exc}'
+        ).order_by(backfill_sitemaps.c.depth, backfill_sitemaps.c.url).limit(limit)).mappings().all()
+    for row in rows:
+        if cancelled() or not running():
+            break
+        got = fetcher.fetch(row['url'])
+        if cancelled():
+            break
+        error = None
+        children, entries = [], []
+        if got.status != 200 or not got.html:
+            error = got.error or ('empty response' if got.status == 200 else f'HTTP {got.status}')
+        else:
+            try:
+                children, entries = _sitemap_entries(got.html)
+            except (ET.ParseError, DefusedXmlException) as exc:
+                error = f'XML {type(exc).__name__}: {exc}'
+        with engine.begin() as conn:
+            if write_guard:
+                write_guard(conn)
+            conn.execute(sa.select(sites.c.id).where(sites.c.id == site.id).with_for_update())
+            count = conn.scalar(sa.select(sa.func.count()).select_from(backfill_sitemaps).where(
+                backfill_sitemaps.c.site_id == site.id, backfill_sitemaps.c.status != 'skipped'))
             for url, lastmod in children:
                 skipped = row['depth'] >= 3 or count >= cap or (start is not None and lastmod is not None and lastmod < start)
                 result = conn.execute(insert(backfill_sitemaps).values(site_id=site.id, url=url, depth=row['depth'] + 1,
@@ -88,44 +99,52 @@ def budget_left(conn, site_id):
 
 
 def fetch_batch(engine, site, fetcher, limit, now, emit, cancelled, write_guard):
+    with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as lock:
+        key = 'backfill-url:' + str(site.id)
+        lock.execute(sa.text("SELECT pg_advisory_lock(hashtextextended(:key, 0))"), {'key': key})
+        try:
+            _fetch_locked(engine, site, fetcher, limit, now, emit, cancelled, write_guard)
+        finally:
+            lock.execute(sa.text("SELECT pg_advisory_unlock(hashtextextended(:key, 0))"), {'key': key})
+
+
+def _fetch_locked(engine, site, fetcher, limit, now, emit, cancelled, write_guard):
+    from weave_core.schema import crawled_pages
     from weave_providers.crawl.discover import Candidate
     from weave_providers.crawl.store import CrawlReport, process_candidates
 
-    with engine.connect() as conn:
-        budget = budget_left(conn, site.id)
+    remaining = None
     for _ in range(limit):
         with engine.begin() as conn:
+            conn.execute(sa.text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {'key': 'backfill-budget:' + str(site.id)})
             row = conn.execute(sa.select(backfill_urls).where(
                 backfill_urls.c.site_id == site.id, backfill_urls.c.status == 'pending'
             ).order_by(backfill_urls.c.published_at.desc().nulls_last(), backfill_urls.c.canonical_url
             ).limit(1).with_for_update(skip_locked=True)).mappings().first()
-            if row is None:
-                break
-            if cancelled() or budget <= 0:
-                break
-            # Read in a fresh transaction so a pause committed during a fetch is visible.
-            with engine.connect() as state_conn:
-                state = state_conn.scalar(sa.select(sites.c.backfill_state).where(sites.c.id == site.id))
-            if state != 'running':
-                break
-            candidate = Candidate(row['canonical_url'], site.name, row['published_at'], row['title'], row['updated_at'])
-            outcomes = []
-            process_candidates(engine, site, [candidate], fetcher, now, CrawlReport(),
-                               lambda kind, outcome: outcomes.append(outcome), cancelled,
-                               write_guard, refetch_known=False)
-            if not outcomes or cancelled():
-                break
-            outcome = outcomes[0]
-            # A non-successful HTTP response is a completed backfill error.
-            if outcome['status'] == 'rejected' and (outcome.get('reason') or '').startswith('HTTP '):
-                outcome.update(status='error', fetched=True)
-            if outcome['status'] == 'error':
-                outcome['fetched'] = True
-            if outcome['fetched']:
-                budget -= 1
-            emit('article', outcome)
+            state = conn.scalar(sa.select(sites.c.backfill_state).where(sites.c.id == site.id))
+            budget = budget_left(conn, site.id)
+            known = row is not None and conn.scalar(sa.select(sa.exists().where(crawled_pages.c.canonical_url == row['canonical_url'])))
+        remaining = budget if remaining is None else min(remaining, budget)
+        if row is None or cancelled() or state != 'running' or (remaining <= 0 and not known):
+            break
+        candidate = Candidate(row['canonical_url'], site.name, row['published_at'], row['title'], row['updated_at'])
+        outcomes = []
+        process_candidates(engine, site, [candidate], fetcher, now, CrawlReport(),
+                           lambda kind, outcome: outcomes.append(outcome), cancelled,
+                           write_guard, refetch_known=False)
+        if not outcomes or cancelled():
+            break
+        outcome = outcomes[0]
+        if outcome['status'] == 'rejected' and (outcome.get('reason') or '').startswith('HTTP '):
+            outcome.update(status='error', fetched=True)
+        if outcome['status'] == 'error':
+            outcome['fetched'] = True
+        emit('article', outcome)
+        with engine.begin() as conn:
             if write_guard:
                 write_guard(conn)
             conn.execute(backfill_urls.update().where(backfill_urls.c.site_id == site.id,
                 backfill_urls.c.canonical_url == candidate.url).values(status='done', outcome=outcome['status'],
                 document_id=outcome.get('document_id'), crawl_id=getattr(site, 'crawl_id', None), done_at=sa.func.now()))
+        if outcome['fetched']:
+            remaining -= 1

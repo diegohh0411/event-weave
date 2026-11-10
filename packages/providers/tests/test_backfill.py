@@ -186,3 +186,82 @@ def test_batch_stops_when_paused_after_first_url(database_url):
     with engine.connect() as c:
         assert c.scalar(sa.select(sa.func.count()).select_from(backfill_urls).where(backfill_urls.c.site_id == site.id, backfill_urls.c.status == 'pending')) == 1
     engine.dispose()
+
+
+def test_sitemap_fetch_does_not_lock_site_and_stops_on_pause(database_url):
+    engine = sa.create_engine(database_url)
+    site = SimpleNamespace(id=uuid.uuid4(), domain='example.com', sitemaps=[BASE+'a', BASE+'b'], feeds=[], backfill_mode='all', backfill_from=None, backfill_until=None)
+    with engine.begin() as c:
+        c.execute(sites.insert().values(id=site.id, name='x', domain=site.domain, language='en', backfill_state='running'))
+    class PausingFetcher(FixtureFetcher):
+        def fetch(self, url):
+            with engine.begin() as c:
+                c.execute(sa.text("SET LOCAL lock_timeout = '500ms'"))
+                c.execute(sites.update().where(sites.c.id == site.id).values(backfill_state='paused'))
+            return super().fetch(url)
+    f = PausingFetcher({u: fetched(f'<urlset xmlns="{NS}"/>') for u in site.sitemaps})
+    seed_frontier(engine, site, f)
+    def running():
+        with engine.connect() as c:
+            return c.scalar(sa.select(sites.c.backfill_state).where(sites.c.id == site.id)) == 'running'
+    scan_sitemaps(engine, site, f, 10, lambda: False, None, running)
+    assert f.calls == [BASE+'a']
+    engine.dispose()
+
+
+def test_lease_loss_after_page_write_recovers_pending_url(database_url):
+    import pytest
+    from pathlib import Path
+    from weave_providers.crawl.backfill import fetch_batch
+    engine = sa.create_engine(database_url)
+    site = SimpleNamespace(id=uuid.uuid4(), name='example', domain='example.com', language='en')
+    url = BASE+'article'
+    with engine.begin() as c:
+        c.execute(sites.insert().values(id=site.id, name=site.name, domain=site.domain, language='en', backfill_state='running'))
+        c.execute(backfill_urls.insert().values(site_id=site.id, canonical_url=url, status='pending'))
+    f = FixtureFetcher({url: fetched((Path(__file__).parent / 'fixtures' / 'reuters' / 'article.html').read_text())})
+    def lost_on_emit(kind, outcome):
+        raise RuntimeError('lease lost')
+    with pytest.raises(RuntimeError, match='lease lost'):
+        fetch_batch(engine, site, f, 1, datetime.now(timezone.utc), lost_on_emit, lambda: False, None)
+    fetch_batch(engine, site, f, 1, datetime.now(timezone.utc), lambda *args: None, lambda: False, None)
+    with engine.connect() as c:
+        assert c.execute(sa.select(backfill_urls.c.status, backfill_urls.c.outcome).where(backfill_urls.c.site_id == site.id)).one() == ('done', 'existing')
+    assert f.calls == [url]
+    engine.dispose()
+
+
+def test_concurrent_batches_recheck_budget_without_locking_site(database_url, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from weave_providers.crawl import backfill
+    engine = sa.create_engine(database_url)
+    site = SimpleNamespace(id=uuid.uuid4(), name='example', domain='example.com', language='en')
+    urls = [BASE+'one', BASE+'two']
+    with engine.begin() as c:
+        c.execute(sites.insert().values(id=site.id, name=site.name, domain=site.domain, language='en', backfill_state='running'))
+        c.execute(backfill_urls.insert(), [dict(site_id=site.id, canonical_url=u, status='pending') for u in urls])
+    entered, release = Event(), Event()
+    calls = []
+    monkeypatch.setattr(backfill, 'budget_left', lambda conn, site_id: 1 - len(calls))
+    class BlockingFetcher(FixtureFetcher):
+        def fetch(self, url):
+            with engine.begin() as c:
+                c.execute(sa.text("SET LOCAL lock_timeout = '500ms'"))
+                c.execute(sites.update().where(sites.c.id == site.id).values(name='example'))
+            calls.append(url)
+            entered.set()
+            assert release.wait(5)
+            return super().fetch(url)
+    f = BlockingFetcher({u: Fetched(u, 404, '', None) for u in urls})
+    def run():
+        backfill.fetch_batch(engine, site, f, 1, datetime.now(timezone.utc), lambda *args: None, lambda: False, None)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(run)
+        assert entered.wait(5)
+        second = pool.submit(run)
+        release.set()
+        first.result(timeout=10)
+        second.result(timeout=10)
+    assert len(calls) == 1
+    engine.dispose()

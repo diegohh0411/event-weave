@@ -126,7 +126,10 @@ def process_claim(engine, claim, stop, *, fetcher_factory=public_fetchers,
                         has_frontier = conn.scalar(sa.select(sa.exists().where(backfill_sitemaps.c.site_id == claim.site_id)))
                     if not has_frontier:
                         seed_frontier(engine, archive, fetcher)
-                    scan_sitemaps(engine, archive, fetcher, 5, cancelled)
+                    def backfill_running():
+                        with engine.connect() as conn:
+                            return conn.scalar(sa.select(sites.c.backfill_state).where(sites.c.id == claim.site_id)) == 'running'
+                    scan_sitemaps(engine, archive, fetcher, 5, cancelled, guard, backfill_running)
                     fetch_batch(engine, archive, fetcher, 20, claim.started_at, observe, cancelled, guard)
                     if not cancelled():
                         with engine.begin() as conn:
