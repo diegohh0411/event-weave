@@ -131,7 +131,7 @@ export function respond(method: string, pathname: string, query: URLSearchParams
       const request = normalizeCrawl(body)
       if (!request) return { status: 422, body: { detail: [{ type: 'value_error', loc: ['body'], msg: 'Invalid crawl request', input: body }] } }
       const crawl: Schemas['CrawlOut'] = { id: randomUUID(), request, status: 'queued', created_at: new Date().toISOString(),
-        started_at: null, finished_at: null, counters: emptyCounters(), error: null }
+        site_id: null, trigger: 'adhoc', started_at: null, finished_at: null, counters: emptyCounters(), error: null }
       createdCrawls.unshift(crawl)
       return { status: 202, body: crawl }
     }

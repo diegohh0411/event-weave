@@ -48,7 +48,7 @@ async function submit() {
     const body: components['schemas']['CrawlRequest'] = { days: Number(days.value), sites: sites.value.map(s => ({
       domain: domainInput(s.domain), language: s.language, per_day: Number(s.per_day), feeds: lines(s.feeds), sitemaps: lines(s.sitemaps)
     })) }
-    if (!Number.isInteger(body.days) || body.days < 1 || body.days > 30 || body.sites.some(s => !s.domain || !Number.isInteger(s.per_day) || s.per_day < 1 || s.per_day > 200)) throw new Error('Enter domains, 1–30 days and 1–200 articles per site per day.')
+    if (!Number.isInteger(body.days) || body.days < 1 || body.days > 30 || body.sites.some(s => !s.domain || s.per_day == null || !Number.isInteger(s.per_day) || s.per_day < 1 || s.per_day > 200)) throw new Error('Enter domains, 1–30 days and 1–200 articles per site per day.')
     submitting.value = true
     const r = await api.POST('/crawls', { body })
     if (!r.data) throw new Error(apiError(r.error))

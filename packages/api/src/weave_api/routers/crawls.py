@@ -24,12 +24,17 @@ class CrawlCounters(BaseModel):
     duplicates: int
     rejected: int
     errors: int
+    updated: int
+    unchanged: int
+    removed: int
     reasons: dict[str, int]
 
 
 class CrawlOut(BaseModel):
     id: UUID
     request: CrawlRequest
+    site_id: UUID | None
+    trigger: Literal['adhoc', 'manual', 'schedule']
     status: Literal['queued', 'running', 'completed', 'failed']
     created_at: datetime
     started_at: datetime | None
@@ -42,7 +47,7 @@ class CrawlArticleOut(BaseModel):
     canonical_url: str
     outlet: str
     url: str
-    status: Literal['stored', 'existing', 'duplicate', 'rejected', 'error']
+    status: Literal['stored', 'existing', 'duplicate', 'rejected', 'error', 'updated', 'unchanged', 'removed']
     reason: str | None
     document_id: str | None
     fetched: bool
@@ -73,7 +78,7 @@ def _crawl_row(conn, crawl_id: UUID):
 
 
 def _crawl_out(conn, row, counters=None) -> CrawlOut:
-    return CrawlOut(id=row.id, request=row.request, status=row.status, created_at=row.created_at,
+    return CrawlOut(id=row.id, request=row.request, site_id=row.site_id, trigger=row.trigger, status=row.status, created_at=row.created_at,
                     started_at=row.started_at, finished_at=row.finished_at,
                     counters=counters if counters is not None else crawl_counters(conn, row.id),
                     error=row.error)
@@ -83,10 +88,10 @@ def _crawl_out(conn, row, counters=None) -> CrawlOut:
 def create(request: CrawlRequest, engine: Engine) -> CrawlOut:
     created_at = datetime.now(timezone.utc)
     crawl_id = create_crawl(engine, request, created_at=created_at)
-    return CrawlOut(id=crawl_id, request=request, status='queued', created_at=created_at,
+    return CrawlOut(id=crawl_id, request=request, site_id=None, trigger='adhoc', status='queued', created_at=created_at,
                     started_at=None, finished_at=None, error=None,
                     counters=CrawlCounters(discovered=0, fetched=0, stored=0, existing=0,
-                                           duplicates=0, rejected=0, errors=0, reasons={}))
+                                           duplicates=0, rejected=0, errors=0, updated=0, unchanged=0, removed=0, reasons={}))
 
 
 @router.get('/crawls')
