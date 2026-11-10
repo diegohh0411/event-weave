@@ -105,3 +105,9 @@ def test_sitemap_with_entity_expansion_is_rejected_not_expanded():
     f = FixtureFetcher({f"{BASE}/sitemap.xml": Fetched("x", 200, bomb, None)})
     assert discover(outlet(), f, WINDOW, lambda url, reason: errors.append((url, reason))) == []
     assert len(errors) == 1 and errors[0][0] == f"{BASE}/sitemap.xml"
+
+
+def test_sitemap_lastmod_is_exposed_as_updated_at():
+    xml = '''<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://example.com/a</loc><lastmod>2025-01-02T00:00:00Z</lastmod></url></urlset>'''
+    from weave_providers.crawl.discover import _sitemap_entries
+    assert _sitemap_entries(xml)[1][0][3].year == 2025

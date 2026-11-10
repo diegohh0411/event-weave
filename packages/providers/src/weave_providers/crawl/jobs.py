@@ -90,7 +90,7 @@ def record_article(engine, id, token, outcome) -> bool:
         stmt = insert(crawl_articles).values(**values)
         conn.execute(stmt.on_conflict_do_update(index_elements=["crawl_id", "canonical_url"],
             set_={key: getattr(stmt.excluded, key) for key in values if key not in ("crawl_id", "canonical_url")},
-            where=crawl_articles.c.document_id.is_(None)))
+            where=sa.or_(crawl_articles.c.document_id.is_(None), stmt.excluded.status != "existing")))
         return True
 
 
@@ -131,4 +131,4 @@ def crawl_counters_many(conn, crawl_ids):
 
 
 def _empty_counters():
-    return {key: 0 for key in ("discovered", "fetched", "stored", "existing", "duplicates", "rejected", "errors")} | {"reasons": {}}
+    return {key: 0 for key in ("discovered", "fetched", "stored", "existing", "duplicates", "rejected", "errors", "updated", "unchanged", "removed")} | {"reasons": {}}

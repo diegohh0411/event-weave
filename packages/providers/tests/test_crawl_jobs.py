@@ -71,7 +71,7 @@ def test_counters_derive_from_unique_persisted_outcomes(database_url):
     record_article(engine, crawl_id, claim.token, outcome)
     record_article(engine, crawl_id, claim.token, outcome)
     with engine.connect() as conn:
-        assert crawl_counters(conn, crawl_id) == {"discovered": 1, "fetched": 1, "stored": 0, "existing": 0, "duplicates": 0, "rejected": 1, "errors": 0, "reasons": {"paywall": 1}}
+        assert crawl_counters(conn, crawl_id) == {"discovered": 1, "fetched": 1, "stored": 0, "existing": 0, "duplicates": 0, "rejected": 1, "errors": 0, "updated": 0, "unchanged": 0, "removed": 0, "reasons": {"paywall": 1}}
     assert finish_crawl(engine, crawl_id, claim.token, error="fatal")
     with engine.connect() as conn:
         assert conn.execute(sa.text("select status, error from crawl_runs where id=:id"), {"id": crawl_id}).one() == ("failed", "fatal")
