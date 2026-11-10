@@ -59,7 +59,9 @@ watch(() => route.params.id, () => { crawl.value = undefined; articles.value = [
 onMounted(load)
 onUnmounted(() => { disposed = true; generation++; stop() })
 const paywalls = computed(() => Object.entries(crawl.value?.counters.reasons ?? {}).filter(([reason]) => /paywall/i.test(reason)).reduce((n, [, count]) => n + count, 0))
-const COUNTERS = ['discovered', 'fetched', 'stored', 'existing', 'duplicates', 'rejected', 'errors'] as const
+const COUNTERS = ['discovered', 'fetched', 'stored', 'updated', 'unchanged', 'removed', 'errors'] as const
+const articleFilter = ref('all')
+const filteredArticles = computed(() => articleFilter.value === 'all' ? articles.value : articles.value.filter(a => a.status === articleFilter.value))
 const active = computed(() => crawl.value?.status === 'queued' || crawl.value?.status === 'running')
 const robots = computed(() => Object.entries(crawl.value?.counters.reasons ?? {}).filter(([reason]) => /robots/i.test(reason)).reduce((n, [, count]) => n + count, 0))
 </script>
@@ -113,13 +115,13 @@ const robots = computed(() => Object.entries(crawl.value?.counters.reasons ?? {}
         </section>
 
         <section class="space-y-3">
-          <h2 class="text-base font-bold text-highlighted">Articles</h2>
+          <h2 class="text-base font-bold text-highlighted">Articles</h2><label>Filter outcomes <select v-model="articleFilter" class="ew-field"><option value="all">All</option><option v-for="status in ['stored', 'updated', 'unchanged', 'removed', 'existing', 'duplicate', 'rejected', 'error']" :key="status" :value="status">{{ status }}</option></select></label>
           <p v-if="resultsLoading" class="text-sm text-muted">Loading articles...</p><p v-else-if="articlesError" role="alert" class="text-sm text-error">Could not load articles: {{ articlesError }}</p><p v-else-if="!articles.length" class="text-sm text-muted">No articles recorded.</p>
           <div v-else class="overflow-x-auto rounded-xl border border-default bg-default">
             <table class="w-full text-left text-sm">
               <thead class="border-b border-default text-muted"><tr><th class="px-4 py-2.5 font-medium">Article</th><th class="px-4 py-2.5 font-medium">Outcome</th><th class="px-4 py-2.5"><span class="sr-only">Document</span></th></tr></thead>
               <tbody class="divide-y divide-default">
-                <tr v-for="a in articles" :key="a.canonical_url">
+                <tr v-for="a in filteredArticles" :key="a.canonical_url">
                   <td class="max-w-0 px-4 py-3"><span class="block font-medium text-highlighted">{{ a.outlet }}</span><a :href="a.url" target="_blank" rel="noopener noreferrer" class="block truncate text-muted hover:text-highlighted hover:underline">{{ a.url }}</a></td>
                   <td class="px-4 py-3 align-top"><StatusBadge :status="a.status" /><span v-if="a.reason" class="mt-1 block text-xs text-muted">{{ a.reason }}</span></td>
                   <td class="px-4 py-3 text-right align-top"><NuxtLink v-if="a.document_id" :to="`/crawls/${crawl.id}/documents/${encodeURIComponent(a.document_id)}`" class="whitespace-nowrap font-semibold text-primary hover:underline">Read</NuxtLink></td>
