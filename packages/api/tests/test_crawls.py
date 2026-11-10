@@ -144,7 +144,7 @@ def test_only_member_documents_are_returned_including_existing(client, engine):
     claim = claim_crawl(engine, datetime.now(timezone.utc))
     with engine.begin() as conn:
         for id in ('member', 'unrelated'):
-            conn.execute(documents.insert().values(id=id, provider='p', external_id=id, language='en', title='Title',
+            conn.execute(documents.insert().values(id=id, article_id=id, provider='p', external_id=id, language='en', title='Title',
                 byline='Author', outlet='Outlet', url=f'https://example.com/{id}', text='Article body',
                 token_offsets=[], sentence_offsets=[], content_hash=id))
     record_article(engine, claim.id, claim.token, dict(canonical_url='https://example.com/member',

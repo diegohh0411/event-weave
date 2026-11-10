@@ -175,6 +175,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/library/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Documents */
+        get: operations["list_documents_library_documents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/library/documents/{document_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Document */
+        get: operations["get_document_library_documents__document_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/library/facets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Facets */
+        get: operations["get_facets_library_facets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs": {
         parameters: {
             query?: never;
@@ -221,6 +272,23 @@ export interface paths {
         put?: never;
         /** Validate Run */
         post: operations["validate_run_runs_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{a}/snapshot-diff/{b}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Snapshot Diff */
+        get: operations["snapshot_diff_runs__a__snapshot_diff__b__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -377,6 +445,23 @@ export interface paths {
         get: operations["run_failures_runs__run_id__failures_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/rerun": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rerun */
+        post: operations["rerun_runs__run_id__rerun_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -769,6 +854,15 @@ export interface components {
             /** Reason */
             reason: string | null;
         };
+        /** DocumentHistory */
+        DocumentHistory: {
+            /** Id */
+            id: string;
+            /** Superseded At */
+            superseded_at: string | null;
+            /** Version */
+            version: number;
+        };
         /** DocumentMention */
         DocumentMention: {
             /** Cluster Id */
@@ -833,6 +927,13 @@ export interface components {
             /** Reason */
             reason: string | null;
         };
+        /** Facet */
+        Facet: {
+            /** Count */
+            count: number;
+            /** Value */
+            value: string;
+        };
         /** FailureOut */
         FailureOut: {
             /** Attempts */
@@ -848,6 +949,63 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** LibraryDocument */
+        LibraryDocument: {
+            /** Article Id */
+            article_id: string;
+            /** Id */
+            id: string;
+            /** Language */
+            language: string;
+            /** Outlet */
+            outlet: string;
+            /** Published At */
+            published_at: string | null;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+            /** Version */
+            version: number;
+            /** Versions */
+            versions: number;
+        };
+        /** LibraryDocumentDetail */
+        LibraryDocumentDetail: {
+            /** Article Id */
+            article_id: string;
+            /** Byline */
+            byline: string;
+            /** History */
+            history: components["schemas"]["DocumentHistory"][];
+            /** Id */
+            id: string;
+            /** Language */
+            language: string;
+            /** Outlet */
+            outlet: string;
+            /** Published At */
+            published_at: string | null;
+            /** Text */
+            text: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+            /** Version */
+            version: number;
+            /** Versions */
+            versions: number;
+        };
+        /** LibraryFacets */
+        LibraryFacets: {
+            /** Languages */
+            languages: components["schemas"]["Facet"][];
+            /** Outlets */
+            outlets: components["schemas"]["Facet"][];
+            /** Total */
+            total: number;
         };
         /** Member */
         Member: {
@@ -971,6 +1129,17 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** Page[LibraryDocument] */
+        Page_LibraryDocument_: {
+            /** Items */
+            items: components["schemas"]["LibraryDocument"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
         /** Page[Member] */
         Page_Member_: {
             /** Items */
@@ -1015,6 +1184,14 @@ export interface components {
             /** Running */
             running: number;
         };
+        /** RerunIn */
+        RerunIn: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "snapshot" | "current";
+        };
         /** RunConfig */
         RunConfig: {
             /** Name */
@@ -1032,6 +1209,8 @@ export interface components {
             config: components["schemas"]["RunConfig"];
             /** Config Hash */
             config_hash: string;
+            /** Crawl Scoped */
+            crawl_scoped: boolean;
             /**
              * Created At
              * Format: date-time
@@ -1056,6 +1235,11 @@ export interface components {
             progress: {
                 [key: string]: components["schemas"]["Progress"];
             };
+            /** Rerun Mode */
+            rerun_mode: ("snapshot" | "current") | null;
+            snapshot: components["schemas"]["SnapshotOut"] | null;
+            /** Source Run Id */
+            source_run_id: string | null;
             /** Started At */
             started_at: string | null;
             state: components["schemas"]["RunState"];
@@ -1157,6 +1341,25 @@ export interface components {
             split: string;
             /** Track */
             track: string;
+        };
+        /** SnapshotDiffOut */
+        SnapshotDiffOut: {
+            /** Added */
+            added: number;
+            /** New Versions */
+            new_versions: number;
+            /** Removed */
+            removed: number;
+        };
+        /** SnapshotOut */
+        SnapshotOut: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Documents */
+            documents: number;
         };
         /**
          * Stage
@@ -1565,6 +1768,111 @@ export interface operations {
             };
         };
     };
+    list_documents_library_documents_get: {
+        parameters: {
+            query?: {
+                outlets?: string[] | null;
+                languages?: string[] | null;
+                providers?: string[] | null;
+                published_from?: string | null;
+                published_to?: string | null;
+                search?: string | null;
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_LibraryDocument_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_document_library_documents__document_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryDocumentDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_facets_library_facets_get: {
+        parameters: {
+            query?: {
+                outlets?: string[] | null;
+                languages?: string[] | null;
+                providers?: string[] | null;
+                published_from?: string | null;
+                published_to?: string | null;
+                search?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryFacets"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_runs_runs_get: {
         parameters: {
             query?: {
@@ -1683,6 +1991,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ValidatedOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    snapshot_diff_runs__a__snapshot_diff__b__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                a: string;
+                b: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotDiffOut"];
                 };
             };
             /** @description Validation Error */
@@ -1992,6 +2332,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_FailureOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rerun_runs__run_id__rerun_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RerunIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedOut"];
                 };
             };
             /** @description Validation Error */

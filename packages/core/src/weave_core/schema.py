@@ -8,14 +8,26 @@ TZ = sa.DateTime(timezone=True)
 runs = sa.Table("runs", metadata,
     sa.Column("id", UUID(as_uuid=True), primary_key=True), sa.Column("config", JSONB, nullable=False),
     sa.Column("config_hash", T, nullable=False), sa.Column("state", T, nullable=False),
-    sa.Column("created_at", TZ, nullable=False), sa.Column("started_at", TZ), sa.Column("finished_at", TZ))
+    sa.Column("created_at", TZ, nullable=False), sa.Column("started_at", TZ), sa.Column("finished_at", TZ),
+    sa.Column("snapshot_at", TZ),
+    sa.Column("source_run_id", UUID(as_uuid=True), sa.ForeignKey("runs.id")),
+    sa.Column("rerun_mode", T), sa.CheckConstraint("rerun_mode IN ('snapshot', 'current')"))
 documents = sa.Table("documents", metadata,
     sa.Column("id", T, primary_key=True), *[sa.Column(n, T, nullable=False) for n in ("provider", "external_id", "language", "title", "byline", "outlet", "url")],
     sa.Column("published_at", TZ), sa.Column("text", T, nullable=False),
     sa.Column("token_offsets", JSONB, nullable=False), sa.Column("sentence_offsets", JSONB, nullable=False),
     sa.Column("content_hash", T, nullable=False),
+    sa.Column("article_id", T, nullable=False), sa.Column("version", sa.Integer, nullable=False, server_default="1"),
+    sa.Column("superseded_at", TZ),
     sa.Column("order_key", ARRAY(sa.BigInteger), nullable=False, server_default="{}"),
     sa.UniqueConstraint("provider", "external_id"))
+sa.Index("ix_documents_article_id", documents.c.article_id)
+sa.Index("ix_documents_latest", documents.c.article_id, postgresql_where=documents.c.superseded_at.is_(None))
+run_documents = sa.Table("run_documents", metadata,
+    sa.Column("run_id", UUID(as_uuid=True), sa.ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True),
+    sa.Column("position", sa.Integer, primary_key=True),
+    sa.Column("document_id", T, sa.ForeignKey("documents.id"), nullable=False),
+    sa.UniqueConstraint("run_id", "document_id"))
 jobs = sa.Table("jobs", metadata,
     sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
     sa.Column("run_id", UUID(as_uuid=True), sa.ForeignKey("runs.id"), nullable=False),

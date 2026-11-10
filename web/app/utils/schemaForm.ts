@@ -89,9 +89,9 @@ function field(key: string, raw: JSONSchema, root: JSONSchema): FieldSpec {
   }
 }
 
-export function fieldsFromSchema(schema: JSONSchema): FieldSpec[] {
+export function fieldsFromSchema(schema: JSONSchema, hidden: string[] = []): FieldSpec[] {
   const root = schema ?? {}
-  return Object.entries<JSONSchema>(root.properties ?? {}).map(([key, prop]) => field(key, prop, root))
+  return Object.entries<JSONSchema>(root.properties ?? {}).filter(([key]) => !hidden.includes(key)).map(([key, prop]) => field(key, prop, root))
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)

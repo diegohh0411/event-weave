@@ -52,7 +52,7 @@ def store(db, doc, language="en"):
     provider, external = doc.id.split(":", 1)
     with db.begin() as c:
         c.execute(sa.insert(documents).values(
-            id=doc.id, provider=provider, external_id=external, language=language, title="Title", byline="",
+            id=doc.id, article_id=doc.id, provider=provider, external_id=external, language=language, title="Title", byline="",
             outlet="", url="", published_at=None, text=doc.text, token_offsets=[list(t) for t in doc.token_offsets],
             sentence_offsets=[list(s) for s in doc.sentence_offsets], content_hash=doc.content_hash,
             order_key=[0 if doc.id == "fake:arrest" else 1]))

@@ -70,7 +70,7 @@ def pipeline(db):
             provider, external = doc_id.split(":", 1)
             tokens = [list(m.span()) for m in re.finditer(r"\w+|[^\w\s]", text)]
             c.execute(sa.insert(documents).values(
-                id=doc_id, provider=provider, external_id=external, language="en", title="Title", byline="", outlet="",
+                id=doc_id, article_id=doc_id, provider=provider, external_id=external, language="en", title="Title", byline="", outlet="",
                 url="", published_at=None, text=text, token_offsets=tokens, sentence_offsets=[[0, len(text)]],
                 content_hash=hashlib.sha256(text.encode()).hexdigest(), order_key=[i]))
             trigger = "arrested" if "arrested" in text else "fell"

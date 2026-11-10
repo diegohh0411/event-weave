@@ -27,7 +27,7 @@ def add_member(c, run_id, partition, cluster_id, mention_id, vectors, order=(1,)
     text = f"Sentence of {mention_id}."
     if c.execute(sa.select(mentions.c.id).where(mentions.c.id == mention_id)).first() is None:  # shared across runs
         c.execute(sa.insert(documents).values(
-            id=doc_id, provider="p", external_id=doc_id, language=language, title="t", byline="", outlet="o", url="u",
+            id=doc_id, article_id=doc_id, provider="p", external_id=doc_id, language=language, title="t", byline="", outlet="o", url="u",
             published_at=published_at, text=text, token_offsets=[], sentence_offsets=[[0, len(text)]],
             content_hash="x"))
         c.execute(sa.insert(mentions).values(id=mention_id, document_id=doc_id, start=0, end=1, tok_start=0,
@@ -95,7 +95,7 @@ def seed_unit(c, run_id, mention_id, order, vectors, *, doc_id=None, partition="
     text = f"Sentence of {mention_id}."
     if c.execute(sa.select(documents.c.id).where(documents.c.id == doc_id)).first() is None:
         c.execute(sa.insert(documents).values(
-            id=doc_id, provider="p", external_id=doc_id, language="en", title="t", byline="", outlet="o", url="u",
+            id=doc_id, article_id=doc_id, provider="p", external_id=doc_id, language="en", title="t", byline="", outlet="o", url="u",
             published_at=None, text=text, token_offsets=[], sentence_offsets=[[0, len(text)]], content_hash="x"))
     c.execute(sa.insert(mentions).values(id=mention_id, document_id=doc_id, start=0, end=8, tok_start=0, tok_end=1,
                                          sentence=0, text="Sentence", extractor="e", extractor_version="1"))

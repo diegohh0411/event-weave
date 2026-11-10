@@ -2,13 +2,14 @@
 import gzip
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 import sqlalchemy as sa
 from typer.testing import CliRunner
 
 from weave_core.db import make_engine
-from weave_core.schema import crawled_pages, documents
+from weave_core.schema import crawled_pages, documents, runs
 from weave_providers.crawl.fetch import Fetched, FixtureFetcher, PoliteFetcher
 import logging
 from weave_providers.crawl.outlets import Outlet
@@ -131,15 +132,22 @@ def test_fetch_errors_are_recorded_and_retried(engine):
     assert rows(engine, "select status, reason from crawled_pages where url like '%/a/elpais'") == [("stored", None)]
 
 
+def make_replay_run(engine):
+    run_id = uuid4()
+    with engine.begin() as c:
+        c.execute(sa.insert(runs).values(id=run_id, config={}, config_hash="test",
+                                         state="running", created_at=sa.func.now()))
+    return run_id
+
+
 def test_replay_after_crawl_orders_by_time_then_url(engine, monkeypatch):
-    from uuid import uuid4
     from weave_core.adapters import AdapterContext, UnitRef
     from weave_core.stages import UnitKind
     from weave_providers.replay import ReplayProvider, ReplaySettings
 
     monkeypatch.setenv("WEAVE_DATABASE_URL", engine.url.render_as_string(hide_password=False))
     crawl(engine, OUTLETS, polite()[0], NOW)
-    provider = ReplayProvider(ReplaySettings(), AdapterContext(uuid4(), 1, {}))
+    provider = ReplayProvider(ReplaySettings(), AdapterContext(make_replay_run(engine), 1, {}))
     emitted = provider.process(UnitRef(UnitKind.run, "r", "h"), {}).emits
     urls = dict(rows(engine, "select id, url from documents"))
     assert [urls[u.id] for u in emitted] == [f"{BASE}/a/reuters", f"{BASE}/a/elpais"]
@@ -187,13 +195,12 @@ def test_cli_crawl_prints_report(tmp_path, monkeypatch, database_url):
 
 
 def replay_urls(engine, monkeypatch):
-    from uuid import uuid4
     from weave_core.adapters import AdapterContext, UnitRef
     from weave_core.stages import UnitKind
     from weave_providers.replay import ReplayProvider, ReplaySettings
 
     monkeypatch.setenv("WEAVE_DATABASE_URL", engine.url.render_as_string(hide_password=False))
-    emitted = ReplayProvider(ReplaySettings(), AdapterContext(uuid4(), 1, {})).process(
+    emitted = ReplayProvider(ReplaySettings(), AdapterContext(make_replay_run(engine), 1, {})).process(
         UnitRef(UnitKind.run, "r", "h"), {}).emits
     urls = dict(rows(engine, "select id, url from documents"))
     return [urls[u.id] for u in emitted]

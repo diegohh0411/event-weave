@@ -46,7 +46,7 @@ def seeded(engine):
     crawl = uuid4()
     with engine.begin() as conn:
         conn.execute(runs.insert().values(id=run, config={"name": "r", "track": "realistic", "seed": 0, "stages": {}}, config_hash="h", state="done", created_at=NOW))
-        conn.execute(documents.insert().values(id="d1", provider="p", external_id="d1", language="en", title="t", byline="b",
+        conn.execute(documents.insert().values(id="d1", article_id="d1", provider="p", external_id="d1", language="en", title="t", byline="b",
                                                outlet="o", url="u", text=TEXT, token_offsets=[], sentence_offsets=[[0, 23], [24, 40]],
                                                content_hash="h"))
         conn.execute(crawl_runs.insert().values(id=crawl, request={'sites': [{'domain': 'example.com', 'language': 'en'}], 'days': 1},
@@ -86,7 +86,7 @@ def seeded(engine):
 def test_no_gold_outside_scores(service, seeded):
     app = create_app(service)
     run, crawl = seeded
-    fill = {"run_id": str(run), "crawl_id": str(crawl), "cluster_id": "c1", "document_id": "d1"}
+    fill = {"run_id": str(run), "a": str(run), "b": str(run), "crawl_id": str(crawl), "cluster_id": "c1", "document_id": "d1"}
     called = []
     with TestClient(app) as client:
         framework_paths = {app.openapi_url, app.docs_url, app.redoc_url, "/docs/oauth2-redirect"}

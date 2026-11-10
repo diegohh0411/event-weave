@@ -1,5 +1,6 @@
 import type { Body, Fixture, Ok } from './types'
 import { created, ok, page } from './types'
+import { libraryDocuments } from './library'
 import { adapters } from './adapters'
 import { deployments } from './deployments'
 import { allRuns, estimates, runCancelled, runLlm, runNew, runPaper, summary } from './runs'
@@ -35,6 +36,11 @@ const startRequestShape: Body<'/runs', 'post'> = runPaper.config // keeps reques
 void startRequestShape
 
 export const fixtures: Record<string, Fixture[]> = {
+  'GET /library/documents': [ok(page(libraryDocuments.filter(d => d.version === d.versions)))],
+  'GET /library/documents/{document_id}': libraryDocuments.map(d => ok(d, { document_id: d.id })),
+  'GET /library/facets': [ok({ outlets: [], languages: [], total: 0 })],
+  'POST /runs/{run_id}/rerun': [created(createdOut)],
+  'GET /runs/{a}/snapshot-diff/{b}': [ok({ added: 2, removed: 1, new_versions: 3 })],
   'GET /health': [ok({ status: 'ok' })],
   'GET /adapters': [ok(adapters)],
   'GET /deployments': [ok(deployments)],

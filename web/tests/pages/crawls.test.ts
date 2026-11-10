@@ -113,7 +113,7 @@ describe('crawl pages', () => {
   it('links stored and existing documents and renders escaped body without run endpoints', async () => {
     const w = await detail(CRAWL_STORED)
     await vi.waitFor(() => expect(w.find(`a[href="/crawls/${CRAWL_STORED}/documents/${document.id}"]`).exists()).toBe(true))
-    expect(w.find(`a[href="/?crawl_id=${CRAWL_STORED}"]`).exists()).toBe(true)
+    expect(w.find('a[href^="/library?outlets="]').text()).toContain('View in library')
     override = async r => new URL(r.url).pathname.endsWith(`/documents/${document.id}`) ? json({ ...document, text: '<script>alert(1)</script>' }) : undefined
     const d = await doc(CRAWL_STORED, document.id)
     await vi.waitFor(() => expect(d.text()).toContain('<script>alert(1)</script>'))

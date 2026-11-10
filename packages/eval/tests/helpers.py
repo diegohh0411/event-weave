@@ -40,7 +40,7 @@ def seed_corpus(engine, spec: dict) -> dict:
             tokens = d.get("tokens") or [[s, s + 3] for s in range(0, max([e for _, e in gold.values()] + [0]), 4)]
             text = d.get("text", "x" * max([t[1] for t in tokens] + [1]))
             c.execute(sa.insert(documents).values(
-                id=d["id"], provider="mcecr", external_id=d["id"], language=d["language"], title="", byline="",
+                id=d["id"], article_id=d["id"], provider="mcecr", external_id=d["id"], language=d["language"], title="", byline="",
                 outlet="", url="", text=text, token_offsets=tokens, sentence_offsets=[[0, len(text)]],
                 content_hash="x", order_key=[i]))
             c.execute(sa.insert(gold_documents).values(

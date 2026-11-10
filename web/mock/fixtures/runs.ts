@@ -32,6 +32,7 @@ const llmConfig: RunConfig = {
 const progress = (queued: number, running: number, done: number, failed: number) => ({ queued, running, done, failed })
 
 export const runPaper: RunOut = {
+  snapshot: { documents: 312, as_of: '2026-11-05T09:12:41Z' }, source_run_id: null, rerun_mode: null, crawl_scoped: false,
   id: RUN_PAPER,
   name: paperConfig.name,
   track: 'paper',
@@ -55,6 +56,7 @@ export const runPaper: RunOut = {
 
 // Running, with failed cluster jobs: those mentions stay unclustered and the runs page lists each error.
 export const runLlm: RunOut = {
+  snapshot: { documents: 312, as_of: '2026-11-06T14:01:10Z' }, source_run_id: null, rerun_mode: null, crawl_scoped: false,
   id: RUN_LLM,
   name: llmConfig.name,
   track: 'realistic',
@@ -76,6 +78,7 @@ export const runLlm: RunOut = {
 }
 
 export const runNew: RunOut = {
+  snapshot: null, source_run_id: null, rerun_mode: null, crawl_scoped: false,
   id: RUN_NEW,
   name: 'paper-rerun-seed-8',
   track: 'paper',
@@ -92,6 +95,7 @@ export const runNew: RunOut = {
 }
 
 export const runCancelled: RunOut = {
+  snapshot: { documents: 100, as_of: '2026-11-04T16:46:00Z' }, source_run_id: null, rerun_mode: null, crawl_scoped: false,
   id: RUN_CANCELLED,
   name: 'realistic-cancelled',
   track: 'realistic',

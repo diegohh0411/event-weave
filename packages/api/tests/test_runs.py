@@ -198,3 +198,57 @@ def test_coverage_reports_every_configured_stage(client, engine):
     assert cached["cluster"] == {"cached": 0, "total": 2}
     assert cached["enrich"] == {"cached": 0, "total": 0}
     assert set(cached) == {"provide", "extract", "enrich", "embed", "cluster"}
+
+
+def test_rerun_and_snapshot_info(client, engine):
+    source = create(client)
+    assert client.get(f'/runs/{source}').json()['snapshot'] is None
+    response = client.post(f'/runs/{source}/rerun', json={'mode': 'current'})
+    assert response.status_code == 201
+    new = response.json()
+    source_detail = client.get(f'/runs/{source}').json()
+    detail = client.get(f"/runs/{new['run_id']}").json()
+    assert detail['config'] == source_detail['config']
+    assert new['config_hash'] == source_detail['config_hash']
+    assert detail['state'] == 'created' and detail['source_run_id'] == source
+    assert detail['rerun_mode'] == 'current' and detail['crawl_scoped'] is False
+    assert client.post(f'/runs/{uuid4()}/rerun', json={'mode': 'current'}).status_code == 404
+    assert client.post(f'/runs/{source}/rerun', json={'mode': 'bad'}).status_code == 422
+
+
+def test_snapshot_diff_counts_and_run_out_reports_snapshot(client, engine):
+    from weave_core.schema import documents, run_documents
+
+    a, b = create(client), create(client)
+    now = datetime.now(timezone.utc)
+    with engine.begin() as conn:
+        for doc, article in [('old', 'shared'), ('new', 'shared'), ('removed', 'removed'), ('added', 'added')]:
+            conn.execute(documents.insert().values(id=doc, article_id=article, provider='test', external_id=doc,
+                language='en', title='', byline='', outlet='', url='', text='', token_offsets=[], sentence_offsets=[],
+                content_hash='h', order_key=[]))
+        for run, ids in [(a, ['old', 'removed']), (b, ['new', 'added'])]:
+            conn.execute(runs.update().where(runs.c.id == run).values(snapshot_at=now))
+            conn.execute(run_documents.insert(), [dict(run_id=run, position=i, document_id=doc) for i, doc in enumerate(ids)])
+    snapshot = client.get(f'/runs/{a}').json()['snapshot']
+    assert snapshot['documents'] == 2 and datetime.fromisoformat(snapshot['as_of']) == now
+    assert client.get(f'/runs/{a}/snapshot-diff/{b}').json() == {'added': 1, 'removed': 1, 'new_versions': 1}
+    assert client.get(f'/runs/{a}/snapshot-diff/{uuid4()}').status_code == 404
+    assert client.get(f'/runs/{uuid4()}/snapshot-diff/{b}').status_code == 404
+
+
+def test_crawl_scoped_detail(client):
+    cfg = config_json(track='realistic')
+    cfg['stages']['provide'] = {'adapter': 'replay', 'settings': {'crawl_id': str(uuid4())}, 'deployments': {}}
+    response = client.post('/runs', json=cfg)
+    assert response.status_code == 201, response.text
+    source = response.json()['run_id']
+    rerun = client.post(f'/runs/{source}/rerun', json={'mode': 'current'})
+    assert rerun.status_code == 201
+    assert client.get(f"/runs/{rerun.json()['run_id']}").json()['crawl_scoped'] is True
+
+
+def test_snapshot_rerun_without_snapshot_returns_conflict(client):
+    run = create(client)
+    response = client.post(f'/runs/{run}/rerun', json={'mode': 'snapshot'})
+    assert response.status_code == 409
+    assert response.json()['detail'] == "Run has no snapshot yet; use mode 'current'"

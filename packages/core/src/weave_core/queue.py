@@ -107,7 +107,7 @@ class Queue:
                 raise ValueError(f"stage rows may only target gold_ tables or {sorted(STAGE_ROW_TABLES)}, got {name!r}")
         for document in result.documents:
             values = asdict(document) | {"order_key": list(document.order_key)}
-            session.execute(insert(documents).values(id=document.id, **values).on_conflict_do_nothing())
+            session.execute(insert(documents).values(id=document.id, article_id=document.id, **values).on_conflict_do_nothing())
         order = {t.name: i for i, t in enumerate(metadata.sorted_tables)}  # FK parents before children
         for name, rows in sorted(result.rows.items(), key=lambda item: order[item[0]]):
             if not rows:

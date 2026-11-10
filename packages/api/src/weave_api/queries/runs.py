@@ -6,7 +6,7 @@ import sqlalchemy as sa
 
 from weave_core.config import RunConfig
 from weave_core.pipeline import next_stage
-from weave_core.schema import jobs, ledger, runs
+from weave_core.schema import documents, jobs, ledger, run_documents, runs
 from weave_core.stages import JobStatus, Stage
 
 # Labels shown to users for the stored job statuses.
@@ -21,7 +21,7 @@ def summaries():
 
 
 def run_row(conn, run_id: UUID):
-    return conn.execute(sa.select(*SUMMARY_COLUMNS, runs.c.config).where(runs.c.id == run_id)).one()
+    return conn.execute(sa.select(*SUMMARY_COLUMNS, runs.c.config, runs.c.snapshot_at, runs.c.source_run_id, runs.c.rerun_mode).where(runs.c.id == run_id)).one()
 
 
 def progress(conn, run_id: UUID) -> dict[Stage, dict[str, int]]:
@@ -57,3 +57,17 @@ def failures(run_id: UUID, stage: Stage | None):
     if stage is not None:
         query = query.where(jobs.c.stage == stage)
     return query.order_by(jobs.c.id)
+
+
+def snapshot_count(conn, run_id: UUID) -> int:
+    return conn.scalar(sa.select(sa.func.count()).select_from(run_documents).where(run_documents.c.run_id == run_id))
+
+
+def snapshot_diff(conn, a: UUID, b: UUID) -> dict[str, int]:
+    def articles(run_id):
+        return dict(conn.execute(sa.select(documents.c.article_id, documents.c.id)
+            .select_from(run_documents.join(documents, run_documents.c.document_id == documents.c.id))
+            .where(run_documents.c.run_id == run_id)).all())
+    left, right = articles(a), articles(b)
+    return {"added": len(right.keys() - left.keys()), "removed": len(left.keys() - right.keys()),
+            "new_versions": sum(left[k] != right[k] for k in left.keys() & right.keys())}

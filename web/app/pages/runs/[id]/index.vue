@@ -13,12 +13,19 @@ const toast = useToast()
 const id = String(useRoute().params.id)
 
 const run = ref<RunOut>()
+const diff = ref<components['schemas']['SnapshotDiffOut']>()
 const loading = ref(true)
 const loadError = ref<string>()
 
 async function refresh() {
   const r = await api.GET('/runs/{run_id}', { params: { path: { run_id: id } } })
-  if (r.data) run.value = r.data
+  if (r.data) {
+    run.value = r.data
+    if (r.data.source_run_id && r.data.rerun_mode === 'current' && r.data.snapshot) {
+      const result = await api.GET('/runs/{a}/snapshot-diff/{b}', { params: { path: { a: r.data.source_run_id, b: id } } })
+      diff.value = result.data
+    }
+  }
   else if (!run.value) throw new Error(`run ${id} not found`)
 }
 
@@ -97,6 +104,16 @@ async function act() {
     acting.value = false
   }
 }
+async function rerun(mode: 'snapshot' | 'current') {
+  if (acting.value) return
+  acting.value = true
+  try {
+    const result = await api.POST('/runs/{run_id}/rerun', { params: { path: { run_id: id } }, body: { mode } })
+    if (!result.data) throw new Error((result.error as { detail?: string })?.detail || 'The API rejected the request.')
+    await navigateTo(`/runs/${result.data.run_id}`)
+  } catch (e) { toast.add({ title: 'Could not re-run', description: e instanceof Error ? e.message : String(e), color: 'error' }) }
+  finally { acting.value = false }
+}
 </script>
 
 <template>
@@ -112,9 +129,15 @@ async function act() {
           <p class="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted">
             <StatusBadge :status="run.state" />
             <span>{{ run.track }} track</span>
+            <UBadge v-if="run.crawl_scoped" color="neutral" variant="outline">Crawl-scoped</UBadge>
+            <span v-if="run.snapshot">{{ run.snapshot.documents }} documents, library as of {{ new Date(run.snapshot.as_of).toLocaleDateString() }}</span>
+            <NuxtLink v-if="run.source_run_id" :to="`/runs/${run.source_run_id}`" class="text-primary hover:underline">Source run</NuxtLink>
+            <span v-if="diff">vs source run: +{{ diff.added }} added, −{{ diff.removed }} removed, {{ diff.new_versions }} new versions</span>
           </p>
         </template>
         <template #actions>
+          <UButton color="neutral" variant="outline" :disabled="acting || !run.snapshot" @click="rerun('snapshot')">Re-run</UButton>
+          <UButton color="neutral" variant="outline" :disabled="acting" @click="rerun('current')">Re-run on current library</UButton>
           <UButton v-if="action" size="lg" :color="action === 'cancel' ? 'error' : 'primary'" :variant="action === 'cancel' ? 'outline' : 'solid'" :loading="acting" :disabled="acting" @click="act">
             {{ LABEL[action] }}
           </UButton>
