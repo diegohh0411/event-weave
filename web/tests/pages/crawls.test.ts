@@ -61,6 +61,14 @@ describe('crawl pages', () => {
     expect(w.text()).toContain('paywall'); expect(w.text()).toContain('Discovery failed')
     expect(w.text()).toContain('0 stored'); expect(w.text()).toContain('4 fetched')
   })
+  it('shows the saved lookback and per-day limit on crawl details', async () => {
+    override = async r => new URL(r.url).pathname === `/crawls/${CRAWL_STORED}`
+      ? json({ ...stored, request: { ...stored.request, days: 7, sites: [{ ...stored.request.sites[0], per_day: 42 }] } })
+      : undefined
+    const w = await detail(CRAWL_STORED)
+    await vi.waitFor(() => expect(w.text()).toContain('Lookback: 7 days'))
+    expect(w.text()).toContain('example.com — maximum 42 articles per day')
+  })
   it('distinguishes robots-blocked discovery from a successful empty window', async () => {
     override = async r => {
       const path = new URL(r.url).pathname
@@ -79,7 +87,7 @@ describe('crawl pages', () => {
       return undefined
     }
     const other = await detail(CRAWL_PAYWALLED)
-    await vi.waitFor(() => expect(other.text()).toContain('No articles found in this time window'))
+    await vi.waitFor(() => expect(other.text()).toContain('No articles found in the 1-day lookback window'))
   })
   it('does not mistake missing or still-loading sources for an empty time window', async () => {
     let release!: () => void

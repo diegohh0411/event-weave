@@ -69,6 +69,10 @@ const robots = computed(() => Object.entries(crawl.value?.counters.reasons ?? {}
     <template v-else-if="crawl">
       <h1 class="text-xl font-semibold">Crawl {{ crawl.id }}</h1>
       <p>Status: <strong>{{ crawl.status }}</strong> — {{ crawl.request.sites.map(s => s.domain).join(', ') }}</p>
+      <section aria-label="Crawl settings" class="space-y-1">
+        <p>Lookback: {{ crawl.request.days }} {{ crawl.request.days === 1 ? 'day' : 'days' }}</p>
+        <p v-for="site in crawl.request.sites" :key="site.domain">{{ site.domain }} — maximum {{ site.per_day }} articles per day</p>
+      </section>
       <p>{{ crawl.counters.discovered }} discovered, {{ crawl.counters.fetched }} fetched, {{ crawl.counters.stored }} stored, {{ crawl.counters.existing }} existing, {{ crawl.counters.duplicates }} duplicates, {{ crawl.counters.rejected }} rejected, {{ crawl.counters.errors }} errors</p>
       <UAlert v-if="crawl.error" color="error" title="Crawl failed" :description="crawl.error" />
       <section v-if="crawl.status === 'completed' && crawl.counters.stored === 0" class="space-y-2">
@@ -78,7 +82,7 @@ const robots = computed(() => Object.entries(crawl.value?.counters.reasons ?? {}
         <p v-if="crawl.counters.existing || crawl.counters.duplicates">Previously stored documents may still be available below.</p>
         <p v-if="!resultsLoading && sources.some(s => s.error)">Some sources failed discovery; try explicit feed or sitemap URLs.</p>
         <p v-if="!resultsLoading && !sourcesError && !sources.length">No sources were found. Try explicit feed or sitemap URLs.</p>
-        <p v-if="!resultsLoading && !crawl.counters.discovered && sources.length && !sources.some(s => s.error) && !sourcesError">No articles found in this time window. Try a longer lookback or explicit feed/sitemap URLs.</p>
+        <p v-if="!resultsLoading && !crawl.counters.discovered && sources.length && !sources.some(s => s.error) && !sourcesError">No articles found in the {{ crawl.request.days }}-day lookback window. Try increasing the lookback period or adding explicit feed/sitemap URLs.</p>
         <p v-if="crawl.counters.discovered && !paywalls && !robots && !crawl.counters.existing && !crawl.counters.duplicates">Check article outcomes and source errors below.</p>
       </section>
       <p v-for="(count, reason) in crawl.counters.reasons" :key="reason">{{ reason }}: {{ count }}</p>
