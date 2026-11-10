@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from typer.testing import CliRunner
 
 from weave_core.db import make_engine
-from weave_core.schema import crawled_pages, documents, runs
+from weave_core.schema import crawled_pages, documents, runs, run_documents
 from weave_providers.crawl.fetch import Fetched, FixtureFetcher, PoliteFetcher
 import logging
 from weave_providers.crawl.outlets import Outlet
@@ -402,3 +402,63 @@ def test_cancel_during_article_fetch_prevents_persistence_and_events(engine):
     assert not [e for k, e in events if k == 'article']
     assert rows(engine, 'select count(*) from crawled_pages') == [(0,)]
     assert rows(engine, 'select count(*) from documents') == [(0,)]
+
+
+def test_daily_cap_prevents_fetching_new_pages(engine):
+    fetcher, inner = polite(routes([('/a/reuters', '2026-11-03T10:00:00Z')]))
+    events = []
+    report = crawl(engine, OUTLETS, fetcher, NOW, caps={'example-news': 0},
+                   observer=lambda kind, event: events.append((kind, event)))
+    assert report.stored == 0
+    assert f'{BASE}/a/reuters' not in inner.calls
+    assert any(kind == 'article' and event['reason'] == 'daily cap reached' for kind, event in events)
+
+
+def test_refetch_versions_and_removal(engine):
+    from datetime import timedelta
+    url = f"{BASE}/a/reuters"
+    initial = routes([('/a/reuters', '2026-11-03T10:00:00Z')])
+    crawl(engine, OUTLETS, polite(initial)[0], NOW)
+    [first] = rows(engine, "select id from documents")
+    run_id = uuid4()
+    with engine.begin() as conn:
+        conn.execute(runs.insert().values(id=run_id, config={}, config_hash="test", state="queued", created_at=NOW))
+        conn.execute(run_documents.insert().values(run_id=run_id, position=0, document_id=first[0]))
+    newer = routes([('/a/reuters', '2026-11-06T10:00:00Z')])
+    html = (FIX / 'reuters' / 'article.html').read_text()
+    newer[url] = Fetched(url, 200, html.replace('regional water board', 'regional water authority'), None)
+    report = crawl(engine, OUTLETS, polite(newer)[0], NOW + timedelta(days=2))
+    assert report.updated == 1
+    assert rows(engine, "select document_id from run_documents") == [first]
+    assert rows(engine, "select version, superseded_at is not null from documents order by version") == [(1, True), (2, False)]
+    assert rows(engine, "select document_id from crawled_pages where status='stored'") == [(first[0] + '@v2',)]
+    newer[f'{BASE}/sitemap.xml'] = Fetched('x', 200, sitemap(('/a/reuters', '2026-11-08T10:00:00Z')), None)
+    newer[url] = Fetched(url, 410, None, None)
+    report = crawl(engine, OUTLETS, polite(newer)[0], NOW + timedelta(days=4))
+    assert report.removed == 1
+    assert rows(engine, "select status, gone_at is not null from crawled_pages") == [('gone', True)]
+
+
+def test_refetch_same_text_is_unchanged(engine):
+    from datetime import timedelta
+    url = f"{BASE}/a/reuters"
+    initial = routes([('/a/reuters', '2026-11-03T10:00:00Z')])
+    crawl(engine, OUTLETS, polite(initial)[0], NOW)
+    newer = routes([('/a/reuters', '2026-11-06T10:00:00Z')])
+    html = (FIX / 'reuters' / 'article.html').read_text()
+    newer[url] = Fetched(url, 200, html.replace('regional water board', 'regional   water board'), None)
+    report = crawl(engine, OUTLETS, polite(newer)[0], NOW + timedelta(days=2))
+    assert report.unchanged == 1
+    assert report.duplicates == 0
+    assert rows(engine, 'select count(*) from documents') == [(1,)]
+
+
+def test_refetch_exact_content_is_unchanged_not_duplicate(engine):
+    from datetime import timedelta
+    initial = routes([('/a/reuters', '2026-11-03T10:00:00Z')])
+    crawl(engine, OUTLETS, polite(initial)[0], NOW)
+    newer = routes([('/a/reuters', '2026-11-06T10:00:00Z')])
+    report = crawl(engine, OUTLETS, polite(newer)[0], NOW + timedelta(days=2))
+    assert report.unchanged == 1
+    assert report.duplicates == 0
+    assert rows(engine, 'select count(*) from documents') == [(1,)]

@@ -29,7 +29,7 @@ def test_create_enqueues_normalized_request_without_running_crawl(client, engine
     assert body['status'] == 'queued'
     assert body['started_at'] is None and body['finished_at'] is None and body['error'] is None
     assert body['counters'] == {'discovered': 0, 'fetched': 0, 'stored': 0, 'existing': 0,
-                                'duplicates': 0, 'rejected': 0, 'errors': 0, 'reasons': {}}
+                                'duplicates': 0, 'rejected': 0, 'errors': 0, 'updated': 0, 'unchanged': 0, 'removed': 0, 'reasons': {}}
     assert client.get(f"/crawls/{body['id']}").json() == body
     assert client.get('/crawls').json()['items'] == [body]
 

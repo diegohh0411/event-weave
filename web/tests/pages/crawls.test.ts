@@ -28,31 +28,10 @@ async function detail(id: string) { const { default: Page } = await import('../.
 async function doc(id: string, did: string) { const { default: Page } = await import('../../app/pages/crawls/[id]/documents/[did].vue'); return track(await mountSuspended(Page, { route: `/crawls/${id}/documents/${did}` })) }
 
 describe('crawl pages', () => {
-  it('submits multiple sites, languages and advanced sources and opens the new crawl', async () => {
+  it('shows crawl history without a new crawl form', async () => {
     const w = await list()
-    await w.find('[name="domain-0"]').setValue('example.com')
-    await w.find('[name="language-0"]').setValue('es')
-    await w.find('[name="per-day-0"]').setValue('4')
-    await w.find('[name="feeds-0"]').setValue('https://example.com/rss\nhttps://example.com/feed')
-    await w.find('[name="sitemaps-0"]').setValue('https://example.com/sitemap.xml')
-    await btn(w, 'Add site').trigger('click')
-    await w.find('[name="domain-1"]').setValue('other.com')
-    await w.find('[name="language-1"]').setValue('tr')
-    await w.find('[name="days"]').setValue('7')
-    await w.find('form').trigger('submit')
-    await vi.waitFor(() => expect(navigateTo).toHaveBeenCalled())
-    const req = calls.find(c => c.method === 'POST' && new URL(c.url).pathname === '/crawls')!
-    expect(await req.json()).toEqual({ days: 7, sites: [
-      { domain: 'example.com', language: 'es', per_day: 4, feeds: ['https://example.com/rss', 'https://example.com/feed'], sitemaps: ['https://example.com/sitemap.xml'] },
-      { domain: 'other.com', language: 'tr', per_day: 3, feeds: [], sitemaps: [] }
-    ] })
-    expect(navigateTo.mock.calls[0]![0]).toMatch(/^\/crawls\//)
-  })
-  it('shows API validation errors without navigating', async () => {
-    override = async r => r.method === 'POST' ? json({ detail: [{ loc: ['body', 'sites', 0, 'domain'], msg: 'Invalid domain' }] }, 422) : undefined
-    const w = await list(); await w.find('[name="domain-0"]').setValue('bad'); await w.find('form').trigger('submit')
-    await vi.waitFor(() => expect(w.text()).toContain('Invalid domain'))
-    expect(navigateTo).not.toHaveBeenCalled()
+    expect(w.find('form').exists()).toBe(false)
+    expect(w.text()).toContain('Crawls')
   })
   it('loads a crawl by route ID and explains four paywalls and source errors', async () => {
     override = async r => new URL(r.url).pathname === `/crawls/${CRAWL_PAYWALLED}` ? json({ ...stored, id: CRAWL_PAYWALLED, counters: { ...stored.counters, fetched: 4, stored: 0, existing: 0, rejected: 4, reasons: { paywall: 4 } } }) : undefined

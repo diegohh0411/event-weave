@@ -515,7 +515,10 @@
               "existing",
               "duplicate",
               "rejected",
-              "error"
+              "error",
+              "updated",
+              "unchanged",
+              "removed"
             ],
             "title": "Status",
             "type": "string"
@@ -576,8 +579,20 @@
             "title": "Rejected",
             "type": "integer"
           },
+          "removed": {
+            "title": "Removed",
+            "type": "integer"
+          },
           "stored": {
             "title": "Stored",
+            "type": "integer"
+          },
+          "unchanged": {
+            "title": "Unchanged",
+            "type": "integer"
+          },
+          "updated": {
+            "title": "Updated",
             "type": "integer"
           }
         },
@@ -589,6 +604,9 @@
           "duplicates",
           "rejected",
           "errors",
+          "updated",
+          "unchanged",
+          "removed",
           "reasons"
         ],
         "title": "CrawlCounters",
@@ -691,6 +709,18 @@
           "request": {
             "$ref": "#/components/schemas/CrawlRequest"
           },
+          "site_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Id"
+          },
           "started_at": {
             "anyOf": [
               {
@@ -712,11 +742,22 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "trigger": {
+            "enum": [
+              "adhoc",
+              "manual",
+              "schedule"
+            ],
+            "title": "Trigger",
+            "type": "string"
           }
         },
         "required": [
           "id",
           "request",
+          "site_id",
+          "trigger",
           "status",
           "created_at",
           "started_at",
@@ -789,11 +830,18 @@
             "title": "Name"
           },
           "per_day": {
+            "anyOf": [
+              {
+                "maximum": 200.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "default": 3,
-            "maximum": 200.0,
-            "minimum": 1.0,
-            "title": "Per Day",
-            "type": "integer"
+            "title": "Per Day"
           },
           "sitemaps": {
             "items": {
@@ -1999,6 +2047,37 @@
         "title": "Page[SampleItem]",
         "type": "object"
       },
+      "Page_SiteOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SiteOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "Page[SiteOut]",
+        "type": "object"
+      },
       "Progress": {
         "properties": {
           "done": {
@@ -2475,6 +2554,394 @@
           "report"
         ],
         "title": "ScoresOut",
+        "type": "object"
+      },
+      "SiteCreate": {
+        "properties": {
+          "check_every_minutes": {
+            "default": 60,
+            "minimum": 5.0,
+            "title": "Check Every Minutes",
+            "type": "integer"
+          },
+          "daily_cap": {
+            "default": 50,
+            "minimum": 1.0,
+            "title": "Daily Cap",
+            "type": "integer"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "feeds": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Feeds",
+            "type": "array"
+          },
+          "language": {
+            "enum": [
+              "en",
+              "es",
+              "hi",
+              "tr",
+              "uk"
+            ],
+            "title": "Language",
+            "type": "string"
+          },
+          "max_parallel": {
+            "default": 1,
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Max Parallel",
+            "type": "integer"
+          },
+          "min_interval_seconds": {
+            "default": 2,
+            "minimum": 0.5,
+            "title": "Min Interval Seconds",
+            "type": "number"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "per_day": {
+            "anyOf": [
+              {
+                "maximum": 200.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 3,
+            "title": "Per Day"
+          },
+          "sitemaps": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Sitemaps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "domain",
+          "language"
+        ],
+        "title": "SiteCreate",
+        "type": "object"
+      },
+      "SiteOut": {
+        "properties": {
+          "check_every_minutes": {
+            "default": 60,
+            "minimum": 5.0,
+            "title": "Check Every Minutes",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "daily_cap": {
+            "default": 50,
+            "minimum": 1.0,
+            "title": "Daily Cap",
+            "type": "integer"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "feeds": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Feeds",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "language": {
+            "enum": [
+              "en",
+              "es",
+              "hi",
+              "tr",
+              "uk"
+            ],
+            "title": "Language",
+            "type": "string"
+          },
+          "last_crawl": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CrawlOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_scheduled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Scheduled At"
+          },
+          "max_parallel": {
+            "default": 1,
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Max Parallel",
+            "type": "integer"
+          },
+          "min_interval_seconds": {
+            "default": 2,
+            "minimum": 0.5,
+            "title": "Min Interval Seconds",
+            "type": "number"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "next_check_at": {
+            "format": "date-time",
+            "title": "Next Check At",
+            "type": "string"
+          },
+          "per_day": {
+            "anyOf": [
+              {
+                "maximum": 200.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 3,
+            "title": "Per Day"
+          },
+          "sitemaps": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Sitemaps",
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain",
+          "language",
+          "id",
+          "next_check_at",
+          "last_scheduled_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SiteOut",
+        "type": "object"
+      },
+      "SitePatch": {
+        "properties": {
+          "check_every_minutes": {
+            "anyOf": [
+              {
+                "minimum": 5.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check Every Minutes"
+          },
+          "daily_cap": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Cap"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "feeds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feeds"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "enum": [
+                  "en",
+                  "es",
+                  "hi",
+                  "tr",
+                  "uk"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "max_parallel": {
+            "anyOf": [
+              {
+                "maximum": 4.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Parallel"
+          },
+          "min_interval_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0.5,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Interval Seconds"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "per_day": {
+            "anyOf": [
+              {
+                "maximum": 200.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Day"
+          },
+          "sitemaps": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sitemaps"
+          }
+        },
+        "title": "SitePatch",
         "type": "object"
       },
       "SnapshotDiffOut": {
@@ -4658,6 +5125,317 @@
           }
         },
         "summary": "Start Run"
+      }
+    },
+    "/sites": {
+      "get": {
+        "operationId": "list_sites_sites_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_SiteOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sites"
+      },
+      "post": {
+        "operationId": "create_site_sites_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Site"
+      }
+    },
+    "/sites/{site_id}": {
+      "delete": {
+        "operationId": "delete_site_sites__site_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Site"
+      },
+      "get": {
+        "operationId": "get_site_sites__site_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Site"
+      },
+      "patch": {
+        "operationId": "update_site_sites__site_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SitePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Site"
+      }
+    },
+    "/sites/{site_id}/check": {
+      "post": {
+        "operationId": "check_site_sites__site_id__check_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrawlOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check Site"
+      }
+    },
+    "/sites/{site_id}/crawls": {
+      "get": {
+        "operationId": "site_crawls_sites__site_id__crawls_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_CrawlOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Site Crawls"
       }
     }
   }

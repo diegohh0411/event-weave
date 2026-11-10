@@ -89,6 +89,9 @@ def test_no_gold_outside_scores(service, seeded):
     fill = {"run_id": str(run), "a": str(run), "b": str(run), "crawl_id": str(crawl), "cluster_id": "c1", "document_id": "d1"}
     called = []
     with TestClient(app) as client:
+        site = client.post('/sites', json={'domain': 'example.com', 'language': 'en'})
+        assert site.status_code == 201
+        fill['site_id'] = site.json()['id']
         framework_paths = {app.openapi_url, app.docs_url, app.redoc_url, "/docs/oauth2-redirect"}
         registered = set(_get_paths(app.routes))
         documented = {path for path, item in app.openapi()["paths"].items() if "get" in item}

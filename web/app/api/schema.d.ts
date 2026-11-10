@@ -519,6 +519,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sites */
+        get: operations["list_sites_sites_get"];
+        put?: never;
+        /** Create Site */
+        post: operations["create_site_sites_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sites/{site_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Site */
+        get: operations["get_site_sites__site_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Site */
+        delete: operations["delete_site_sites__site_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Site */
+        patch: operations["update_site_sites__site_id__patch"];
+        trace?: never;
+    };
+    "/sites/{site_id}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check Site */
+        post: operations["check_site_sites__site_id__check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sites/{site_id}/crawls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Site Crawls */
+        get: operations["site_crawls_sites__site_id__crawls_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -688,7 +759,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "stored" | "existing" | "duplicate" | "rejected" | "error";
+            status: "stored" | "existing" | "duplicate" | "rejected" | "error" | "updated" | "unchanged" | "removed";
             /**
              * Updated At
              * Format: date-time
@@ -715,8 +786,14 @@ export interface components {
             };
             /** Rejected */
             rejected: number;
+            /** Removed */
+            removed: number;
             /** Stored */
             stored: number;
+            /** Unchanged */
+            unchanged: number;
+            /** Updated */
+            updated: number;
         };
         /** CrawlDocumentOut */
         CrawlDocumentOut: {
@@ -755,6 +832,8 @@ export interface components {
              */
             id: string;
             request: components["schemas"]["CrawlRequest"];
+            /** Site Id */
+            site_id: string | null;
             /** Started At */
             started_at: string | null;
             /**
@@ -762,6 +841,11 @@ export interface components {
              * @enum {string}
              */
             status: "queued" | "running" | "completed" | "failed";
+            /**
+             * Trigger
+             * @enum {string}
+             */
+            trigger: "adhoc" | "manual" | "schedule";
         };
         /** CrawlRequest */
         CrawlRequest: {
@@ -790,7 +874,7 @@ export interface components {
              * Per Day
              * @default 3
              */
-            per_day: number;
+            per_day: number | null;
             /** Sitemaps */
             sitemaps?: string[];
         };
@@ -1173,6 +1257,17 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** Page[SiteOut] */
+        Page_SiteOut_: {
+            /** Items */
+            items: components["schemas"]["SiteOut"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
         /** Progress */
         Progress: {
             /** Done */
@@ -1341,6 +1436,146 @@ export interface components {
             split: string;
             /** Track */
             track: string;
+        };
+        /** SiteCreate */
+        SiteCreate: {
+            /**
+             * Check Every Minutes
+             * @default 60
+             */
+            check_every_minutes: number;
+            /**
+             * Daily Cap
+             * @default 50
+             */
+            daily_cap: number;
+            /** Domain */
+            domain: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Feeds */
+            feeds?: string[];
+            /**
+             * Language
+             * @enum {string}
+             */
+            language: "en" | "es" | "hi" | "tr" | "uk";
+            /**
+             * Max Parallel
+             * @default 1
+             */
+            max_parallel: number;
+            /**
+             * Min Interval Seconds
+             * @default 2
+             */
+            min_interval_seconds: number;
+            /** Name */
+            name?: string | null;
+            /**
+             * Per Day
+             * @default 3
+             */
+            per_day: number | null;
+            /** Sitemaps */
+            sitemaps?: string[];
+        };
+        /** SiteOut */
+        SiteOut: {
+            /**
+             * Check Every Minutes
+             * @default 60
+             */
+            check_every_minutes: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Daily Cap
+             * @default 50
+             */
+            daily_cap: number;
+            /** Domain */
+            domain: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Feeds */
+            feeds?: string[];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Language
+             * @enum {string}
+             */
+            language: "en" | "es" | "hi" | "tr" | "uk";
+            last_crawl?: components["schemas"]["CrawlOut"] | null;
+            /** Last Scheduled At */
+            last_scheduled_at: string | null;
+            /**
+             * Max Parallel
+             * @default 1
+             */
+            max_parallel: number;
+            /**
+             * Min Interval Seconds
+             * @default 2
+             */
+            min_interval_seconds: number;
+            /** Name */
+            name?: string | null;
+            /**
+             * Next Check At
+             * Format: date-time
+             */
+            next_check_at: string;
+            /**
+             * Per Day
+             * @default 3
+             */
+            per_day: number | null;
+            /** Sitemaps */
+            sitemaps?: string[];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** SitePatch */
+        SitePatch: {
+            /** Check Every Minutes */
+            check_every_minutes?: number | null;
+            /** Daily Cap */
+            daily_cap?: number | null;
+            /** Domain */
+            domain?: string | null;
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Feeds */
+            feeds?: string[] | null;
+            /** Language */
+            language?: ("en" | "es" | "hi" | "tr" | "uk") | null;
+            /** Max Parallel */
+            max_parallel?: number | null;
+            /** Min Interval Seconds */
+            min_interval_seconds?: number | null;
+            /** Name */
+            name?: string | null;
+            /** Per Day */
+            per_day?: number | null;
+            /** Sitemaps */
+            sitemaps?: string[] | null;
         };
         /** SnapshotDiffOut */
         SnapshotDiffOut: {
@@ -2462,6 +2697,231 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sites_sites_get: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_SiteOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_site_sites_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SiteCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_site_sites__site_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_site_sites__site_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_site_sites__site_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SitePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_site_sites__site_id__check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CrawlOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    site_crawls_sites__site_id__crawls_get: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                site_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_CrawlOut_"];
                 };
             };
             /** @description Validation Error */

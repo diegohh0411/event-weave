@@ -28,3 +28,6 @@ def tokenize(text: str) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
     if text[start:].strip():
         sentences.append((start, len(text.rstrip())))
     return tokens, sentences
+
+# Shared with migrations, which cannot depend on the providers package.
+from weave_core.textnorm import edit_hash, normalize_for_edit  # noqa: F401, E402

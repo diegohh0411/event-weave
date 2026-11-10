@@ -37,7 +37,7 @@ def test_migration_creates_ledger_and_run_deployments(database_url):
     assert insp.get_pk_constraint("run_deployments")["constrained_columns"] == ["run_id", "deployment"]
     cfg = Config()
     cfg.set_main_option("script_location", str(Path(weave_core.__file__).parent / "migrations"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["0010_reruns"]
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0011_sites"]
 
 
 def test_documents_have_order_key_and_no_gold_columns(database_url):
@@ -55,7 +55,7 @@ def test_gold_and_crawl_tables_exist(database_url):
         "id", "language", "kind", "split", "topic", "source_document_id", "source_mention_id",
         "target_document_id", "target_mention_id", "label"}
     assert {c["name"] for c in insp.get_columns("crawled_pages")} == {
-        "canonical_url", "url", "outlet", "fetched_at", "status", "reason", "raw_html_gz", "document_id"}
+        "canonical_url", "url", "outlet", "fetched_at", "status", "reason", "raw_html_gz", "document_id", "gone_at"}
 
 
 def test_mentions_tables_exist(database_url):
@@ -126,4 +126,51 @@ def test_crawl_migration_preserves_existing_tables(database_url):
     assert inspector.get_pk_constraint("crawl_articles")["constrained_columns"] == ["crawl_id", "canonical_url"]
     assert inspector.get_pk_constraint("crawl_sources")["constrained_columns"] == ["crawl_id", "url"]
     with engine.connect() as conn:
-        assert conn.scalar(sa.text("select version_num from alembic_version")) == "0010_reruns"
+        assert conn.scalar(sa.text("select version_num from alembic_version")) == "0011_sites"
+
+
+def test_sites_constraints_and_document_versions(database_url):
+    import uuid
+    import pytest
+    from sqlalchemy.exc import IntegrityError
+    from weave_core.schema import documents, sites
+    engine = make_engine(database_url)
+    with engine.begin() as c:
+        base = dict(provider='p', external_id='e', article_id='d', language='en', title='t',
+                    byline='b', outlet='o', url='u', text='x', token_offsets=[], sentence_offsets=[], content_hash='h')
+        c.execute(documents.insert(), [dict(base, id='d', version=1), dict(base, id='d@v2', version=2)])
+        c.execute(sites.insert().values(id=uuid.uuid4(), name='site', domain='example.com', language='en'))
+    for field, value in [('check_every_minutes', 4), ('daily_cap', 0), ('min_interval_seconds', 0.4), ('max_parallel', 0), ('max_parallel', 5)]:
+        with pytest.raises(IntegrityError), engine.begin() as c:
+            c.execute(sites.insert().values(id=uuid.uuid4(), name=str(uuid.uuid4()), domain=str(uuid.uuid4()), language='en', **{field: value}))
+
+
+def test_new_crawl_status_constraints(database_url):
+    import pytest
+    from sqlalchemy.exc import IntegrityError
+    engine = make_engine(database_url)
+    with engine.begin() as c:
+        for status in ('gone', 'stored', 'rejected'):
+            c.execute(sa.text('insert into crawled_pages (canonical_url, url, outlet, fetched_at, status) values (:s, :s, :s, now(), :s)'), {'s': status})
+    with pytest.raises(IntegrityError), engine.begin() as c:
+        c.execute(sa.text("insert into crawled_pages (canonical_url, url, outlet, fetched_at, status) values ('bad', 'bad', 'o', now(), 'bad')"))
+
+
+def test_crawl_article_and_trigger_status_constraints(database_url):
+    import uuid
+    import pytest
+    from sqlalchemy.exc import IntegrityError
+    from weave_core.schema import crawl_runs, crawl_articles
+    from datetime import datetime, timezone
+    engine = make_engine(database_url)
+    now = datetime.now(timezone.utc)
+    crawl_id = uuid.uuid4()
+    with engine.begin() as c:
+        for trigger in ('adhoc', 'manual', 'schedule'):
+            c.execute(crawl_runs.insert().values(id=crawl_id if trigger == 'adhoc' else uuid.uuid4(), trigger=trigger, request={}, status='queued', created_at=now, progress={}))
+        for status in ('updated', 'unchanged', 'removed'):
+            c.execute(crawl_articles.insert().values(crawl_id=crawl_id, canonical_url=status, url=status, outlet='o', status=status, fetched=True, updated_at=now))
+    with pytest.raises(IntegrityError), engine.begin() as c:
+        c.execute(crawl_articles.insert().values(crawl_id=crawl_id, canonical_url='bad', url='bad', outlet='o', status='bad', fetched=True, updated_at=now))
+    with pytest.raises(IntegrityError), engine.begin() as c:
+        c.execute(crawl_runs.insert().values(id=uuid.uuid4(), trigger='bad', request={}, status='queued', created_at=now, progress={}))

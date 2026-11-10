@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Engine
 
 from weave_core.schema import crawled_pages, documents
+from weave_core.textnorm import edit_hash
 from weave_providers.crawl.discover import Candidate, discover
 from weave_providers.crawl.extract import Rejected, extract
 from weave_providers.crawl.fetch import Fetcher, PoliteFetcher
@@ -32,13 +33,16 @@ class CrawlReport:
     fetched: int = 0
     stored: int = 0
     duplicates: int = 0
+    updated: int = 0
+    unchanged: int = 0
+    removed: int = 0
     rejected: dict[str, int] = field(default_factory=dict)
     discovery_errors: dict[str, int] = field(default_factory=dict)  # by outlet name
 
 
 def crawl(engine: Engine, outlets: list[Outlet | CrawlSite], fetcher: Fetcher, now: datetime,
           days: int = 7, meta_fetcher: Fetcher | None = None, observer=None, cancelled=None,
-          write_guard=None) -> CrawlReport:
+          write_guard=None, caps: dict[str, int] | None = None, consume_cap=None) -> CrawlReport:
     """Crawl configured outlets or CrawlSites, emitting ``(kind, outcome)`` events.
 
     Pass a source-less CrawlSite for automatic discovery; legacy Outlet/CLI
@@ -53,12 +57,13 @@ def crawl(engine: Engine, outlets: list[Outlet | CrawlSite], fetcher: Fetcher, n
     previous_cancelled = fetcher.cancelled
     fetcher.cancelled = cancelled or (lambda: False)
     try:
-        return _run_crawl(engine, outlets, fetcher, now, days, observer, fetcher.cancelled, write_guard)
+        return _run_crawl(engine, outlets, fetcher, now, days, observer, fetcher.cancelled, write_guard, caps, consume_cap)
     finally:
         fetcher.cancelled = previous_cancelled
 
 
-def _run_crawl(engine, outlets, fetcher, now, days, observer, stopped, write_guard):
+def _run_crawl(engine, outlets, fetcher, now, days, observer, stopped, write_guard, caps, consume_cap):
+    remaining = dict(caps or {})
     meta = fetcher.meta_view()
     window = (now - timedelta(days=days), now)
     report = CrawlReport()
@@ -111,7 +116,14 @@ def _run_crawl(engine, outlets, fetcher, now, days, observer, stopped, write_gua
             if stopped():
                 break
             if prior:
-                status, reason, doc_id = prior
+                status, reason, doc_id, fetched_at = prior
+                date = candidate.updated_at or candidate.published_at
+                if status == "stored" and date and fetched_at and date > fetched_at:
+                    outcome = _refetch(engine, candidate, fetcher, now, report, stopped, write_guard, doc_id)
+                    if outcome is None:
+                        break
+                    emit("article", dict(canonical_url=candidate.url, url=candidate.url, outlet=candidate.outlet, **outcome))
+                    continue
                 if status == 'stored':
                     status = 'existing'
                 elif reason and reason.startswith('duplicate of '):
@@ -122,10 +134,18 @@ def _run_crawl(engine, outlets, fetcher, now, days, observer, stopped, write_gua
                                      outlet=candidate.outlet, status=status, reason=reason,
                                      document_id=doc_id, fetched=False))
                 continue
+            if outlet.name in remaining and remaining[outlet.name] <= 0:
+                rejected["daily cap reached"] += 1
+                emit('article', dict(canonical_url=candidate.url, url=candidate.url,
+                                     outlet=candidate.outlet, status='rejected', reason='daily cap reached',
+                                     document_id=None, fetched=False))
+                continue
             outcome = _crawl_page(engine, candidate, outlet.language, fetcher, now, report, rejected, stopped,
-                                  write_guard)
+                                  write_guard, consume_cap)
             if outcome is None:
                 break
+            if outcome['status'] == 'stored' and outlet.name in remaining:
+                remaining[outlet.name] -= 1
             emit('article', dict(canonical_url=candidate.url, url=candidate.url,
                                  outlet=candidate.outlet, **outcome))
     report.rejected = dict(rejected)
@@ -137,12 +157,12 @@ def _prior_page(engine: Engine, canonical: str):
     """Seen before, unless the earlier attempt was a fetch error (those are retried)."""
     c = crawled_pages.c
     with engine.connect() as conn:
-        row = conn.execute(sa.select(c.status, c.reason, c.document_id).where(c.canonical_url == canonical)).first()
+        row = conn.execute(sa.select(c.status, c.reason, c.document_id, c.fetched_at).where(c.canonical_url == canonical)).first()
     return row if row is not None and not (row.reason or "").startswith(FETCH_ERROR) else None
 
 
 def _crawl_page(engine, candidate: Candidate, language: str, fetcher: Fetcher, now: datetime,
-                report: CrawlReport, rejected: Counter, cancelled, write_guard) -> dict | None:
+                report: CrawlReport, rejected: Counter, cancelled, write_guard, consume_cap=None) -> dict | None:
     got = fetcher.fetch(candidate.url)
     if cancelled():
         return None
@@ -174,20 +194,25 @@ def _crawl_page(engine, candidate: Candidate, language: str, fetcher: Fetcher, n
         if write_guard:
             write_guard(conn)
         dup = conn.execute(sa.select(documents.c.id).where(
-            documents.c.provider == PROVIDER, documents.c.content_hash == digest)).scalar()
+            documents.c.provider == PROVIDER, documents.c.content_hash == digest, documents.c.article_id != doc_id)).scalar()
         if cancelled():
             return None
         if dup is not None:
             _upsert_page(conn, candidate, now, "rejected", f"duplicate of {dup}", raw, None)
             report.duplicates += 1
             return dict(status='duplicate', reason=f'duplicate of {dup}', document_id=dup, fetched=True)
+        if consume_cap and not consume_cap(conn, candidate, doc_id):
+            rejected['daily cap reached'] += 1
+            return dict(status='rejected', reason='daily cap reached', document_id=None, fetched=True)
         conn.execute(sa.insert(documents).values(
             id=doc_id, article_id=doc_id, provider=PROVIDER, external_id=external_id, language=language,
             title=result.title, byline=result.byline, outlet=candidate.outlet, url=candidate.url,
             published_at=published, text=result.text, token_offsets=tokens, sentence_offsets=sentences,
-            content_hash=digest,
+            content_hash=digest, text_hash=edit_hash(result.title, result.text),
             order_key=[int(published.timestamp()) if published else UNDATED_ORDER]))
         _upsert_page(conn, candidate, now, "stored", None, raw, doc_id)
+        if consume_cap:
+            consume_cap(conn, candidate, doc_id, record=True)
     report.stored += 1
     return dict(status="stored", reason=None, document_id=doc_id, fetched=True)
 
@@ -210,3 +235,46 @@ def _upsert_page(conn, candidate: Candidate, now: datetime, status: str, reason:
     conn.execute(stmt.on_conflict_do_update(
         index_elements=[crawled_pages.c.canonical_url],
         set_={k: v for k, v in values.items() if k != "canonical_url"}))
+
+
+def _refetch(engine, candidate, fetcher, now, report, cancelled, write_guard, doc_id):
+    got = fetcher.fetch(candidate.url)
+    if cancelled():
+        return None
+    if got.status in (404, 410):
+        with engine.begin() as conn:
+            if write_guard:
+                write_guard(conn)
+            conn.execute(crawled_pages.update().where(crawled_pages.c.canonical_url == candidate.url).values(status="gone", gone_at=now, fetched_at=now))
+        report.removed += 1
+        return dict(status="removed", reason=None, document_id=doc_id, fetched=True)
+    if got.status != 200 or got.error or not got.html:
+        return dict(status="error", reason=FETCH_ERROR + (got.error or f"HTTP {got.status}"), document_id=doc_id, fetched=False)
+    report.fetched += 1
+    result = extract(got.html, candidate.url, candidate.published_at)
+    if cancelled():
+        return None
+    if isinstance(result, Rejected):
+        report.unchanged += 1
+        return dict(status="unchanged", reason=f"refetch rejected: {result.reason}", document_id=doc_id, fetched=True)
+    raw = gzip.compress(got.html.encode("utf-8"))
+    with engine.begin() as conn:
+        if write_guard:
+            write_guard(conn)
+        old = conn.execute(sa.select(documents).where(documents.c.id == doc_id).with_for_update()).mappings().one()
+        digest = edit_hash(result.title, result.text)
+        if digest == old["text_hash"]:
+            conn.execute(documents.update().where(documents.c.id == doc_id).values(byline=result.byline, published_at=result.published_at))
+            _upsert_page(conn, candidate, now, "stored", None, raw, doc_id)
+            report.unchanged += 1
+            return dict(status="unchanged", reason=None, document_id=doc_id, fetched=True)
+        version = old["version"] + 1
+        new_id = f'{old["article_id"]}@v{version}'
+        tokens, sentences = tokenize(result.text)
+        values = dict(old)
+        values.update(id=new_id, version=version, superseded_at=None, title=result.title, text=result.text, byline=result.byline, published_at=result.published_at, text_hash=digest, content_hash=content_hash(result.text), token_offsets=tokens, sentence_offsets=sentences, order_key=[int(result.published_at.timestamp()) if result.published_at else UNDATED_ORDER])
+        conn.execute(documents.update().where(documents.c.id == doc_id).values(superseded_at=now))
+        conn.execute(documents.insert().values(**values))
+        _upsert_page(conn, candidate, now, "stored", None, raw, new_id)
+    report.updated += 1
+    return dict(status="updated", reason=None, document_id=new_id, fetched=True)

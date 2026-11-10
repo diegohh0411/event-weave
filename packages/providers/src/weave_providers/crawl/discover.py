@@ -19,6 +19,7 @@ class Candidate:
     outlet: str
     published_at: datetime | None
     title: str | None
+    updated_at: datetime | None = None
 
 
 def canonical_url(url: str) -> str:
@@ -62,7 +63,7 @@ def _sitemap_entries(xml: str) -> tuple[list[str], list[tuple[str, datetime | No
             continue
         date = (_parse_date(_text(u, f"{NEWS}news/{NEWS}publication_date"))
                 or _parse_date(_text(u, f"{SM}lastmod")))
-        entries.append((loc, date, _text(u, f"{NEWS}news/{NEWS}title")))
+        entries.append((loc, date, _text(u, f"{NEWS}news/{NEWS}title"), _parse_date(_text(u, f"{SM}lastmod"))))
     return children, entries
 
 
@@ -126,7 +127,8 @@ def _from_feed(fetcher: Fetcher, url: str, on_error: ErrorSink):
         parsed = e.get("published_parsed") or e.get("updated_parsed")  # feedparser yields UTC
         date = datetime(*parsed[:6], tzinfo=timezone.utc) if parsed else None
         if e.get("link"):
-            out.append((e["link"], date, e.get("title")))
+            updated = e.get("updated_parsed")
+            out.append((e["link"], date, e.get("title"), datetime(*updated[:6], tzinfo=timezone.utc) if updated else None))
     return out
 
 
@@ -175,8 +177,8 @@ def discover(outlet: Outlet, fetcher: Fetcher, window: tuple[datetime, datetime]
             on_source(u, 'feed', failures[0] if failures else None)
     found: dict[str, Candidate] = {}
     for entries in sources:
-        has_dates = any(d for _, d, _ in entries)
-        for url, date, title in entries:
+        has_dates = any(d for _, d, _, _ in entries)
+        for url, date, title, updated in entries:
             if not _on_domain(url, outlet.domain):
                 continue
             if date is None:
@@ -187,7 +189,7 @@ def discover(outlet: Outlet, fetcher: Fetcher, window: tuple[datetime, datetime]
             key = canonical_url(url)
             prior = found.get(key)
             if prior is None or (prior.published_at is None and date is not None):
-                found[key] = Candidate(key, outlet.name, date, title)
+                found[key] = Candidate(key, outlet.name, date, title, updated)
     result = sorted(found.values(), key=lambda c: (c.published_at is None,
                     c.published_at or start, c.url))
     if outlet.per_day is not None:

@@ -5,7 +5,7 @@ type Colour = 'neutral' | 'primary' | 'success' | 'warning' | 'error' | 'info'
 const COLOURS: Record<string, Colour> = {
   created: 'neutral', queued: 'neutral', pending: 'neutral',
   running: 'info',
-  completed: 'success', done: 'success', stored: 'success', existing: 'neutral',
+  updated: 'info', unchanged: 'neutral', removed: 'warning', completed: 'success', done: 'success', stored: 'success', existing: 'neutral',
   cancelled: 'warning', duplicate: 'neutral', rejected: 'warning', skipped: 'warning',
   failed: 'error', error: 'error'
 }

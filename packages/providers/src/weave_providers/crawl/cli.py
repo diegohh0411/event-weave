@@ -64,3 +64,29 @@ def crawl_worker_command(once: bool = typer.Option(False, help='Process at most 
         for sig, handler in previous.items():
             signal.signal(sig, handler)
         engine.dispose()
+
+
+sites_app = typer.Typer()
+
+
+@sites_app.command("import")
+def import_sites(outlets: Path):
+    from uuid import uuid4
+    from sqlalchemy.dialects.postgresql import insert
+    from weave_core.schema import sites
+
+    engine = make_engine(Settings.from_env().database_url)
+    inserted = skipped = 0
+    try:
+        with engine.begin() as conn:
+            for outlet in load_outlets(outlets):
+                result = conn.execute(insert(sites).values(
+                    id=uuid4(), name=outlet.name, domain=outlet.domain, language=outlet.language,
+                    sitemaps=outlet.sitemaps, feeds=outlet.feeds, per_day=outlet.per_day
+                ).on_conflict_do_nothing().returning(sites.c.id))
+                count = int(result.scalar_one_or_none() is not None)
+                inserted += count
+                skipped += 1 - count
+    finally:
+        engine.dispose()
+    typer.echo(f"inserted={inserted} skipped={skipped}")

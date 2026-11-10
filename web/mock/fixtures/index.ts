@@ -35,6 +35,8 @@ const createdOut: Ok<'/runs', 'post', 201> = { run_id: RUN_NEW, config_hash: run
 const startRequestShape: Body<'/runs', 'post'> = runPaper.config // keeps request bodies tied to the schema too
 void startRequestShape
 
+const site = { id: '00000000-0000-4000-8000-000000000201', name: 'example.com', domain: 'example.com', language: 'en', per_day: 3, feeds: [], sitemaps: [], enabled: true, check_every_minutes: 60, daily_cap: 50, min_interval_seconds: 2, max_parallel: 1, next_check_at: '2026-11-09T10:00:00Z', last_scheduled_at: null, created_at: '2026-11-09T10:00:00Z', updated_at: '2026-11-09T10:00:00Z', last_crawl: null }
+
 export const fixtures: Record<string, Fixture[]> = {
   'GET /library/documents': [ok(page(libraryDocuments.filter(d => d.version === d.versions)))],
   'GET /library/documents/{document_id}': libraryDocuments.map(d => ok(d, { document_id: d.id })),
@@ -46,6 +48,12 @@ export const fixtures: Record<string, Fixture[]> = {
   'GET /deployments': [ok(deployments)],
   'POST /deployments/probe': [ok(deployments)],
 
+  'GET /sites': [ok(page([site]))],
+  'POST /sites': [created(site)],
+  'GET /sites/{site_id}': [ok(site)],
+  'PATCH /sites/{site_id}': [ok(site)],
+  'POST /sites/{site_id}/check': [{ status: 202, body: queuedCrawl }],
+  'GET /sites/{site_id}/crawls': [ok(page([queuedCrawl]))],
   'GET /crawls': [ok(page(crawls))],
   'POST /crawls': [{ status: 202, body: queuedCrawl }],
   'GET /crawls/{crawl_id}': crawls.map(c => ok(c, { crawl_id: c.id })),
