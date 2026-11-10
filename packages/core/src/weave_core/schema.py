@@ -16,11 +16,11 @@ documents = sa.Table("documents", metadata,
     sa.Column("id", T, primary_key=True), *[sa.Column(n, T, nullable=False) for n in ("provider", "external_id", "language", "title", "byline", "outlet", "url")],
     sa.Column("published_at", TZ), sa.Column("text", T, nullable=False),
     sa.Column("token_offsets", JSONB, nullable=False), sa.Column("sentence_offsets", JSONB, nullable=False),
-    sa.Column("content_hash", T, nullable=False),
+    sa.Column("content_hash", T, nullable=False), sa.Column("text_hash", T),
     sa.Column("article_id", T, nullable=False), sa.Column("version", sa.Integer, nullable=False, server_default="1"),
     sa.Column("superseded_at", TZ),
     sa.Column("order_key", ARRAY(sa.BigInteger), nullable=False, server_default="{}"),
-    sa.UniqueConstraint("provider", "external_id"))
+    sa.UniqueConstraint("provider", "external_id", "version"))
 sa.Index("ix_documents_article_id", documents.c.article_id)
 sa.Index("ix_documents_latest", documents.c.article_id, postgresql_where=documents.c.superseded_at.is_(None))
 run_documents = sa.Table("run_documents", metadata,
@@ -81,9 +81,9 @@ gold_pairs = sa.Table("gold_pairs", metadata,
 crawled_pages = sa.Table("crawled_pages", metadata,
     sa.Column("canonical_url", T, primary_key=True), sa.Column("url", T, nullable=False),
     sa.Column("outlet", T, nullable=False), sa.Column("fetched_at", TZ, nullable=False),
-    sa.Column("status", T, nullable=False), sa.Column("reason", T), sa.Column("raw_html_gz", sa.LargeBinary),
+    sa.Column("status", T, nullable=False), sa.Column("reason", T), sa.Column("raw_html_gz", sa.LargeBinary), sa.Column("gone_at", TZ),
     sa.Column("document_id", T, sa.ForeignKey("documents.id")),
-    sa.CheckConstraint("status in ('stored', 'rejected')", name="ck_crawled_pages_status"))
+    sa.CheckConstraint("status in ('stored', 'rejected', 'gone')", name="ck_crawled_pages_status"))
 
 mentions = sa.Table("mentions", metadata,
     sa.Column("id", T, primary_key=True),
@@ -145,8 +145,33 @@ evaluation_scores = sa.Table("evaluation_scores", metadata,
     sa.CheckConstraint("setting in ('within', 'cross', 'pooled')", name="ck_evaluation_scores_setting"),
     sa.CheckConstraint("metric in ('muc', 'b3', 'ceafe', 'blanc', 'conll')", name="ck_evaluation_scores_metric"))
 
+sites = sa.Table("sites", metadata,
+    sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("name", T, nullable=False, unique=True), sa.Column("domain", T, nullable=False, unique=True),
+    sa.Column("language", T, nullable=False),
+    sa.Column("sitemaps", JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
+    sa.Column("feeds", JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
+    sa.Column("per_day", sa.Integer), sa.Column("enabled", sa.Boolean, nullable=False, server_default=sa.true()),
+    sa.Column("check_every_minutes", sa.Integer, nullable=False, server_default="60"),
+    sa.Column("daily_cap", sa.Integer, nullable=False, server_default="50"),
+    sa.Column("min_interval_seconds", sa.REAL, nullable=False, server_default="2"),
+    sa.Column("max_parallel", sa.Integer, nullable=False, server_default="1"),
+    sa.Column("next_check_at", TZ, nullable=False, server_default=sa.func.now()),
+    sa.Column("last_scheduled_at", TZ),
+    sa.Column("created_at", TZ, nullable=False, server_default=sa.func.now()),
+    sa.Column("updated_at", TZ, nullable=False, server_default=sa.func.now()),
+    sa.CheckConstraint("check_every_minutes >= 5", name="ck_sites_check_every_minutes"),
+    sa.CheckConstraint("daily_cap >= 1", name="ck_sites_daily_cap"),
+    sa.CheckConstraint("min_interval_seconds >= 0.5", name="ck_sites_min_interval_seconds"),
+    sa.CheckConstraint("max_parallel BETWEEN 1 AND 4", name="ck_sites_max_parallel"))
+domain_throttle = sa.Table("domain_throttle", metadata,
+    sa.Column("domain", T, primary_key=True), sa.Column("next_request_at", TZ, nullable=False))
+
 crawl_runs = sa.Table("crawl_runs", metadata,
     sa.Column("id", UUID(as_uuid=True), primary_key=True),
+    sa.Column("site_id", UUID(as_uuid=True), sa.ForeignKey("sites.id", ondelete="SET NULL"), index=True),
+    sa.Column("trigger", T, nullable=False, server_default="adhoc"),
+    sa.CheckConstraint("trigger in ('adhoc', 'manual', 'schedule')", name="ck_crawl_runs_trigger"),
     sa.Column("request", JSONB, nullable=False), sa.Column("status", T, nullable=False),
     sa.Column("created_at", TZ, nullable=False), sa.Column("started_at", TZ), sa.Column("finished_at", TZ),
     sa.Column("claim_token", UUID(as_uuid=True)), sa.Column("lease_until", TZ),
@@ -158,7 +183,7 @@ crawl_articles = sa.Table("crawl_articles", metadata,
     sa.Column("url", T, nullable=False), sa.Column("status", T, nullable=False), sa.Column("reason", T),
     sa.Column("document_id", T, sa.ForeignKey("documents.id")), sa.Column("fetched", sa.Boolean, nullable=False),
     sa.Column("updated_at", TZ, nullable=False),
-    sa.CheckConstraint("status in ('stored', 'existing', 'duplicate', 'rejected', 'error')", name="ck_crawl_articles_status"))
+    sa.CheckConstraint("status in ('stored', 'existing', 'duplicate', 'rejected', 'error', 'updated', 'unchanged', 'removed')", name="ck_crawl_articles_status"))
 crawl_sources = sa.Table("crawl_sources", metadata,
     sa.Column("crawl_id", UUID(as_uuid=True), sa.ForeignKey("crawl_runs.id", ondelete="CASCADE"), primary_key=True),
     sa.Column("url", T, primary_key=True), sa.Column("site", T, nullable=False),
