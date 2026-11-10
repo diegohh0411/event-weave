@@ -19,8 +19,15 @@ def seed_frontier(engine, site, meta_fetcher):
         source_site = SimpleNamespace(domain=site.domain, sitemaps=[], feeds=[])
         roots = [source.url for source in resolve_sources(source_site, meta_fetcher).sources if source.kind == 'sitemap']
     with engine.begin() as conn:
+        conn.execute(sa.select(sites.c.id).where(sites.c.id == site.id).with_for_update())
+        cap = int(os.environ.get('WEAVE_BACKFILL_MAX_SITEMAPS', '5000'))
+        count = conn.scalar(sa.select(sa.func.count()).select_from(backfill_sitemaps).where(
+            backfill_sitemaps.c.site_id == site.id, backfill_sitemaps.c.status != 'skipped'))
         for url in roots:
-            conn.execute(insert(backfill_sitemaps).values(site_id=site.id, url=url, depth=0, status='pending').on_conflict_do_nothing())
+            status = 'pending' if count < cap else 'skipped'
+            result = conn.execute(insert(backfill_sitemaps).values(site_id=site.id, url=url, depth=0, status=status).on_conflict_do_nothing())
+            if result.rowcount and status == 'pending':
+                count += 1
 
 
 def scan_sitemaps(engine, site, fetcher, limit, cancelled):

@@ -65,3 +65,38 @@ def test_depth_cap_and_all_mode(database_url, monkeypatch):
     with engine.connect() as c:
         assert c.scalars(sa.select(backfill_urls.c.canonical_url)).all() == [BASE+'undated']
     engine.dispose()
+
+
+def test_configured_roots_obey_sitemap_cap(database_url, monkeypatch):
+    engine = sa.create_engine(database_url)
+    site = SimpleNamespace(id=uuid.uuid4(), domain='example.com', sitemaps=[BASE+'a', BASE+'b', BASE+'c'], feeds=[], backfill_mode='all', backfill_from=None, backfill_until=None)
+    with engine.begin() as c:
+        c.execute(sites.insert().values(id=site.id, name='x', domain=site.domain, language='en'))
+    monkeypatch.setenv('WEAVE_BACKFILL_MAX_SITEMAPS', '2')
+    f = FixtureFetcher({u: fetched(f'<urlset xmlns="{NS}"/>') for u in site.sitemaps})
+    seed_frontier(engine, site, f)
+    scan_sitemaps(engine, site, f, 10, lambda: False)
+    assert f.calls == site.sitemaps[:2]
+    with engine.connect() as c:
+        assert c.scalar(sa.select(backfill_sitemaps.c.status).where(backfill_sitemaps.c.url == BASE+'c')) == 'skipped'
+    engine.dispose()
+
+
+def test_three_month_archive_skips_old_child(database_url):
+    engine = sa.create_engine(database_url)
+    site = SimpleNamespace(id=uuid.uuid4(), domain='example.com', sitemaps=[BASE+'index'], feeds=[], backfill_mode='date', backfill_from=date(2025, 2, 1), backfill_until=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    with engine.begin() as c:
+        c.execute(sites.insert().values(id=site.id, name='x', domain=site.domain, language='en'))
+    children = ''.join(f'<sitemap><loc>{BASE}{m}</loc><lastmod>2025-0{m}-28</lastmod></sitemap>' for m in range(1, 4))
+    routes = {BASE+'index': fetched(f'<sitemapindex xmlns="{NS}">{children}</sitemapindex>')}
+    for m in (2, 3):
+        routes[BASE+str(m)] = fetched(f'<urlset xmlns="{NS}"><url><loc>{BASE}article{m}</loc><lastmod>2025-0{m}-15</lastmod></url></urlset>')
+    f = FixtureFetcher(routes)
+    seed_frontier(engine, site, f)
+    scan_sitemaps(engine, site, f, 10, lambda: False)
+    scan_sitemaps(engine, site, f, 10, lambda: False)
+    assert BASE+'1' not in f.calls
+    with engine.connect() as c:
+        assert c.scalar(sa.select(backfill_sitemaps.c.status).where(backfill_sitemaps.c.url == BASE+'1')) == 'skipped'
+        assert set(c.scalars(sa.select(backfill_urls.c.canonical_url))) == {BASE+'article2', BASE+'article3'}
+    engine.dispose()
