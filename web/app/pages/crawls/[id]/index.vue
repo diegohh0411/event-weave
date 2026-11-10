@@ -71,7 +71,7 @@ const robots = computed(() => Object.entries(crawl.value?.counters.reasons ?? {}
     <p v-if="loading" class="text-muted">Loading crawl...</p>
     <div v-else-if="error" class="space-y-3"><UAlert color="error" variant="subtle" title="Could not load crawl" :description="error" /><UButton type="button" color="neutral" variant="outline" @click="load">Retry</UButton></div>
     <template v-else-if="crawl">
-      <PageHeader :title="crawl.request.sites.map(s => s.domain).join(', ')">
+      <PageHeader :title="crawl.request.sites.map(s => s.domain).join(', ')"><UBadge color="neutral">{{ crawl.trigger }}</UBadge>
         <template #meta>
           <p class="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted">
             <StatusBadge :status="crawl.status" />

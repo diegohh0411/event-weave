@@ -35,7 +35,8 @@ const createdOut: Ok<'/runs', 'post', 201> = { run_id: RUN_NEW, config_hash: run
 const startRequestShape: Body<'/runs', 'post'> = runPaper.config // keeps request bodies tied to the schema too
 void startRequestShape
 
-const site = { id: '00000000-0000-4000-8000-000000000201', name: 'example.com', domain: 'example.com', language: 'en', per_day: 3, feeds: [], sitemaps: [], enabled: true, check_every_minutes: 60, daily_cap: 50, min_interval_seconds: 2, max_parallel: 1, next_check_at: '2026-11-09T10:00:00Z', last_scheduled_at: null, created_at: '2026-11-09T10:00:00Z', updated_at: '2026-11-09T10:00:00Z', last_crawl: null }
+const backfill = { state: 'off', mode: 'off', from: null, until: null, per_hour: 60, started_at: null, finished_at: null, error: null, sitemaps: { total: 0, pending: 0, done: 0, skipped: 0, error: 0 }, urls: { found: 0, pending: 0, done: 0, stored: 0, existing: 0, rejected: 0, error: 0 }, oldest_reached: null, fetched_last_hour: 0, eta: 0 }
+const site = { id: '00000000-0000-4000-8000-000000000201', name: 'example.com', domain: 'example.com', language: 'en', per_day: 3, feeds: [], sitemaps: [], enabled: true, check_every_minutes: 60, daily_cap: 50, min_interval_seconds: 2, max_parallel: 1, next_check_at: '2026-11-09T10:00:00Z', last_scheduled_at: null, created_at: '2026-11-09T10:00:00Z', updated_at: '2026-11-09T10:00:00Z', last_crawl: null, backfill_mode: 'off', backfill_from: null, backfill_per_hour: 60, backfill_state: 'off', backfill_progress: { done: 0, found: 0 } }
 
 export const fixtures: Record<string, Fixture[]> = {
   'GET /library/documents': [ok(page(libraryDocuments.filter(d => d.version === d.versions)))],
@@ -53,6 +54,8 @@ export const fixtures: Record<string, Fixture[]> = {
   'GET /sites/{site_id}': [ok(site)],
   'PATCH /sites/{site_id}': [ok(site)],
   'POST /sites/{site_id}/check': [{ status: 202, body: queuedCrawl }],
+  'GET /sites/{site_id}/backfill': [ok(backfill)],
+  'POST /sites/{site_id}/backfill': [ok(backfill)],
   'GET /sites/{site_id}/crawls': [ok(page([queuedCrawl]))],
   'GET /crawls': [ok(page(crawls))],
   'POST /crawls': [{ status: 202, body: queuedCrawl }],
