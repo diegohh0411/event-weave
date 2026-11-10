@@ -68,34 +68,34 @@ const blocks = computed(() => settings.value.map((setting) => {
 </script>
 
 <template>
-  <div class="overflow-x-auto rounded-md border border-default">
-    <table data-test="score-table" :data-track="track" :data-language="language" class="w-full min-w-max text-sm">
-      <thead class="bg-elevated text-left">
+  <div class="overflow-x-auto rounded-xl border border-default bg-default">
+    <table data-test="score-table" :data-track="track" :data-language="language" class="tabular w-full min-w-max text-sm">
+      <thead class="border-b border-default text-left text-muted">
         <tr>
-          <th class="px-3 py-2">
+          <th class="px-4 py-2.5 font-medium">
             Run / setting
           </th>
-          <th v-for="m in METRICS" :key="m.key" class="px-3 py-2">
+          <th v-for="m in METRICS" :key="m.key" class="px-4 py-2.5 font-medium">
             {{ m.label }}
           </th>
           <template v-if="track === '2'">
-            <th class="px-3 py-2">
+            <th class="px-4 py-2.5 font-medium">
               Trigger P
             </th>
-            <th class="px-3 py-2">
+            <th class="px-4 py-2.5 font-medium">
               Trigger R
             </th>
-            <th class="px-3 py-2">
+            <th class="px-4 py-2.5 font-medium">
               Trigger F1
             </th>
           </template>
-          <th class="px-3 py-2">
+          <th class="px-4 py-2.5 font-medium">
             $/1k mentions
           </th>
-          <th class="px-3 py-2">
+          <th class="px-4 py-2.5 font-medium">
             Mentions/hour
           </th>
-          <th class="px-3 py-2">
+          <th class="px-4 py-2.5 font-medium">
             Failures
           </th>
         </tr>
@@ -103,47 +103,47 @@ const blocks = computed(() => settings.value.map((setting) => {
       <tbody>
         <template v-for="b in blocks" :key="b.setting">
           <tr v-for="r in b.runRows" :key="r.run.run_id + b.setting" data-test="run-row" class="border-t border-default">
-            <th scope="row" class="px-3 py-2 text-left font-medium">
+            <th scope="row" class="px-4 py-3 text-left font-semibold text-highlighted">
               {{ r.run.name }} <span class="font-normal text-muted">({{ b.setting }})</span>
             </th>
-            <td v-if="r.skipped" :colspan="METRICS.length" data-test="skipped" class="px-3 py-2 text-muted">
+            <td v-if="r.skipped" :colspan="METRICS.length" data-test="skipped" class="px-4 py-3 text-muted">
               {{ r.skipped }}
             </td>
-            <td v-for="m in METRICS" v-else :key="m.key" class="whitespace-nowrap px-3 py-2">
+            <td v-for="m in METRICS" v-else :key="m.key" class="whitespace-nowrap px-4 py-3">
               {{ cell(r.run, b.setting, m.key) }}
             </td>
             <template v-if="track === '2'">
-              <td class="px-3 py-2">
+              <td class="px-4 py-3">
                 {{ pct(trig(r.run)?.precision) }}
               </td>
-              <td class="px-3 py-2">
+              <td class="px-4 py-3">
                 {{ pct(trig(r.run)?.recall) }}
               </td>
-              <td class="px-3 py-2">
+              <td class="px-4 py-3">
                 {{ pct(trig(r.run)?.f1) }}
               </td>
             </template>
-            <td class="px-3 py-2">
+            <td class="px-4 py-3">
               {{ dollars(r.run.cost.dollars_per_1000_mentions) }}<span v-if="r.run.cost.any_estimated" class="text-muted"> est.</span>
             </td>
-            <td class="px-3 py-2">
+            <td class="px-4 py-3">
               {{ one(r.run.cost.mentions_per_hour) }}
             </td>
-            <td class="px-3 py-2" :title="failureTitle(r.run)">
+            <td class="px-4 py-3" :title="failureTitle(r.run)">
               {{ failureCount(r.run) }}
             </td>
           </tr>
-          <tr v-for="p in b.paperRows" :key="b.setting + p.regime + p.model" data-test="paper-row" class="border-t border-default text-muted">
-            <th scope="row" class="px-3 py-2 text-left font-normal">
+          <tr v-for="p in b.paperRows" :key="b.setting + p.regime + p.model" data-test="paper-row" class="border-t border-dashed border-default bg-muted text-muted">
+            <th scope="row" class="px-4 py-3 text-left font-normal">
               <div>MCECR paper ({{ p.model }}) <span>({{ b.setting }})</span></div>
               <div class="text-xs">
                 {{ p.regime }}: {{ p.label }}
               </div>
             </th>
-            <td v-for="m in METRICS" :key="m.key" class="px-3 py-2">
+            <td v-for="m in METRICS" :key="m.key" class="px-4 py-3">
               {{ pct(p.f1(m.key.toString())) }}
             </td>
-            <td :colspan="(track === '2' ? 3 : 0) + 3" class="px-3 py-2" />
+            <td :colspan="(track === '2' ? 3 : 0) + 3" class="px-4 py-3" />
           </tr>
         </template>
       </tbody>

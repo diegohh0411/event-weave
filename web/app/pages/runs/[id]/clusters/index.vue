@@ -88,67 +88,79 @@ async function load() {
 }
 watch(() => route.fullPath, load, { immediate: true })
 
-const field = 'w-full rounded-md border border-default bg-default px-2 py-1.5 text-sm'
-const cardLine = (c: Summary['card']) => (c ? Object.values(cardFields(c)).filter(Boolean).join(' · ') : 'No card')
+const field = 'ew-field h-10'
+const fieldsOf = (c: Summary['card']) => (c ? cardFields(c) : null)
 </script>
 
 <template>
-  <div class="space-y-4">
-    <h1 class="text-xl font-semibold">
-      Clusters
-    </h1>
-    <form class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4" @submit.prevent>
-      <UInput v-model="search" data-test="search" class="sm:col-span-2" placeholder="Search clusters" aria-label="Search clusters" />
-      <select data-test="language" :class="field" aria-label="Language" :value="params.language" @change="setQuery({ language: ($event.target as HTMLSelectElement).value })">
-        <option value="">
-          Any language
-        </option>
-        <option v-for="l in LANGUAGES" :key="l" :value="l">
-          {{ l }}
-        </option>
-      </select>
-      <select data-test="sort" :class="field" aria-label="Sort" :value="params.sort" @change="setQuery({ sort: ($event.target as HTMLSelectElement).value })">
-        <option value="size">
-          Largest first
-        </option>
-        <option value="recent">
-          Most recent
-        </option>
-      </select>
-      <UInput data-test="min-size" type="number" min="0" placeholder="Min size" aria-label="Minimum size" :model-value="params.min_size" @update:model-value="setQuery({ min_size: String($event) })" />
-      <UInput data-test="max-size" type="number" min="0" placeholder="Max size" aria-label="Maximum size" :model-value="params.max_size" @update:model-value="setQuery({ max_size: String($event) })" />
-      <UInput data-test="event-type" placeholder="Event type" aria-label="Event type" :model-value="params.event_type" @update:model-value="setQuery({ event_type: String($event) })" />
-      <UInput data-test="min-significance" type="number" min="0" max="1" step="0.05" placeholder="Min significance" aria-label="Minimum significance" :model-value="params.min_significance" @update:model-value="setQuery({ min_significance: String($event) })" />
+  <div>
+    <Crumbs class="mb-4" :items="[{ label: 'Runs', to: '/runs' }, { label: 'This run', to: `/runs/${id}` }]" />
+    <PageHeader title="Clusters" description="Each cluster is one real-world event, described by what happened, who took part, where and when." />
+    <RunNav :run-id="id" />
+
+    <form class="mb-6 space-y-3 rounded-xl border border-default bg-default p-4" @submit.prevent>
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_11rem_11rem]">
+        <UInput v-model="search" data-test="search" size="lg" placeholder="Search actions, participants, places" aria-label="Search clusters" />
+        <select data-test="language" :class="field" aria-label="Language" :value="params.language" @change="setQuery({ language: ($event.target as HTMLSelectElement).value })">
+          <option value="">
+            Any language
+          </option>
+          <option v-for="l in LANGUAGES" :key="l" :value="l">
+            {{ l }}
+          </option>
+        </select>
+        <select data-test="sort" :class="field" aria-label="Sort" :value="params.sort" @change="setQuery({ sort: ($event.target as HTMLSelectElement).value })">
+          <option value="size">
+            Largest first
+          </option>
+          <option value="recent">
+            Most recent
+          </option>
+        </select>
+      </div>
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <UInput data-test="min-size" type="number" min="0" placeholder="Min size" aria-label="Minimum size" :model-value="params.min_size" @update:model-value="setQuery({ min_size: String($event) })" />
+        <UInput data-test="max-size" type="number" min="0" placeholder="Max size" aria-label="Maximum size" :model-value="params.max_size" @update:model-value="setQuery({ max_size: String($event) })" />
+        <UInput data-test="event-type" placeholder="Event type" aria-label="Event type" :model-value="params.event_type" @update:model-value="setQuery({ event_type: String($event) })" />
+        <UInput data-test="min-significance" type="number" min="0" max="1" step="0.05" placeholder="Min significance" aria-label="Minimum significance" :model-value="params.min_significance" @update:model-value="setQuery({ min_significance: String($event) })" />
+      </div>
     </form>
 
     <UAlert v-if="error" color="error" variant="subtle" title="Could not load clusters" :description="error" />
     <p v-else-if="loading && !items.length" class="text-muted">
       Loading clusters...
     </p>
-    <p v-else-if="!items.length" class="text-muted">
-      No clusters match these filters.
+    <p v-else-if="!items.length" class="rounded-xl border border-dashed border-accented p-5 text-sm text-muted">
+      No clusters match these filters. Clear a filter to see more.
     </p>
-    <ul v-else class="space-y-3">
-      <li v-for="c in items" :key="c.id">
-        <UCard>
-          <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-            <NuxtLink :to="`/runs/${id}/clusters/${c.id}`" class="min-w-0 break-words font-medium text-primary hover:underline">
-              {{ cardLine(c.card) }}
-            </NuxtLink>
-            <span class="text-sm text-muted">{{ c.size }} mentions</span>
-          </div>
-          <p class="mt-1 text-sm text-muted">
-            {{ c.languages.join(', ') || 'no language' }}
-            <template v-if="c.event_types.length">
-              · {{ c.event_types.join(', ') }}
-            </template>
-            <template v-if="c.max_significance !== null">
-              · significance {{ c.max_significance }}
-            </template>
-          </p>
-        </UCard>
-      </li>
-    </ul>
-    <UPagination v-if="total > PER_PAGE" :page="params.page" :items-per-page="PER_PAGE" :total="total" @update:page="setQuery({ page: $event }, false)" />
+    <template v-else>
+      <p class="mb-3 text-sm text-muted">
+        <span class="tabular">{{ total }}</span> {{ total === 1 ? 'cluster' : 'clusters' }}
+      </p>
+      <ul class="divide-y divide-default overflow-hidden rounded-xl border border-default bg-default" :class="loading ? 'opacity-60' : ''">
+        <li v-for="c in items" :key="c.id">
+          <NuxtLink :to="`/runs/${id}/clusters/${c.id}`" class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-2 px-5 py-4 hover:bg-muted">
+            <span class="min-w-0">
+              <span class="block break-words font-semibold text-highlighted">{{ fieldsOf(c.card)?.action || 'Untitled event' }}</span>
+              <span v-if="fieldsOf(c.card)" class="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-muted">
+                <span v-if="fieldsOf(c.card)?.participants" class="break-words">{{ fieldsOf(c.card)?.participants }}</span>
+                <span v-if="fieldsOf(c.card)?.location">{{ fieldsOf(c.card)?.location }}</span>
+                <span v-if="fieldsOf(c.card)?.time">{{ fieldsOf(c.card)?.time }}</span>
+              </span>
+              <span v-else class="mt-1 block text-sm text-muted">No card</span>
+              <span class="mt-2 flex flex-wrap gap-1.5">
+                <UBadge v-for="l in c.languages" :key="l" color="neutral" variant="outline" size="sm">{{ l }}</UBadge>
+                <UBadge v-for="t in c.event_types" :key="t" color="neutral" variant="soft" size="sm">{{ t }}</UBadge>
+                <UBadge v-if="c.max_significance !== null" color="secondary" variant="soft" size="sm">significance {{ c.max_significance }}</UBadge>
+              </span>
+            </span>
+            <span class="text-right text-sm text-muted">
+              <span class="tabular block text-2xl font-bold tracking-tight text-highlighted">{{ c.size }}</span> mentions
+            </span>
+          </NuxtLink>
+        </li>
+      </ul>
+    </template>
+    <UPagination v-if="total > PER_PAGE" class="mt-4" :page="params.page" :items-per-page="PER_PAGE" :total="total" @update:page="setQuery({ page: $event }, false)" />
   </div>
 </template>

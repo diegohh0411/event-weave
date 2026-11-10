@@ -106,20 +106,17 @@ const discarded = (r: Row) => Object.entries(r.discarded)
 </script>
 
 <template>
-  <div class="space-y-6">
-    <NuxtLink :to="`/runs/${id}`" class="text-sm text-primary hover:underline">
-      Back to the run
-    </NuxtLink>
-    <h1 class="font-semibold">
-      Enrichment spot check
-    </h1>
+  <div>
+    <Crumbs class="mb-4" :items="[{ label: 'Runs', to: '/runs' }, { label: 'This run', to: `/runs/${id}` }]" />
+    <PageHeader title="Enrichment spot check" description="A random sample of enriched mentions. Read each sentence and check the four fields against it." />
+    <RunNav :run-id="id" />
 
-    <div class="flex flex-wrap items-end gap-4">
-      <label class="text-sm">
-        <span class="block text-muted">Enricher</span>
+    <div class="mb-6 flex flex-wrap items-end gap-4 rounded-xl border border-default bg-default p-4">
+      <label class="space-y-1.5 text-sm font-medium text-highlighted">
+        <span class="block">Enricher</span>
         <select
           data-test="enricher"
-          class="rounded border border-default bg-default px-2 py-1"
+          class="ew-field min-w-40 font-normal"
           :value="enricher"
           @change="setQuery({ enricher: ($event.target as HTMLSelectElement).value })"
         >
@@ -127,32 +124,32 @@ const discarded = (r: Row) => Object.entries(r.discarded)
           <option v-for="e in enrichers" :key="e" :value="e">{{ e }}</option>
         </select>
       </label>
-      <label class="text-sm">
-        <span class="block text-muted">Seed</span>
-        <input
-          data-test="seed"
-          type="number"
-          min="0"
-          class="w-28 rounded border border-default bg-default px-2 py-1"
-          :value="seed"
-          @change="setQuery({ seed: int(($event.target as HTMLInputElement).value, 0, 0) })"
-        >
-      </label>
-      <UButton data-test="reshuffle" color="neutral" variant="outline" @click="reshuffle">
-        Reshuffle
-      </UButton>
-      <label class="text-sm">
-        <span class="block text-muted">N</span>
+      <label class="space-y-1.5 text-sm font-medium text-highlighted">
+        <span class="block">Sample size</span>
         <input
           data-test="n"
           type="number"
           min="1"
           max="200"
-          class="w-20 rounded border border-default bg-default px-2 py-1"
+          class="ew-field tabular w-24 font-normal"
           :value="n"
           @change="setQuery({ n: Math.min(200, int(($event.target as HTMLInputElement).value, 10, 1)) })"
         >
       </label>
+      <label class="space-y-1.5 text-sm font-medium text-highlighted">
+        <span class="block">Seed</span>
+        <input
+          data-test="seed"
+          type="number"
+          min="0"
+          class="ew-field tabular w-28 font-normal"
+          :value="seed"
+          @change="setQuery({ seed: int(($event.target as HTMLInputElement).value, 0, 0) })"
+        >
+      </label>
+      <UButton data-test="reshuffle" color="neutral" variant="outline" size="lg" @click="reshuffle">
+        Reshuffle
+      </UButton>
     </div>
 
     <UAlert v-if="error" color="error" variant="subtle" title="Could not load the sample" :description="error" />
@@ -162,38 +159,40 @@ const discarded = (r: Row) => Object.entries(r.discarded)
     <p v-else-if="!rows.length" class="text-muted">
       No enrichments in the sample.
     </p>
-    <UCard v-for="r in rows" :key="r.id" data-test="sample">
-      <div class="space-y-3">
-        <p>
-          <HighlightedText :text="r.sentence" :ranges="r.range ? [r.range] : []" />
-        </p>
-        <p class="text-xs text-muted">
-          {{ r.enricher }} v{{ r.enricher_version }} ·
-          <NuxtLink :to="`/runs/${id}/documents/${r.document_id}`" class="text-primary hover:underline">
-            document
-          </NuxtLink>
-        </p>
-        <dl class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div v-for="[name, label] in FIELDS" :key="name" :data-test="`field-${name}`">
-            <dt class="text-sm text-muted">
+    <div class="space-y-4">
+      <article v-for="r in rows" :key="r.id" data-test="sample" class="overflow-hidden rounded-xl border border-default bg-default">
+        <div class="space-y-2 p-5">
+          <p class="font-serif text-[1.125rem] leading-[1.65] text-highlighted">
+            <HighlightedText :text="r.sentence" :ranges="r.range ? [r.range] : []" />
+          </p>
+          <p class="flex flex-wrap items-center gap-3 text-xs text-muted">
+            <span>{{ r.enricher }} v{{ r.enricher_version }}</span>
+            <NuxtLink :to="`/runs/${id}/documents/${r.document_id}`" class="font-semibold text-primary hover:underline">
+              Open document
+            </NuxtLink>
+          </p>
+        </div>
+        <dl class="grid grid-cols-2 gap-px border-t border-default bg-[var(--ui-border-muted)] sm:grid-cols-4">
+          <div v-for="[name, label] in FIELDS" :key="name" :data-test="`field-${name}`" class="bg-muted px-5 py-3">
+            <dt class="text-xs text-muted">
               {{ label }}
             </dt>
-            <dd class="break-words">
+            <dd class="mt-0.5 break-words text-sm font-semibold" :class="fieldText(r, name) === '—' ? 'text-dimmed' : 'text-highlighted'">
               {{ fieldText(r, name) }}
             </dd>
           </div>
         </dl>
-        <div v-if="discarded(r).length" class="text-sm">
+        <div v-if="discarded(r).length" class="border-t border-default px-5 py-3 text-sm">
           <p class="text-muted">
             Discarded ({{ discarded(r).length }})
           </p>
-          <ul>
+          <ul class="mt-1 space-y-0.5">
             <li v-for="[field, why] in discarded(r)" :key="field">
-              <span class="font-medium">{{ field }}</span>: {{ why }}
+              <span class="font-semibold text-highlighted">{{ field }}</span>: {{ why }}
             </li>
           </ul>
         </div>
-      </div>
-    </UCard>
+      </article>
+    </div>
   </div>
 </template>

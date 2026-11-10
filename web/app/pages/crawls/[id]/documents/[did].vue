@@ -24,15 +24,19 @@ watch(() => [route.params.id, route.params.did], load)
 onUnmounted(() => { generation++ })
 </script>
 <template>
-  <div class="space-y-6">
-    <NuxtLink :to="`/crawls/${route.params.id}`" class="text-primary hover:underline">← Crawl results</NuxtLink>
-    <p v-if="loading">Loading document...</p>
-    <UAlert v-else-if="error" color="error" title="Could not load document" :description="error" />
-    <template v-else-if="doc">
-      <h1 class="text-xl font-semibold">{{ doc.title }}</h1>
-      <p>{{ doc.outlet }} · {{ doc.byline }} · {{ doc.published_at ?? 'Date unknown' }}</p>
-      <p class="break-all">{{ doc.url }}</p>
-      <p class="whitespace-pre-wrap break-words leading-8">{{ doc.text }}</p>
-    </template>
+  <div>
+    <Crumbs class="mb-5" :items="[{ label: 'Crawls', to: '/crawls' }, { label: 'Crawl results', to: `/crawls/${route.params.id}` }]" />
+    <p v-if="loading" class="text-muted">Loading document...</p>
+    <UAlert v-else-if="error" color="error" variant="subtle" title="Could not load document" :description="error" />
+    <DocumentReader
+      v-else-if="doc"
+      :title="doc.title"
+      :outlet="doc.outlet"
+      :byline="doc.byline"
+      :published-at="doc.published_at"
+      :url="doc.url"
+      :language="doc.language"
+      :text="doc.text"
+    />
   </div>
 </template>

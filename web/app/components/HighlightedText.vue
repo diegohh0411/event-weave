@@ -6,5 +6,5 @@ const segments = computed(() => highlightSegments(props.text, props.ranges))
 </script>
 
 <template>
-  <span class="break-words"><template v-for="(s, i) in segments" :key="i"><mark v-if="s.mark" class="rounded bg-warning/30 px-0.5 font-semibold text-highlighted">{{ s.text }}</mark><template v-else>{{ s.text }}</template></template></span>
+  <span class="break-words"><template v-for="(s, i) in segments" :key="i"><mark v-if="s.mark" class="rounded-sm bg-[var(--ew-weld)] px-0.5 font-semibold text-highlighted shadow-[inset_0_-2px_0_var(--color-weld-500)]">{{ s.text }}</mark><template v-else>{{ s.text }}</template></template></span>
 </template>

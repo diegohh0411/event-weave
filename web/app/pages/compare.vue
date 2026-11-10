@@ -95,52 +95,58 @@ const groups = computed(() => {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <h1 class="text-xl font-semibold">
-      Compare
-    </h1>
+  <div>
+    <PageHeader title="Compare" description="Coreference scores, cost and speed for the runs you select, one table per track and language." />
 
-    <fieldset class="space-y-1">
-      <legend class="text-sm font-medium">
+    <fieldset class="mb-8 space-y-3 rounded-xl border border-default bg-default p-4">
+      <legend class="sr-only">
         Runs
       </legend>
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <p class="text-sm font-bold text-highlighted">
+          Runs <span class="tabular font-normal text-muted">{{ selected.length }} of {{ MAX_RUNS }} selected</span>
+        </p>
+        <p class="text-xs text-muted">
+          Compare at most {{ MAX_RUNS }} runs{{ atLimit ? '; deselect one to pick another' : '' }}.
+        </p>
+      </div>
       <UAlert v-if="runsError" color="error" variant="subtle" title="Could not load runs" :description="runsError" />
-      <p class="text-xs text-muted">
-        Compare at most {{ MAX_RUNS }} runs{{ atLimit ? '; deselect one to pick another' : '' }}.
-      </p>
       <UAlert v-if="requested.length > MAX_RUNS" color="warning" variant="subtle" title="Too many runs" :description="`Only the first ${MAX_RUNS} of ${requested.length} runs are compared.`" />
-      <ul class="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
+      <ul class="flex flex-wrap gap-2">
         <li v-for="r in runs" :key="r.id">
-          <label class="flex min-w-0 items-center gap-2 text-sm">
-            <input type="checkbox" :value="r.id" :checked="selected.includes(r.id)" :disabled="atLimit && !selected.includes(r.id)" @change="toggle(r.id, ($event.target as HTMLInputElement).checked)">
-            <span class="min-w-0 break-words">{{ r.name }} <span class="text-muted">({{ r.track }}, {{ r.state }})</span></span>
+          <label
+            class="flex min-w-0 cursor-pointer items-center gap-2 rounded-full border py-1.5 pl-2.5 pr-3.5 text-sm transition-colors has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-[var(--ew-thread)]"
+            :class="selected.includes(r.id) ? 'border-primary bg-primary/10 text-highlighted' : 'border-default hover:border-accented'"
+          >
+            <input type="checkbox" class="size-4 accent-[var(--ui-primary)]" :value="r.id" :checked="selected.includes(r.id)" :disabled="atLimit && !selected.includes(r.id)" @change="toggle(r.id, ($event.target as HTMLInputElement).checked)">
+            <span class="min-w-0 break-words font-medium">{{ r.name }} <span class="font-normal text-muted">({{ r.track }}, {{ r.state }})</span></span>
           </label>
         </li>
       </ul>
     </fieldset>
 
-    <p v-if="!selected.length" class="text-muted">
+    <p v-if="!selected.length" class="rounded-xl border border-dashed border-accented p-5 text-sm text-muted">
       Select at least one run to compare.
     </p>
     <UAlert v-else-if="error" color="error" variant="subtle" title="Could not load the comparison" :description="error" />
     <p v-else-if="loading && !data" class="text-muted">
       Loading comparison...
     </p>
-    <template v-else-if="data">
+    <div v-else-if="data" class="space-y-8">
       <UAlert v-if="data.paper && !data.paper_checked" color="warning" variant="subtle" title="Paper numbers UNCHECKED" description="The MCECR paper numbers have not been checked against the PDF." />
 
-      <section v-if="unevaluated.length" class="space-y-2">
-        <h2 class="font-medium">
+      <section v-if="unevaluated.length" class="space-y-3">
+        <h2 class="text-base font-bold text-highlighted">
           Not evaluated
         </h2>
-        <div class="overflow-x-auto rounded-md border border-default">
+        <div class="overflow-x-auto rounded-xl border border-default bg-default">
           <table class="w-full text-sm">
             <tbody>
               <tr v-for="r in unevaluated" :key="r.run_id" class="border-t border-default first:border-t-0">
-                <th scope="row" class="px-3 py-2 text-left font-medium">
+                <th scope="row" class="px-4 py-3 text-left font-semibold text-highlighted">
                   {{ r.name }}
                 </th>
-                <td class="px-3 py-2 text-muted">
+                <td class="px-4 py-3 text-muted">
                   Not evaluated (run weave eval {{ r.run_id }})
                 </td>
               </tr>
@@ -149,12 +155,12 @@ const groups = computed(() => {
         </div>
       </section>
 
-      <section v-for="g in groups" :key="g.track + g.language" class="space-y-2">
-        <h2 class="font-medium">
-          Track {{ g.track }} · {{ g.language }}
+      <section v-for="g in groups" :key="g.track + g.language" class="space-y-3">
+        <h2 class="flex items-center gap-2 text-base font-bold text-highlighted">
+          Track {{ g.track }} <UBadge color="neutral" variant="outline" size="sm">{{ g.language }}</UBadge>
         </h2>
         <ScoreTable :track="g.track" :language="g.language" :runs="g.runs" :paper="g.paper" />
       </section>
-    </template>
+    </div>
   </div>
 </template>
