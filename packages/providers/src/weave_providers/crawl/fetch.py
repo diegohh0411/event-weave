@@ -1,5 +1,6 @@
 """Fetching seam for the crawler: a Fetcher returns a page or a reason it failed."""
 import asyncio
+import contextlib
 import os
 import time
 from dataclasses import dataclass, replace
@@ -13,6 +14,9 @@ import httpx
 USER_AGENT = "EventWeaveBot/0.1 (+https://github.com/diegohh0411/event-weave)"
 _PRODUCT_TOKEN = USER_AGENT.split("/")[0]
 MAX_REDIRECTS = 5
+# Browser identity for crawl traffic: CDN WAFs block bot UAs and non-browser TLS fingerprints.
+IMPERSONATE = "safari17_0"
+ACCEPT_LANGUAGE = "es-MX,es;q=0.9,en-US;q=0.8,en;q=0.7"
 
 
 @dataclass(frozen=True)
@@ -50,10 +54,27 @@ class HttpFetcher:
     """Plain HTTP fetcher for robots.txt, sitemaps and feeds, which a browser would mangle.
 
     Never follows redirects itself: a 3xx comes back with `redirect_to` so PoliteFetcher can
-    check each hop against robots.txt before requesting it."""
+    check each hop against robots.txt before requesting it.
+
+    Without an explicit transport it impersonates Safari's TLS handshake and headers via
+    curl_cffi (extra `crawl`): CDN WAFs such as CloudFront reject Python's TLS fingerprint
+    outright, whatever User-Agent is sent."""
 
     def __init__(self, transport: httpx.BaseTransport | None = None, timeout: float = 20.0,
                  proxy: str | None = None):
+        self._session = None
+        self._client = None
+        if transport is None:
+            try:
+                from curl_cffi import requests as curl_requests
+            except ImportError:
+                curl_requests = None
+            if curl_requests is not None:
+                self._session = curl_requests.Session(
+                    impersonate=IMPERSONATE, timeout=timeout, trust_env=False,
+                    allow_redirects=False, proxy=proxy,
+                    headers={"Accept-Language": ACCEPT_LANGUAGE})
+                return
         self._client = httpx.Client(headers={"User-Agent": USER_AGENT}, follow_redirects=False,
                                     timeout=timeout, transport=transport, proxy=proxy, trust_env=False)
 
@@ -64,6 +85,8 @@ class HttpFetcher:
         self.close()
 
     def fetch(self, url: str) -> Fetched:
+        if self._session is not None:
+            return self._fetch_impersonated(url)
         try:
             response = self._client.get(url)
         except httpx.HTTPError as exc:
@@ -73,8 +96,22 @@ class HttpFetcher:
         return Fetched(url, response.status_code, response.text, None, str(response.url),
                        redirect_to)
 
+    def _fetch_impersonated(self, url: str) -> Fetched:
+        from curl_cffi.requests.exceptions import RequestException
+        try:
+            response = self._session.get(url)
+        except RequestException as exc:
+            return Fetched(url, 0, None, f"{type(exc).__name__}: {exc}")
+        location = response.headers.get("location") if 300 <= response.status_code < 400 else None
+        redirect_to = urljoin(str(response.url), location) if location else None
+        return Fetched(url, response.status_code, response.text, None, str(response.url),
+                       redirect_to)
+
     def close(self) -> None:
-        self._client.close()
+        if self._session is not None:
+            self._session.close()
+        if self._client is not None:
+            self._client.close()
 
 
 class Crawl4aiFetcher:
@@ -136,7 +173,9 @@ class Crawl4aiFetcher:
                                 current = urljoin(current, location)
                             raise ValueError('too many redirects')
                         except Exception:
-                            await route.abort()
+                            # The route may already be fulfilled, or the page closed mid-flight.
+                            with contextlib.suppress(Exception):
+                                await route.abort()
                     await context.route('**/*', guard)
                     async def block_socket(socket):
                         await socket.close()
@@ -159,7 +198,9 @@ class Crawl4aiFetcher:
             return
         try:
             if self._crawler is not None:
-                self._loop.run_until_complete(self._crawler.close())
+                # Teardown errors (in-flight routes racing the close) must not discard a fetched page.
+                with contextlib.suppress(Exception):
+                    self._loop.run_until_complete(self._crawler.close())
         finally:
             self._crawler = None
             self._loop.close()
