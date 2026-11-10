@@ -50,12 +50,12 @@ def _text(el: ET.Element, path: str) -> str | None:
 ErrorSink = Callable[[str, str], None]  # (url, reason)
 
 
-def _sitemap_entries(xml: str) -> tuple[list[str], list[tuple[str, datetime | None, str | None]]]:
+def _sitemap_entries(xml: str) -> tuple[list[tuple[str, datetime | None]], list[tuple[str, datetime | None, str | None, datetime | None]]]:
     """Return (child sitemap URLs, [(url, date, title)]). Raises on malformed or hostile XML."""
     from defusedxml import ElementTree as SafeET  # extra `crawl`; sitemaps are untrusted
 
     root = SafeET.fromstring(xml)
-    children = [loc for s in root.findall(f"{SM}sitemap") if (loc := _text(s, f"{SM}loc"))]
+    children = [(loc, _parse_date(_text(s, f"{SM}lastmod"))) for s in root.findall(f"{SM}sitemap") if (loc := _text(s, f"{SM}loc"))]
     entries = []
     for u in root.findall(f"{SM}url"):
         loc = _text(u, f"{SM}loc")
@@ -108,7 +108,7 @@ def _from_sitemap(fetcher: Fetcher, url: str, on_error: ErrorSink, on_source=Non
             on_source(current, 'sitemap', failed[0] if failed else None)
         entries.extend(found)
         if depth < 2:
-            queue.extend((child, depth + 1) for child in children)
+            queue.extend((child, depth + 1) for child, _ in children)
     return entries
 
 
