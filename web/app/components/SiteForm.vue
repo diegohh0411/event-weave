@@ -6,7 +6,7 @@ import { validateSite } from '../utils/site'
 type Site = components['schemas']['SiteOut']
 const props = defineProps<{ site?: Site }>()
 const api = useApi()
-const draft = reactive({ name: props.site?.name ?? '', domain: props.site?.domain ?? '', language: props.site?.language ?? 'en', feeds: props.site?.feeds?.join('\n') ?? '', sitemaps: props.site?.sitemaps?.join('\n') ?? '', per_day: props.site?.per_day ?? 3, check_every_minutes: props.site?.check_every_minutes ?? 60, daily_cap: props.site?.daily_cap ?? 50, min_interval_seconds: props.site?.min_interval_seconds ?? 2, max_parallel: props.site?.max_parallel ?? 1, enabled: props.site?.enabled ?? true, backfill_mode: props.site?.backfill_mode ?? 'off', backfill_from: props.site?.backfill_from ?? '', backfill_per_hour: props.site?.backfill_per_hour ?? 60 })
+const draft = reactive({ name: props.site?.name ?? '', domain: props.site?.domain ?? '', language: props.site?.language ?? 'en', feeds: props.site?.feeds?.join('\n') ?? '', sitemaps: props.site?.sitemaps?.join('\n') ?? '', per_day: props.site?.per_day ?? 3, check_every_minutes: props.site?.check_every_minutes ?? 60, daily_cap: props.site?.daily_cap ?? 50, min_interval_seconds: props.site?.min_interval_seconds ?? 2, max_parallel: props.site?.max_parallel ?? 1, enabled: props.site?.enabled ?? true, backfill_mode: props.site?.backfill_mode ?? 'off', backfill_from: props.site?.backfill_from ?? '', backfill_per_hour: props.site?.backfill_per_hour ?? 60, recheck_backfilled: props.site?.recheck_backfilled ?? true })
 const error = ref(''); const saving = ref(false)
 const lines = (v: string) => v.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
 async function submit() {
@@ -39,6 +39,7 @@ async function submit() {
       <label v-if="draft.backfill_mode === 'date'" class="block">From date<input v-model="draft.backfill_from" type="date" required class="ew-field"></label>
       <label class="block">Articles per hour<input v-model.number="draft.backfill_per_hour" type="number" min="1" max="1000" required class="ew-field"><span class="text-sm text-muted">Counts article fetches; polite request limits still apply.</span></label>
     </fieldset>
+    <label class="flex gap-2"><input v-model="draft.recheck_backfilled" type="checkbox"> Recheck backfilled articles</label><p class="text-sm text-muted">Rechecks re-fetch each article about 1, 7 and 30 days after it was first fetched, within this site's polite limits.</p>
     <label class="flex gap-2"><input v-model="draft.enabled" type="checkbox"> Enabled</label><p class="text-sm text-muted">Enabled sites are checked automatically.</p>
     <UAlert v-if="error" color="error" :description="error" /><UButton type="submit" :loading="saving">Save site</UButton>
   </form>

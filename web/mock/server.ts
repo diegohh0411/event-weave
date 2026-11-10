@@ -150,7 +150,9 @@ export function respond(method: string, pathname: string, query: URLSearchParams
     if (route.template === '/library/facets') {
       const docs = (fixtures['GET /library/documents']![0]!.body as { items: Row[] }).items.filter(i => filters['GET /library/documents']!(i, query))
       const counts = (key: string) => [...new Set(docs.map(d => String(d[key])))].sort().map(value => ({ value, count: docs.filter(d => d[key] === value).length }))
-      return { status: 200, body: { outlets: counts('outlet'), languages: counts('language'), total: docs.length } }
+      const edited = docs.filter(d => Number(d.versions) > 1).length, removed = docs.filter(d => d.removed_at).length
+      const changes = [{ value: 'edited', count: edited }, { value: 'removed', count: removed }].filter(c => c.count)
+      return { status: 200, body: { outlets: counts('outlet'), languages: counts('language'), changes, total: docs.length } }
     }
     const fixture = pick(route, params, query, body)
     if (!fixture) {
