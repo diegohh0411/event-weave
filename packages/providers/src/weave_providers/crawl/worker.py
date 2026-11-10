@@ -9,7 +9,8 @@ import sqlalchemy as sa
 from weave_core.schema import sites, crawl_runs, crawl_articles, backfill_sitemaps, backfill_urls
 from types import SimpleNamespace
 from .backfill import seed_frontier, scan_sitemaps, fetch_batch
-from .scheduler import schedule_due_sites, schedule_due_backfills
+from .recheck import recheck_days, recheck_page
+from .scheduler import RECHECK_BATCH, due_pages_query, schedule_due_backfills, schedule_due_rechecks, schedule_due_sites
 from threading import Event, Thread
 
 from .throttle import DomainThrottle
@@ -120,7 +121,9 @@ def process_claim(engine, claim, stop, *, fetcher_factory=public_fetchers,
                 fetcher = PoliteFetcher(browser, meta=http, validator=validate_public_url,
                                         min_interval=min_interval, respect_robots=respect_robots_from_env(),
                                         throttle=DomainThrottle(engine))
-                if claim.trigger == 'backfill' and site is not None:
+                if claim.trigger == 'recheck' and site is not None:
+                    _run_rechecks(engine, claim, fetcher, observe, cancelled, guard)
+                elif claim.trigger == 'backfill' and site is not None:
                     archive = SimpleNamespace(**dict(site), crawl_id=claim.id)
                     with engine.connect() as conn:
                         has_frontier = conn.scalar(sa.select(sa.exists().where(backfill_sitemaps.c.site_id == claim.site_id)))
@@ -163,10 +166,29 @@ def process_claim(engine, claim, stop, *, fetcher_factory=public_fetchers,
             finish_crawl(engine, claim.id, claim.token, error=error)
 
 
+def _run_rechecks(engine, claim, fetcher, observe, cancelled, guard):
+    days = recheck_days()
+    with engine.begin() as conn:
+        site = conn.execute(sa.select(sites).where(sites.c.id == claim.site_id)).mappings().one()
+        pages = conn.execute(due_pages_query(site, _now()).limit(RECHECK_BATCH)
+                             .with_for_update(skip_locked=True)).mappings().all()
+    for page in pages:
+        if cancelled():
+            return
+        with engine.connect() as conn:
+            if not conn.scalar(sa.select(sites.c.enabled).where(sites.c.id == claim.site_id)):
+                return
+        outcome = recheck_page(engine, page, fetcher, _now(), days, claim.id, guard, cancelled)
+        if outcome is None:
+            return
+        observe('article', dict(canonical_url=page['canonical_url'], url=page['url'], outlet=page['outlet'], **outcome))
+
+
 def run_crawl_worker(engine, stop, poll_seconds=2, once=False, fetcher_factory=public_fetchers,
                      *, min_interval=2.0, clock=time.monotonic):
     # Configuration errors must never consume queued work.
     respect_robots_from_env()
+    recheck_days()
     tick_seconds = float(os.environ.get("WEAVE_SCHEDULER_TICK_SECONDS", "60"))
     last_tick = None
     while not stop.is_set():
@@ -175,6 +197,7 @@ def run_crawl_worker(engine, stop, poll_seconds=2, once=False, fetcher_factory=p
             last_tick = tick
             try:
                 schedule_due_sites(engine, _now())
+                schedule_due_rechecks(engine, _now())
                 schedule_due_backfills(engine, _now())
             except Exception:
                 log.exception("Crawl scheduler tick failed")

@@ -18,7 +18,7 @@ RETRY_HOURS = 6
 MAX_ATTEMPTS = 3
 # crawl_articles status for each recheck outcome.
 ARTICLE_STATUS = {"unchanged": "unchanged", "edited": "updated", "gone": "removed",
-                  "redirected": "redirected", "error": "error"}
+                  "redirected": "removed", "error": "error"}
 
 
 def recheck_days() -> list[int]:

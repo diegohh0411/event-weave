@@ -113,7 +113,7 @@ def test_http_gone_marks_gone(engine, status):
 def test_offsite_redirect_marks_removed(engine):
     outcome, inner = run(engine, moved("https://elsewhere.test/x"))
     row = page(engine)
-    assert outcome["status"] == "redirected" and row["status"] == "gone"
+    assert outcome["status"] == "removed" and row["status"] == "gone"
     assert row["gone_reason"] == "redirected to https://elsewhere.test/x"
     assert "https://elsewhere.test/x" not in inner.calls
     assert log(engine)[0]["final_url"] == "https://elsewhere.test/x"
@@ -121,13 +121,13 @@ def test_offsite_redirect_marks_removed(engine):
 
 def test_homepage_redirect_marks_removed(engine):
     outcome, _ = run(engine, moved(f"{BASE}/"), extra={f"{BASE}/": ok(OTHER)})
-    assert outcome["status"] == "redirected"
+    assert outcome["status"] == "removed"
     assert page(engine)["gone_reason"] == f"redirected to {BASE}/"
 
 
 def test_section_redirect_marks_removed(engine):
     outcome, _ = run(engine, moved(f"{BASE}/world"), extra={f"{BASE}/world": ok(SECTION)})
-    assert outcome["status"] == "redirected" and page(engine)["status"] == "gone"
+    assert outcome["status"] == "removed" and page(engine)["status"] == "gone"
 
 
 def test_slug_change_keeps_document(engine):
@@ -149,7 +149,7 @@ def test_slug_change_onto_known_url_marks_removed(engine):
     crawl(engine, OUTLETS, polite({f"{BASE}/sitemap.xml": ok(sitemap("/a/other")), other: ok(OTHER)})[0], NOW)
     known = page(engine, other)["document_id"]
     outcome, _ = run(engine, moved(other), extra={other: ok(OTHER)})
-    assert outcome["status"] == "redirected" and page(engine)["status"] == "gone"
+    assert outcome["status"] == "removed" and page(engine)["status"] == "gone"
     assert log(engine)[0]["reason"] == f"redirect to known document {known}"
 
 
