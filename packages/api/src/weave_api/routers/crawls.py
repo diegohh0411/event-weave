@@ -34,7 +34,7 @@ class CrawlOut(BaseModel):
     id: UUID
     request: CrawlRequest
     site_id: UUID | None
-    trigger: Literal['adhoc', 'manual', 'schedule']
+    trigger: Literal['adhoc', 'manual', 'schedule', 'backfill']
     status: Literal['queued', 'running', 'completed', 'failed']
     created_at: datetime
     started_at: datetime | None

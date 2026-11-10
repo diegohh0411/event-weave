@@ -51,6 +51,162 @@
         "title": "AdapterOut",
         "type": "object"
       },
+      "BackfillAction": {
+        "properties": {
+          "action": {
+            "enum": [
+              "start",
+              "pause",
+              "resume",
+              "cancel"
+            ],
+            "title": "Action",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "BackfillAction",
+        "type": "object"
+      },
+      "BackfillProgress": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "eta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta"
+          },
+          "fetched_last_hour": {
+            "title": "Fetched Last Hour",
+            "type": "integer"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "from": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From"
+          },
+          "mode": {
+            "enum": [
+              "off",
+              "date",
+              "all"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "oldest_reached": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Reached"
+          },
+          "per_hour": {
+            "title": "Per Hour",
+            "type": "integer"
+          },
+          "sitemaps": {
+            "$ref": "#/components/schemas/SitemapProgress"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "state": {
+            "enum": [
+              "off",
+              "running",
+              "paused",
+              "done",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          },
+          "urls": {
+            "$ref": "#/components/schemas/UrlProgress"
+          }
+        },
+        "required": [
+          "state",
+          "mode",
+          "from",
+          "until",
+          "per_hour",
+          "started_at",
+          "finished_at",
+          "error",
+          "sitemaps",
+          "urls",
+          "oldest_reached",
+          "fetched_last_hour",
+          "eta"
+        ],
+        "title": "BackfillProgress",
+        "type": "object"
+      },
       "Candidate": {
         "properties": {
           "cluster_id": {
@@ -747,7 +903,8 @@
             "enum": [
               "adhoc",
               "manual",
-              "schedule"
+              "schedule",
+              "backfill"
             ],
             "title": "Trigger",
             "type": "string"
@@ -2558,6 +2715,35 @@
       },
       "SiteCreate": {
         "properties": {
+          "backfill_from": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backfill From"
+          },
+          "backfill_mode": {
+            "default": "off",
+            "enum": [
+              "off",
+              "date",
+              "all"
+            ],
+            "title": "Backfill Mode",
+            "type": "string"
+          },
+          "backfill_per_hour": {
+            "default": 60,
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Backfill Per Hour",
+            "type": "integer"
+          },
           "check_every_minutes": {
             "default": 60,
             "minimum": 5.0,
@@ -2654,6 +2840,47 @@
       },
       "SiteOut": {
         "properties": {
+          "backfill_from": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backfill From"
+          },
+          "backfill_mode": {
+            "default": "off",
+            "enum": [
+              "off",
+              "date",
+              "all"
+            ],
+            "title": "Backfill Mode",
+            "type": "string"
+          },
+          "backfill_per_hour": {
+            "default": 60,
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Backfill Per Hour",
+            "type": "integer"
+          },
+          "backfill_progress": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Backfill Progress",
+            "type": "object"
+          },
+          "backfill_state": {
+            "default": "off",
+            "title": "Backfill State",
+            "type": "string"
+          },
           "check_every_minutes": {
             "default": 60,
             "minimum": 5.0,
@@ -2797,6 +3024,47 @@
       },
       "SitePatch": {
         "properties": {
+          "backfill_from": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backfill From"
+          },
+          "backfill_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "off",
+                  "date",
+                  "all"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backfill Mode"
+          },
+          "backfill_per_hour": {
+            "anyOf": [
+              {
+                "maximum": 1000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backfill Per Hour"
+          },
           "check_every_minutes": {
             "anyOf": [
               {
@@ -2944,6 +3212,39 @@
         "title": "SitePatch",
         "type": "object"
       },
+      "SitemapProgress": {
+        "properties": {
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "error": {
+            "title": "Error",
+            "type": "integer"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "pending",
+          "done",
+          "skipped",
+          "error"
+        ],
+        "title": "SitemapProgress",
+        "type": "object"
+      },
       "SnapshotDiffOut": {
         "properties": {
           "added": {
@@ -3053,6 +3354,49 @@
         ],
         "title": "UnitKind",
         "type": "string"
+      },
+      "UrlProgress": {
+        "properties": {
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "error": {
+            "title": "Error",
+            "type": "integer"
+          },
+          "existing": {
+            "title": "Existing",
+            "type": "integer"
+          },
+          "found": {
+            "title": "Found",
+            "type": "integer"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          },
+          "rejected": {
+            "title": "Rejected",
+            "type": "integer"
+          },
+          "stored": {
+            "title": "Stored",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "found",
+          "pending",
+          "done",
+          "stored",
+          "existing",
+          "rejected",
+          "error"
+        ],
+        "title": "UrlProgress",
+        "type": "object"
       },
       "ValidatedOut": {
         "properties": {
@@ -5335,6 +5679,94 @@
         "summary": "Update Site"
       }
     },
+    "/sites/{site_id}/backfill": {
+      "get": {
+        "operationId": "get_backfill_sites__site_id__backfill_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillProgress"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Backfill"
+      },
+      "post": {
+        "operationId": "control_backfill_sites__site_id__backfill_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackfillAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillProgress"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Control Backfill"
+      }
+    },
     "/sites/{site_id}/check": {
       "post": {
         "operationId": "check_site_sites__site_id__check_post",
@@ -5387,6 +5819,28 @@
               "format": "uuid",
               "title": "Site Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "trigger",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "adhoc",
+                    "manual",
+                    "schedule",
+                    "backfill"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Trigger"
             }
           },
           {
