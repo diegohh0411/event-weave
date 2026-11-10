@@ -74,3 +74,58 @@ def scan_sitemaps(engine, site, fetcher, limit, cancelled):
             conn.execute(backfill_sitemaps.update().where(backfill_sitemaps.c.site_id == site.id,
                 backfill_sitemaps.c.url == row['url']).values(status='error' if error else 'done', error=error,
                     urls_found=found, scanned_at=sa.func.now()))
+
+
+def budget_left(conn, site_id):
+    from weave_core.schema import crawl_articles, crawl_runs
+    fetched = conn.scalar(sa.select(sa.func.count()).select_from(
+        crawl_articles.join(crawl_runs, crawl_articles.c.crawl_id == crawl_runs.c.id)
+    ).where(crawl_runs.c.site_id == site_id, crawl_runs.c.trigger == 'backfill',
+            crawl_articles.c.fetched.is_(True),
+            crawl_articles.c.updated_at >= sa.func.now() - sa.text("interval '1 hour'")))
+    pace = conn.scalar(sa.select(sites.c.backfill_per_hour).where(sites.c.id == site_id))
+    return max(0, pace - fetched)
+
+
+def fetch_batch(engine, site, fetcher, limit, now, emit, cancelled, write_guard):
+    from weave_providers.crawl.discover import Candidate
+    from weave_providers.crawl.store import CrawlReport, process_candidates
+
+    with engine.connect() as conn:
+        budget = budget_left(conn, site.id)
+    for _ in range(limit):
+        with engine.begin() as conn:
+            row = conn.execute(sa.select(backfill_urls).where(
+                backfill_urls.c.site_id == site.id, backfill_urls.c.status == 'pending'
+            ).order_by(backfill_urls.c.published_at.desc().nulls_last(), backfill_urls.c.canonical_url
+            ).limit(1).with_for_update(skip_locked=True)).mappings().first()
+            if row is None:
+                break
+            if cancelled() or budget <= 0:
+                break
+            # Read in a fresh transaction so a pause committed during a fetch is visible.
+            with engine.connect() as state_conn:
+                state = state_conn.scalar(sa.select(sites.c.backfill_state).where(sites.c.id == site.id))
+            if state != 'running':
+                break
+            candidate = Candidate(row['canonical_url'], site.name, row['published_at'], row['title'], row['updated_at'])
+            outcomes = []
+            process_candidates(engine, site, [candidate], fetcher, now, CrawlReport(),
+                               lambda kind, outcome: outcomes.append(outcome), cancelled,
+                               write_guard, refetch_known=False)
+            if not outcomes or cancelled():
+                break
+            outcome = outcomes[0]
+            # A non-successful HTTP response is a completed backfill error.
+            if outcome['status'] == 'rejected' and (outcome.get('reason') or '').startswith('HTTP '):
+                outcome.update(status='error', fetched=True)
+            if outcome['status'] == 'error':
+                outcome['fetched'] = True
+            if outcome['fetched']:
+                budget -= 1
+            emit('article', outcome)
+            if write_guard:
+                write_guard(conn)
+            conn.execute(backfill_urls.update().where(backfill_urls.c.site_id == site.id,
+                backfill_urls.c.canonical_url == candidate.url).values(status='done', outcome=outcome['status'],
+                document_id=outcome.get('document_id'), crawl_id=getattr(site, 'crawl_id', None), done_at=sa.func.now()))

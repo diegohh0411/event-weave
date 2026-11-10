@@ -100,3 +100,89 @@ def test_three_month_archive_skips_old_child(database_url):
         assert c.scalar(sa.select(backfill_sitemaps.c.status).where(backfill_sitemaps.c.url == BASE+'1')) == 'skipped'
         assert set(c.scalars(sa.select(backfill_urls.c.canonical_url))) == {BASE+'article2', BASE+'article3'}
     engine.dispose()
+
+
+def test_fetch_batch_records_http_error_and_does_not_retry(database_url):
+    from weave_providers.crawl.backfill import fetch_batch
+    engine = sa.create_engine(database_url)
+    site = SimpleNamespace(id=uuid.uuid4(), name='example', domain='example.com', language='en')
+    with engine.begin() as c:
+        c.execute(sites.insert().values(id=site.id, name=site.name, domain=site.domain, language='en', backfill_state='running'))
+        c.execute(backfill_urls.insert().values(site_id=site.id, canonical_url=BASE+'missing', status='pending'))
+    f = FixtureFetcher({BASE+'missing': Fetched(BASE+'missing', 404, '', None)})
+    for _ in range(2):
+        fetch_batch(engine, site, f, 10, datetime.now(timezone.utc), lambda *args: None, lambda: False, None)
+    with engine.connect() as c:
+        assert c.execute(sa.select(backfill_urls.c.status, backfill_urls.c.outcome).where(backfill_urls.c.site_id == site.id)).one() == ('done', 'error')
+    assert f.calls == [BASE+'missing']
+    engine.dispose()
+
+
+def test_batch_budget_pause_and_guard(database_url):
+    import pytest
+    from weave_providers.crawl.backfill import fetch_batch, budget_left
+    engine = sa.create_engine(database_url)
+    site = SimpleNamespace(id=uuid.uuid4(), name='example', domain='example.com', language='en')
+    urls = [BASE+'missing1', BASE+'missing2']
+    with engine.begin() as c:
+        c.execute(sites.insert().values(id=site.id, name=site.name, domain=site.domain, language='en', backfill_state='running', backfill_per_hour=1))
+        c.execute(backfill_urls.insert(), [dict(site_id=site.id, canonical_url=u, status='pending') for u in urls])
+        assert budget_left(c, site.id) == 1
+    f = FixtureFetcher({u: Fetched(u, 404, '', None) for u in urls})
+    fetch_batch(engine, site, f, 10, datetime.now(timezone.utc), lambda *args: None, lambda: False, None)
+    assert len(f.calls) == 1
+    with engine.begin() as c:
+        c.execute(sites.update().where(sites.c.id == site.id).values(backfill_state='paused'))
+    fetch_batch(engine, site, f, 10, datetime.now(timezone.utc), lambda *args: None, lambda: False, None)
+    assert len(f.calls) == 1
+    with engine.begin() as c:
+        c.execute(sites.update().where(sites.c.id == site.id).values(backfill_state='running'))
+    def lost(conn):
+        raise RuntimeError('lease lost')
+    with pytest.raises(RuntimeError, match='lease lost'):
+        fetch_batch(engine, site, f, 10, datetime.now(timezone.utc), lambda *args: None, lambda: False, lost)
+    with engine.connect() as c:
+        assert c.scalar(sa.select(sa.func.count()).select_from(backfill_urls).where(backfill_urls.c.site_id == site.id, backfill_urls.c.status == 'pending')) == 1
+    engine.dispose()
+
+
+def test_batch_stores_then_recognizes_known_url(database_url):
+    from pathlib import Path
+    from weave_providers.crawl.backfill import fetch_batch
+    engine = sa.create_engine(database_url)
+    site = SimpleNamespace(id=uuid.uuid4(), name='example', domain='example.com', language='en')
+    url = BASE+'article'
+    with engine.begin() as c:
+        c.execute(sites.insert().values(id=site.id, name=site.name, domain=site.domain, language='en', backfill_state='running'))
+        c.execute(backfill_urls.insert().values(site_id=site.id, canonical_url=url, status='pending'))
+    html = (Path(__file__).parent / 'fixtures' / 'reuters' / 'article.html').read_text()
+    f = FixtureFetcher({url: fetched(html)})
+    fetch_batch(engine, site, f, 10, datetime.now(timezone.utc), lambda *args: None, lambda: False, None)
+    with engine.begin() as c:
+        row = c.execute(sa.select(backfill_urls.c.outcome, backfill_urls.c.document_id).where(backfill_urls.c.site_id == site.id)).one()
+        assert row.outcome == 'stored' and row.document_id
+        c.execute(backfill_urls.update().where(backfill_urls.c.site_id == site.id).values(status='pending'))
+    fetch_batch(engine, site, f, 10, datetime.now(timezone.utc), lambda *args: None, lambda: False, None)
+    with engine.connect() as c:
+        assert c.scalar(sa.select(backfill_urls.c.outcome).where(backfill_urls.c.site_id == site.id)) == 'existing'
+    assert f.calls == [url]
+    engine.dispose()
+
+
+def test_batch_stops_when_paused_after_first_url(database_url):
+    from weave_providers.crawl.backfill import fetch_batch
+    engine = sa.create_engine(database_url)
+    site = SimpleNamespace(id=uuid.uuid4(), name='example', domain='example.com', language='en')
+    urls = [BASE+'one', BASE+'two']
+    with engine.begin() as c:
+        c.execute(sites.insert().values(id=site.id, name=site.name, domain=site.domain, language='en', backfill_state='running'))
+        c.execute(backfill_urls.insert(), [dict(site_id=site.id, canonical_url=u, status='pending') for u in urls])
+    f = FixtureFetcher({u: Fetched(u, 404, '', None) for u in urls})
+    def pause(kind, outcome):
+        with engine.begin() as c:
+            c.execute(sites.update().where(sites.c.id == site.id).values(backfill_state='paused'))
+    fetch_batch(engine, site, f, 10, datetime.now(timezone.utc), pause, lambda: False, None)
+    assert len(f.calls) == 1
+    with engine.connect() as c:
+        assert c.scalar(sa.select(sa.func.count()).select_from(backfill_urls).where(backfill_urls.c.site_id == site.id, backfill_urls.c.status == 'pending')) == 1
+    engine.dispose()

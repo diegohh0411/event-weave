@@ -109,56 +109,65 @@ def _run_crawl(engine, outlets, fetcher, now, days, observer, stopped, write_gua
         if stopped():
             break
         report.discovered += len(candidates)
-        for candidate in candidates:
-            if stopped():
-                break
-            prior = _prior_page(engine, candidate.url)
-            if stopped():
-                break
-            if prior:
-                status, reason, doc_id, fetched_at = prior
-                date = candidate.updated_at or candidate.published_at
-                if status == "stored" and date and fetched_at and date > fetched_at:
-                    outcome = _refetch(engine, candidate, fetcher, now, report, stopped, write_guard, doc_id)
-                    if outcome is None:
-                        break
-                    emit("article", dict(canonical_url=candidate.url, url=candidate.url, outlet=candidate.outlet, **outcome))
-                    continue
-                if status == 'stored':
-                    status = 'existing'
-                elif reason and reason.startswith('duplicate of '):
-                    status, doc_id = 'duplicate', reason.removeprefix('duplicate of ')
-                else:
-                    status = 'rejected'
-                emit('article', dict(canonical_url=candidate.url, url=candidate.url,
-                                     outlet=candidate.outlet, status=status, reason=reason,
-                                     document_id=doc_id, fetched=False))
-                continue
-            if outlet.name in remaining and remaining[outlet.name] <= 0:
-                rejected["daily cap reached"] += 1
-                emit('article', dict(canonical_url=candidate.url, url=candidate.url,
-                                     outlet=candidate.outlet, status='rejected', reason='daily cap reached',
-                                     document_id=None, fetched=False))
-                continue
-            outcome = _crawl_page(engine, candidate, outlet.language, fetcher, now, report, rejected, stopped,
-                                  write_guard, consume_cap)
-            if outcome is None:
-                break
-            if outcome['status'] == 'stored' and outlet.name in remaining:
-                remaining[outlet.name] -= 1
-            emit('article', dict(canonical_url=candidate.url, url=candidate.url,
-                                 outlet=candidate.outlet, **outcome))
+        process_candidates(engine, outlet, candidates, fetcher, now, report, emit, stopped,
+                           write_guard, remaining, rejected, consume_cap)
     report.rejected = dict(rejected)
     report.discovery_errors = dict(errors)
     return report
 
 
-def _prior_page(engine: Engine, canonical: str):
+def process_candidates(engine, outlet, candidates, fetcher, now, report, emit, stopped,
+                       write_guard=None, remaining=None, rejected=None, consume_cap=None,
+                       refetch_known=True):
+    remaining = remaining if remaining is not None else {}
+    rejected = rejected if rejected is not None else Counter()
+    for candidate in candidates:
+        if stopped():
+            break
+        prior = _prior_page(engine, candidate.url, retry_errors=refetch_known)
+        if stopped():
+            break
+        if prior:
+            status, reason, doc_id, fetched_at = prior
+            date = candidate.updated_at or candidate.published_at
+            if refetch_known and status == "stored" and date and fetched_at and date > fetched_at:
+                outcome = _refetch(engine, candidate, fetcher, now, report, stopped, write_guard, doc_id)
+                if outcome is None:
+                    break
+                emit("article", dict(canonical_url=candidate.url, url=candidate.url, outlet=candidate.outlet, **outcome))
+                continue
+            if status == 'stored':
+                status = 'existing'
+            elif reason and reason.startswith('duplicate of '):
+                status, doc_id = 'duplicate', reason.removeprefix('duplicate of ')
+            else:
+                status = 'rejected'
+            emit('article', dict(canonical_url=candidate.url, url=candidate.url,
+                                 outlet=candidate.outlet, status=status, reason=reason,
+                                 document_id=doc_id, fetched=False))
+            continue
+        if outlet.name in remaining and remaining[outlet.name] <= 0:
+            rejected["daily cap reached"] += 1
+            emit('article', dict(canonical_url=candidate.url, url=candidate.url,
+                                 outlet=candidate.outlet, status='rejected', reason='daily cap reached',
+                                 document_id=None, fetched=False))
+            continue
+        outcome = _crawl_page(engine, candidate, outlet.language, fetcher, now, report, rejected, stopped,
+                              write_guard, consume_cap)
+        if outcome is None:
+            break
+        if outcome['status'] == 'stored' and outlet.name in remaining:
+            remaining[outlet.name] -= 1
+        emit('article', dict(canonical_url=candidate.url, url=candidate.url,
+                             outlet=candidate.outlet, **outcome))
+
+
+def _prior_page(engine: Engine, canonical: str, retry_errors=True):
     """Seen before, unless the earlier attempt was a fetch error (those are retried)."""
     c = crawled_pages.c
     with engine.connect() as conn:
         row = conn.execute(sa.select(c.status, c.reason, c.document_id, c.fetched_at).where(c.canonical_url == canonical)).first()
-    return row if row is not None and not (row.reason or "").startswith(FETCH_ERROR) else None
+    return row if row is not None and (not retry_errors or not (row.reason or "").startswith(FETCH_ERROR)) else None
 
 
 def _crawl_page(engine, candidate: Candidate, language: str, fetcher: Fetcher, now: datetime,
