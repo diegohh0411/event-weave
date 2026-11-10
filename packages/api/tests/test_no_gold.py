@@ -46,7 +46,7 @@ def seeded(engine):
     crawl = uuid4()
     with engine.begin() as conn:
         conn.execute(runs.insert().values(id=run, config={"name": "r", "track": "realistic", "seed": 0, "stages": {}}, config_hash="h", state="done", created_at=NOW))
-        conn.execute(documents.insert().values(id="d1", provider="p", external_id="d1", language="en", title="t", byline="b",
+        conn.execute(documents.insert().values(id="d1", article_id="d1", provider="p", external_id="d1", language="en", title="t", byline="b",
                                                outlet="o", url="u", text=TEXT, token_offsets=[], sentence_offsets=[[0, 23], [24, 40]],
                                                content_hash="h"))
         conn.execute(crawl_runs.insert().values(id=crawl, request={'sites': [{'domain': 'example.com', 'language': 'en'}], 'days': 1},

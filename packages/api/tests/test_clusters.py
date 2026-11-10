@@ -14,7 +14,7 @@ def _doc(conn, did, language):
     text = TEXTS[language]
     first = text.index(".") + 1
     conn.execute(documents.insert().values(
-        id=did, provider="p", external_id=did, language=language, title=f"title {did}", byline="", outlet="", url="",
+        id=did, article_id=did, provider="p", external_id=did, language=language, title=f"title {did}", byline="", outlet="", url="",
         text=text, token_offsets=[], sentence_offsets=[[0, first], [first + 1, len(text)]], content_hash="h"))
 
 

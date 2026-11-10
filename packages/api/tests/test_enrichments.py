@@ -17,7 +17,7 @@ def run(engine):
     with engine.begin() as conn:
         for r in (run, other):
             conn.execute(runs.insert().values(id=r, config={}, config_hash="h", state="done", created_at=NOW))
-        conn.execute(documents.insert().values(id="d", provider="p", external_id="d", language="en", title="t", byline="", outlet="",
+        conn.execute(documents.insert().values(id="d", article_id="d", provider="p", external_id="d", language="en", title="t", byline="", outlet="",
                                                url="", text=TEXT, token_offsets=[], sentence_offsets=[[0, len(TEXT)]], content_hash="h"))
         for i in range(12):
             enricher = "enr-a" if i % 3 else "enr-b"
@@ -69,7 +69,7 @@ def big_run(engine):
     run = uuid4()
     with engine.begin() as conn:
         conn.execute(runs.insert().values(id=run, config={}, config_hash="h", state="done", created_at=NOW))
-        conn.execute(documents.insert().values(id="d", provider="p", external_id="d", language="en", title="t", byline="", outlet="",
+        conn.execute(documents.insert().values(id="d", article_id="d", provider="p", external_id="d", language="en", title="t", byline="", outlet="",
                                                url="", text=TEXT, token_offsets=[], sentence_offsets=[[0, len(TEXT)]], content_hash="h"))
         names = ["enr-rare"] * 7 + ["enr-mid"] * 3 + ["enr-a"] * 990
         conn.execute(mentions.insert(), [dict(id=f"m{i}", document_id="d", start=0, end=6, tok_start=0, tok_end=1, sentence=0,

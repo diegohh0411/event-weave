@@ -175,6 +175,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/library/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Documents */
+        get: operations["list_documents_library_documents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/library/documents/{document_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Document */
+        get: operations["get_document_library_documents__document_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/library/facets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Facets */
+        get: operations["get_facets_library_facets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs": {
         parameters: {
             query?: never;
@@ -769,6 +820,15 @@ export interface components {
             /** Reason */
             reason: string | null;
         };
+        /** DocumentHistory */
+        DocumentHistory: {
+            /** Id */
+            id: string;
+            /** Superseded At */
+            superseded_at: string | null;
+            /** Version */
+            version: number;
+        };
         /** DocumentMention */
         DocumentMention: {
             /** Cluster Id */
@@ -833,6 +893,13 @@ export interface components {
             /** Reason */
             reason: string | null;
         };
+        /** Facet */
+        Facet: {
+            /** Count */
+            count: number;
+            /** Value */
+            value: string;
+        };
         /** FailureOut */
         FailureOut: {
             /** Attempts */
@@ -848,6 +915,63 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** LibraryDocument */
+        LibraryDocument: {
+            /** Article Id */
+            article_id: string;
+            /** Id */
+            id: string;
+            /** Language */
+            language: string;
+            /** Outlet */
+            outlet: string;
+            /** Published At */
+            published_at: string | null;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+            /** Version */
+            version: number;
+            /** Versions */
+            versions: number;
+        };
+        /** LibraryDocumentDetail */
+        LibraryDocumentDetail: {
+            /** Article Id */
+            article_id: string;
+            /** Byline */
+            byline: string;
+            /** History */
+            history: components["schemas"]["DocumentHistory"][];
+            /** Id */
+            id: string;
+            /** Language */
+            language: string;
+            /** Outlet */
+            outlet: string;
+            /** Published At */
+            published_at: string | null;
+            /** Text */
+            text: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+            /** Version */
+            version: number;
+            /** Versions */
+            versions: number;
+        };
+        /** LibraryFacets */
+        LibraryFacets: {
+            /** Languages */
+            languages: components["schemas"]["Facet"][];
+            /** Outlets */
+            outlets: components["schemas"]["Facet"][];
+            /** Total */
+            total: number;
         };
         /** Member */
         Member: {
@@ -964,6 +1088,17 @@ export interface components {
         Page_FailureOut_: {
             /** Items */
             items: components["schemas"]["FailureOut"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
+        /** Page[LibraryDocument] */
+        Page_LibraryDocument_: {
+            /** Items */
+            items: components["schemas"]["LibraryDocument"][];
             /** Limit */
             limit: number;
             /** Offset */
@@ -1561,6 +1696,109 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    list_documents_library_documents_get: {
+        parameters: {
+            query?: {
+                outlets?: string[] | null;
+                languages?: string[] | null;
+                published_from?: string | null;
+                published_to?: string | null;
+                search?: string | null;
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_LibraryDocument_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_document_library_documents__document_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryDocumentDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_facets_library_facets_get: {
+        parameters: {
+            query?: {
+                outlets?: string[] | null;
+                languages?: string[] | null;
+                published_from?: string | null;
+                published_to?: string | null;
+                search?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryFacets"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

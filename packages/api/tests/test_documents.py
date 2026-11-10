@@ -18,7 +18,7 @@ def _job(conn, run, stage, kind, unit, status="done", cache_key=None):
 
 
 def _doc(conn, did, language="en", title=None):
-    conn.execute(documents.insert().values(id=did, provider="p", external_id=did, language=language, title=title or f"title {did}",
+    conn.execute(documents.insert().values(id=did, article_id=did, provider="p", external_id=did, language=language, title=title or f"title {did}",
                                            byline="by", outlet="out", url="u", text=TEXT, token_offsets=[], sentence_offsets=[],
                                            content_hash="h"))
 
