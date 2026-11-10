@@ -203,3 +203,27 @@ def test_recheck_days_parsing(monkeypatch):
 def test_next_due():
     assert next_due(NOW, 0, DAYS) == NOW + timedelta(days=1)
     assert next_due(NOW, 3, DAYS) is None
+
+
+def test_slug_change_onto_rejected_duplicate_row_follows(engine):
+    new = f"{BASE}/a/water-plan"
+    with engine.begin() as conn:
+        conn.execute(crawled_pages.insert().values(canonical_url=new, url=new, outlet="example-news", fetched_at=NOW,
+                                                   status="rejected", reason="duplicate of x", document_id=None))
+    before = page(engine)
+    outcome, _ = run(engine, moved(new), extra={new: ok(ARTICLE)})
+    assert outcome["status"] == "unchanged" and outcome["document_id"] == before["document_id"]
+    assert page(engine)["status"] == "stored"
+    assert (page(engine, new)["status"], page(engine, new)["document_id"]) == ("stored", before["document_id"])
+
+
+def test_browser_offsite_navigation_is_error_not_removed(engine):
+    class Browser:
+        def fetch(self, url):
+            if url.endswith("/robots.txt"):
+                return ok("User-agent: *\nAllow: /\n")
+            return Fetched(url, 200, ARTICLE, None, "https://consent.example.org/wall")
+    fetcher = PoliteFetcher(Browser(), min_interval=0, clock=lambda: 0.0, sleep=lambda s: None)
+    outcome = recheck_page(engine, page(engine), fetcher, NOW + timedelta(days=1), DAYS, None, None, lambda: False)
+    assert outcome["status"] == "error"
+    assert (page(engine)["status"], page(engine)["recheck_attempts"]) == ("stored", 1)

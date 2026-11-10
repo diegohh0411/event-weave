@@ -14,7 +14,7 @@ from weave_core.schema import crawled_pages, documents
 from weave_core.textnorm import edit_hash
 from weave_providers.crawl.discover import Candidate, discover
 from weave_providers.crawl.extract import Rejected, extract
-from weave_providers.crawl.fetch import REDIRECTED_AWAY, Fetcher, PoliteFetcher
+from weave_providers.crawl.fetch import NAVIGATED_AWAY, REDIRECTED_AWAY, Fetcher, PoliteFetcher
 from weave_providers.crawl.outlets import Outlet
 from weave_providers.crawl.requests import CrawlSite
 from weave_providers.crawl.site_sources import resolve_sources
@@ -175,7 +175,7 @@ def _crawl_page(engine, candidate: Candidate, language: str, fetcher: Fetcher, n
     got = fetcher.fetch(candidate.url)
     if cancelled():
         return None
-    if got.error in (ROBOTS_DISALLOWED, REDIRECTED_AWAY):
+    if got.error in (ROBOTS_DISALLOWED, REDIRECTED_AWAY, NAVIGATED_AWAY):
         _record(engine, candidate, now, got.error, None, rejected, write_guard=write_guard)
         return dict(status='rejected', reason=got.error, document_id=None, fetched=False)
     if got.error or got.status == 0 or got.status >= 500 or (not got.html and got.status == 200):

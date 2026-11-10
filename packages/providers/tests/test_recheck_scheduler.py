@@ -187,3 +187,23 @@ def test_invalid_recheck_days_fails_startup(engine, monkeypatch):
     monkeypatch.setattr(worker, "claim_crawl", lambda *a: pytest.fail("claimed work"))
     with pytest.raises(ValueError):
         worker.run_crawl_worker(engine, Event(), once=True)
+
+
+def test_page_exception_is_recorded_and_batch_continues(engine, monkeypatch):
+    site_id = make_site(engine, n=3)
+    schedule_due_rechecks(engine, LATER)
+    real = worker.recheck_page
+
+    def boom(engine_, page, *args, **kwargs):
+        if page["canonical_url"].endswith("/a/0"):
+            raise RuntimeError("extractor bug")
+        return real(engine_, page, *args, **kwargs)
+
+    monkeypatch.setattr(worker, "recheck_page", boom)
+    claim = process(engine, routes(3))
+    with engine.connect() as conn:
+        assert conn.scalar(sa.select(crawl_runs.c.status).where(crawl_runs.c.id == claim.id)) == "completed"
+        failed = conn.execute(sa.select(crawled_pages).where(crawled_pages.c.canonical_url == f"{BASE}/a/0")).mappings().one()
+        outcomes = [r.outcome for r in conn.execute(sa.select(page_rechecks.c.outcome).order_by(page_rechecks.c.id))]
+    assert failed["recheck_attempts"] == 1 and failed["recheck_due_at"] > datetime.now(timezone.utc)
+    assert sorted(outcomes) == ["error", "unchanged", "unchanged"]

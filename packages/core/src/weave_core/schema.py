@@ -86,6 +86,7 @@ crawled_pages = sa.Table("crawled_pages", metadata,
     sa.Column("first_fetched_at", TZ), sa.Column("recheck_stage", sa.Integer, nullable=False, server_default="0"),
     sa.Column("recheck_due_at", TZ), sa.Column("recheck_attempts", sa.Integer, nullable=False, server_default="0"),
     sa.Column("gone_reason", T),
+    sa.Index("ix_crawled_pages_document_id", "document_id"),
     sa.Index("ix_crawled_pages_recheck_due", "outlet", "recheck_due_at", postgresql_where=sa.text("recheck_due_at IS NOT NULL")),
     sa.CheckConstraint("status in ('stored', 'rejected', 'gone')", name="ck_crawled_pages_status"))
 page_rechecks = sa.Table("page_rechecks", metadata,

@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from weave_core.schema import sites, crawl_runs, crawl_articles, backfill_sitemaps, backfill_urls
 from types import SimpleNamespace
 from .backfill import seed_frontier, scan_sitemaps, fetch_batch
-from .recheck import recheck_days, recheck_page
+from .recheck import record_failure, recheck_days, recheck_page
 from .scheduler import RECHECK_BATCH, due_pages_query, schedule_due_backfills, schedule_due_rechecks, schedule_due_sites
 from threading import Event, Thread
 
@@ -170,15 +170,22 @@ def _run_rechecks(engine, claim, fetcher, observe, cancelled, guard):
     days = recheck_days()
     with engine.begin() as conn:
         site = conn.execute(sa.select(sites).where(sites.c.id == claim.site_id)).mappings().one()
-        pages = conn.execute(due_pages_query(site, _now()).limit(RECHECK_BATCH)
-                             .with_for_update(skip_locked=True)).mappings().all()
+        # One active recheck run per site, so no row locks are needed here.
+        pages = conn.execute(due_pages_query(site, _now()).limit(RECHECK_BATCH)).mappings().all()
     for page in pages:
         if cancelled():
             return
         with engine.connect() as conn:
             if not conn.scalar(sa.select(sites.c.enabled).where(sites.c.id == claim.site_id)):
                 return
-        outcome = recheck_page(engine, page, fetcher, _now(), days, claim.id, guard, cancelled)
+        try:
+            outcome = recheck_page(engine, page, fetcher, _now(), days, claim.id, guard, cancelled)
+        except LeaseLost:
+            raise
+        except Exception as exc:
+            # One broken page must not fail the run and starve the site's other rechecks.
+            log.exception('Recheck of %s failed', page['canonical_url'])
+            outcome = record_failure(engine, page, _now(), days, claim.id, guard, f'{type(exc).__name__}: {exc}')
         if outcome is None:
             return
         observe('article', dict(canonical_url=page['canonical_url'], url=page['url'], outlet=page['outlet'], **outcome))

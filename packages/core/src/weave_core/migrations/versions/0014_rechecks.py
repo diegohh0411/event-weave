@@ -29,6 +29,7 @@ def upgrade():
     op.add_column('crawled_pages', sa.Column('gone_reason', sa.Text))
     op.create_index('ix_crawled_pages_recheck_due', 'crawled_pages', ['outlet', 'recheck_due_at'],
                     postgresql_where=sa.text('recheck_due_at IS NOT NULL'))
+    op.create_index('ix_crawled_pages_document_id', 'crawled_pages', ['document_id'])
     op.add_column('sites', sa.Column('recheck_backfilled', sa.Boolean, nullable=False, server_default=sa.true()))
     op.create_table('page_rechecks',
         sa.Column('id', sa.BigInteger, primary_key=True, autoincrement=True),
@@ -56,10 +57,13 @@ def upgrade():
 
 def downgrade():
     op.execute("DELETE FROM crawl_articles WHERE status = 'redirected'")
+    op.execute("DELETE FROM page_rechecks")
+    op.execute("DELETE FROM crawl_runs WHERE trigger = 'recheck'")  # crawl_articles/crawl_sources cascade
     _swap_check('ck_crawl_articles_status', 'crawl_articles', ARTICLES_OLD)
     _swap_check('ck_crawl_runs_trigger', 'crawl_runs', TRIGGERS_OLD)
     op.drop_table('page_rechecks')
     op.drop_column('sites', 'recheck_backfilled')
+    op.drop_index('ix_crawled_pages_document_id', table_name='crawled_pages')
     op.drop_index('ix_crawled_pages_recheck_due', table_name='crawled_pages')
     for name in ('gone_reason', 'recheck_attempts', 'recheck_due_at', 'recheck_stage', 'first_fetched_at'):
         op.drop_column('crawled_pages', name)

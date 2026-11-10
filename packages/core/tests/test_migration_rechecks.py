@@ -46,8 +46,8 @@ def test_rechecks_migration_initializes_schedule_and_roundtrips():
             conn.execute(sa.text(insert), {'id': uuid.uuid4(), 't': 'recheck'})
         with pytest.raises(sa.exc.IntegrityError), engine.begin() as conn:
             conn.execute(sa.text(insert), {'id': uuid.uuid4(), 't': 'bogus'})
-        with engine.begin() as conn:
-            conn.execute(sa.text("delete from crawl_runs where trigger = 'recheck'"))
+        with engine.connect() as conn:
+            assert 'ix_crawled_pages_document_id' in {i['name'] for i in sa.inspect(conn).get_indexes('crawled_pages')}
         command.downgrade(config, '0013_backfill_frontier_settings')
         assert 'page_rechecks' not in sa.inspect(engine).get_table_names()
         command.upgrade(config, '0014_rechecks')

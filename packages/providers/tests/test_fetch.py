@@ -427,10 +427,10 @@ def test_offsite_redirect_distinct_from_robots():
     assert pf.fetch("https://ex.com/x").error == "robots disallowed"
 
 
-def test_browser_offsite_final_url_is_redirected_away():
-    from weave_providers.crawl.fetch import REDIRECTED_AWAY
+def test_browser_offsite_final_url_is_navigated_away():
+    from weave_providers.crawl.fetch import NAVIGATED_AWAY
     pf, _ = polite(Redirecting("https://elsewhere.com/a"))
-    assert pf.fetch("https://ex.com/a") == Fetched("https://ex.com/a", 0, None, REDIRECTED_AWAY, "https://elsewhere.com/a")
+    assert pf.fetch("https://ex.com/a") == Fetched("https://ex.com/a", 0, None, NAVIGATED_AWAY, "https://elsewhere.com/a")
 
 
 def test_same_domain_redirect_keeps_final_url():

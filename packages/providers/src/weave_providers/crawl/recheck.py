@@ -36,6 +36,23 @@ def next_due(first_fetched_at: datetime, stage: int, days: list[int]) -> datetim
     return first_fetched_at + timedelta(days=days[stage]) if stage < len(days) else None
 
 
+def record_failure(engine, page, now, days, crawl_id, write_guard, reason) -> dict:
+    """Count an unexpected per-page failure as an error attempt, so the usual backoff applies."""
+    now = now.astimezone(timezone.utc)
+    attempts = page["recheck_attempts"] + 1
+    first = page["first_fetched_at"] or page["fetched_at"]
+    values = (dict(recheck_stage=page["recheck_stage"] + 1, recheck_attempts=0,
+                   recheck_due_at=next_due(first, page["recheck_stage"] + 1, days))
+              if attempts >= MAX_ATTEMPTS else dict(recheck_attempts=attempts, recheck_due_at=now + timedelta(hours=RETRY_HOURS)))
+    with engine.begin() as conn:
+        if write_guard:
+            write_guard(conn)
+        conn.execute(crawled_pages.update().where(crawled_pages.c.canonical_url == page["canonical_url"]).values(**values))
+        conn.execute(page_rechecks.insert().values(canonical_url=page["canonical_url"], crawl_id=crawl_id,
+            stage=page["recheck_stage"], checked_at=now, outcome="error", reason=reason, document_id=page["document_id"]))
+    return dict(status="error", reason=reason, document_id=page["document_id"], fetched=False)
+
+
 def recheck_page(engine, page, fetcher, now, days, crawl_id, write_guard, cancelled) -> dict | None:
     got = fetcher.fetch(page["url"])
     if cancelled():
@@ -89,7 +106,8 @@ def recheck_page(engine, page, fetcher, now, days, crawl_id, write_guard, cancel
                 .join(documents, documents.c.id == crawled_pages.c.document_id, isouter=True)
                 .where(crawled_pages.c.canonical_url == canonical_url(final))).first()
             article = conn.scalar(sa.select(documents.c.article_id).where(documents.c.id == doc_id))
-        if known is not None and known.article_id != article:
+        # A rejected/duplicate row at the target has no document: that is still a slug change.
+        if known is not None and known.document_id is not None and known.article_id != article:
             return gone(f"redirect to known document {known.document_id}", "redirected")
     if isinstance(result, Rejected):
         return write(lambda conn: ("unchanged", advance(), f"refetch rejected: {result.reason}", doc_id))
