@@ -14,3 +14,20 @@ describe('site helpers', () => {
     for (const patch of [{ max_parallel: 5 }, { check_every_minutes: 4 }, { daily_cap: 0 }, { min_interval_seconds: 0.1 }, { per_day: 201 }]) expect(validateSite({ ...valid, ...patch })).toBeTruthy()
   })
 })
+
+describe('backfill helpers', () => {
+  it('validates date and pace', () => {
+    const base = { name: 'News', domain: 'example.com', per_day: 3, check_every_minutes: 5, daily_cap: 1, min_interval_seconds: 0.5, max_parallel: 1, backfill_mode: 'date' as const, backfill_per_hour: 60 }
+    expect(validateSite(base)).toContain('date')
+    expect(validateSite({ ...base, backfill_from: '2999-01-01' })).toContain('future')
+    expect(validateSite({ ...base, backfill_from: '2020-01-01', backfill_per_hour: 1001 })).toContain('1 and 1000')
+    expect(validateSite({ ...base, backfill_from: '2020-01-01' })).toBe('')
+  })
+  it('formats progress and ETA', async () => {
+    const { backfillPercent, formatBackfillEta } = await import('../../app/utils/site')
+    expect(backfillPercent(1, 4)).toBe(25)
+    expect(backfillPercent(0, 0)).toBe(0)
+    expect(formatBackfillEta(null)).toBe('Still scanning sitemaps')
+    expect(formatBackfillEta(1.5)).toBe('ETA: 1h 30m')
+  })
+})

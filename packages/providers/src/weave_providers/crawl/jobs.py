@@ -18,6 +18,7 @@ class ClaimedCrawl:
     request: CrawlRequest
     started_at: datetime
     site_id: UUID | None = None
+    trigger: str = "adhoc"
 
 
 def create_crawl(engine, request: CrawlRequest, *, created_at: datetime | None = None, site_id: UUID | None = None, trigger: str = "adhoc") -> UUID:
@@ -34,7 +35,7 @@ def claim_crawl(engine, now: datetime, lease_seconds: int = LEASE_SECONDS) -> Cl
         row = conn.execute(sa.select(crawl_runs).where(sa.or_(
             crawl_runs.c.status == "queued",
             sa.and_(crawl_runs.c.status == "running", crawl_runs.c.lease_until <= now),
-        )).order_by(crawl_runs.c.created_at, crawl_runs.c.id).with_for_update(skip_locked=True).limit(1)).mappings().first()
+        )).order_by(crawl_runs.c.trigger == 'backfill', crawl_runs.c.created_at, crawl_runs.c.id).with_for_update(skip_locked=True).limit(1)).mappings().first()
         if row is None:
             return None
         token = uuid4()
@@ -42,7 +43,7 @@ def claim_crawl(engine, now: datetime, lease_seconds: int = LEASE_SECONDS) -> Cl
             status="running", claim_token=token, lease_until=now + timedelta(seconds=lease_seconds),
             started_at=row["started_at"] or now))
         return ClaimedCrawl(row["id"], token, CrawlRequest.model_validate(row["request"]),
-                            row["started_at"] or now, row["site_id"])
+                            row["started_at"] or now, row["site_id"], row["trigger"])
 
 
 def lock_owned(conn, crawl_id, token):

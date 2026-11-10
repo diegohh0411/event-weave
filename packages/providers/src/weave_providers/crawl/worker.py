@@ -6,8 +6,10 @@ from datetime import datetime, timezone
 import time
 
 import sqlalchemy as sa
-from weave_core.schema import sites, crawl_runs, crawl_articles
-from .scheduler import schedule_due_sites
+from weave_core.schema import sites, crawl_runs, crawl_articles, backfill_sitemaps, backfill_urls
+from types import SimpleNamespace
+from .backfill import seed_frontier, scan_sitemaps, fetch_batch
+from .scheduler import schedule_due_sites, schedule_due_backfills
 from threading import Event, Thread
 
 from .throttle import DomainThrottle
@@ -81,7 +83,7 @@ def process_claim(engine, claim, stop, *, fetcher_factory=public_fetchers,
         conn.execute(sa.text("SELECT pg_advisory_xact_lock(hashtextextended(CAST(:site AS text), 0))"), {'site': str(claim.site_id)})
         site = conn.execute(sa.select(sites).where(sites.c.id == claim.site_id)).mappings().one()
         count = conn.scalar(sa.text("""SELECT count(*) FROM crawl_articles a JOIN crawl_runs r ON r.id = a.crawl_id
-            WHERE r.site_id = :site AND a.status = 'stored'
+            WHERE r.site_id = :site AND r.trigger != 'backfill' AND a.status = 'stored'
             AND a.updated_at >= (date_trunc('day', now() AT TIME ZONE 'utc') AT TIME ZONE 'utc')
             AND a.updated_at < (date_trunc('day', now() AT TIME ZONE 'utc') + interval '1 day') AT TIME ZONE 'utc'"""), {'site': claim.site_id})
         if count >= site['daily_cap']:
@@ -111,17 +113,39 @@ def process_claim(engine, claim, stop, *, fetcher_factory=public_fetchers,
                     if site is not None:
                         count = conn.scalar(sa.select(sa.func.count()).select_from(
                             crawl_articles.join(crawl_runs, crawl_articles.c.crawl_id == crawl_runs.c.id)).where(
-                            crawl_runs.c.site_id == claim.site_id, crawl_articles.c.status == "stored",
+                            crawl_runs.c.site_id == claim.site_id, crawl_runs.c.trigger != "backfill", crawl_articles.c.status == "stored",
                             crawl_articles.c.updated_at >= sa.text("(date_trunc('day', now() AT TIME ZONE 'utc') AT TIME ZONE 'utc')"), crawl_articles.c.updated_at < sa.text("((date_trunc('day', now() AT TIME ZONE 'utc') + interval '1 day') AT TIME ZONE 'utc')")))
                         caps = {site["name"]: max(0, site["daily_cap"] - count)}
             with fetcher_factory() as (browser, http):
                 fetcher = PoliteFetcher(browser, meta=http, validator=validate_public_url,
                                         min_interval=min_interval, respect_robots=respect_robots_from_env(),
                                         throttle=DomainThrottle(engine))
-                # Reclaims must use the original discovery window, not a later one.
-                crawl(engine, claim.request.sites, fetcher, claim.started_at, claim.request.days,
-                      observer=observe, cancelled=cancelled, write_guard=guard, caps=caps,
-                      consume_cap=consume_cap if claim.site_id is not None else None)
+                if claim.trigger == 'backfill' and site is not None:
+                    archive = SimpleNamespace(**dict(site), crawl_id=claim.id)
+                    with engine.connect() as conn:
+                        has_frontier = conn.scalar(sa.select(sa.exists().where(backfill_sitemaps.c.site_id == claim.site_id)))
+                    if not has_frontier:
+                        seed_frontier(engine, archive, fetcher)
+                    def backfill_running():
+                        with engine.connect() as conn:
+                            return conn.scalar(sa.select(sites.c.backfill_state).where(sites.c.id == claim.site_id)) == 'running'
+                    scan_sitemaps(engine, archive, fetcher, 5, cancelled, guard, backfill_running)
+                    fetch_batch(engine, archive, fetcher, 20, claim.started_at, observe, cancelled, guard)
+                    if not cancelled():
+                        with engine.begin() as conn:
+                            guard(conn)
+                            pending_maps = conn.scalar(sa.select(sa.func.count()).select_from(backfill_sitemaps).where(backfill_sitemaps.c.site_id == claim.site_id, backfill_sitemaps.c.status == 'pending'))
+                            pending_urls = conn.scalar(sa.select(sa.func.count()).select_from(backfill_urls).where(backfill_urls.c.site_id == claim.site_id, backfill_urls.c.status == 'pending'))
+                            if not pending_maps and not pending_urls:
+                                roots = conn.execute(sa.select(backfill_sitemaps.c.status, backfill_sitemaps.c.error).where(backfill_sitemaps.c.site_id == claim.site_id, backfill_sitemaps.c.depth == 0)).all()
+                                found = conn.scalar(sa.select(sa.func.count()).select_from(backfill_urls).where(backfill_urls.c.site_id == claim.site_id))
+                                failed = bool(roots) and all(row.status == 'error' for row in roots) and not found
+                                conn.execute(sites.update().where(sites.c.id == claim.site_id, sites.c.backfill_state == 'running').values(backfill_state='failed' if failed else 'done', backfill_finished_at=_now(), backfill_error='All root sitemaps failed' if failed else None))
+                else:
+                    # Reclaims retain the original discovery window.
+                    crawl(engine, claim.request.sites, fetcher, claim.started_at, claim.request.days,
+                          observer=observe, cancelled=cancelled, write_guard=guard, caps=caps,
+                          consume_cap=consume_cap if claim.site_id is not None else None)
             completed = not cancelled()
     except LeaseLost:
         lost.set()
@@ -151,6 +175,7 @@ def run_crawl_worker(engine, stop, poll_seconds=2, once=False, fetcher_factory=p
             last_tick = tick
             try:
                 schedule_due_sites(engine, _now())
+                schedule_due_backfills(engine, _now())
             except Exception:
                 log.exception("Crawl scheduler tick failed")
         try:

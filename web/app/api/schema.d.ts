@@ -556,6 +556,24 @@ export interface paths {
         patch: operations["update_site_sites__site_id__patch"];
         trace?: never;
     };
+    "/sites/{site_id}/backfill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Backfill */
+        get: operations["get_backfill_sites__site_id__backfill_get"];
+        put?: never;
+        /** Control Backfill */
+        post: operations["control_backfill_sites__site_id__backfill_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sites/{site_id}/check": {
         parameters: {
             query?: never;
@@ -612,6 +630,47 @@ export interface components {
             stage: components["schemas"]["Stage"];
             /** Version */
             version: string;
+        };
+        /** BackfillAction */
+        BackfillAction: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "start" | "pause" | "resume" | "cancel";
+        };
+        /** BackfillProgress */
+        BackfillProgress: {
+            /** Error */
+            error: string | null;
+            /** Eta */
+            eta: number | null;
+            /** Fetched Last Hour */
+            fetched_last_hour: number;
+            /** Finished At */
+            finished_at: string | null;
+            /** From */
+            from: string | null;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "off" | "date" | "all";
+            /** Oldest Reached */
+            oldest_reached: string | null;
+            /** Per Hour */
+            per_hour: number;
+            sitemaps: components["schemas"]["SitemapProgress"];
+            /** Started At */
+            started_at: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "off" | "running" | "paused" | "done" | "failed";
+            /** Until */
+            until: string | null;
+            urls: components["schemas"]["UrlProgress"];
         };
         /** Candidate */
         Candidate: {
@@ -845,7 +904,7 @@ export interface components {
              * Trigger
              * @enum {string}
              */
-            trigger: "adhoc" | "manual" | "schedule";
+            trigger: "adhoc" | "manual" | "schedule" | "backfill";
         };
         /** CrawlRequest */
         CrawlRequest: {
@@ -1439,6 +1498,19 @@ export interface components {
         };
         /** SiteCreate */
         SiteCreate: {
+            /** Backfill From */
+            backfill_from?: string | null;
+            /**
+             * Backfill Mode
+             * @default off
+             * @enum {string}
+             */
+            backfill_mode: "off" | "date" | "all";
+            /**
+             * Backfill Per Hour
+             * @default 60
+             */
+            backfill_per_hour: number;
             /**
              * Check Every Minutes
              * @default 60
@@ -1485,6 +1557,28 @@ export interface components {
         };
         /** SiteOut */
         SiteOut: {
+            /** Backfill From */
+            backfill_from?: string | null;
+            /**
+             * Backfill Mode
+             * @default off
+             * @enum {string}
+             */
+            backfill_mode: "off" | "date" | "all";
+            /**
+             * Backfill Per Hour
+             * @default 60
+             */
+            backfill_per_hour: number;
+            /** Backfill Progress */
+            backfill_progress?: {
+                [key: string]: number;
+            };
+            /**
+             * Backfill State
+             * @default off
+             */
+            backfill_state: string;
             /**
              * Check Every Minutes
              * @default 60
@@ -1554,6 +1648,12 @@ export interface components {
         };
         /** SitePatch */
         SitePatch: {
+            /** Backfill From */
+            backfill_from?: string | null;
+            /** Backfill Mode */
+            backfill_mode?: ("off" | "date" | "all") | null;
+            /** Backfill Per Hour */
+            backfill_per_hour?: number | null;
             /** Check Every Minutes */
             check_every_minutes?: number | null;
             /** Daily Cap */
@@ -1576,6 +1676,19 @@ export interface components {
             per_day?: number | null;
             /** Sitemaps */
             sitemaps?: string[] | null;
+        };
+        /** SitemapProgress */
+        SitemapProgress: {
+            /** Done */
+            done: number;
+            /** Error */
+            error: number;
+            /** Pending */
+            pending: number;
+            /** Skipped */
+            skipped: number;
+            /** Total */
+            total: number;
         };
         /** SnapshotDiffOut */
         SnapshotDiffOut: {
@@ -1626,6 +1739,23 @@ export interface components {
          * @enum {string}
          */
         UnitKind: "run" | "document" | "mention";
+        /** UrlProgress */
+        UrlProgress: {
+            /** Done */
+            done: number;
+            /** Error */
+            error: number;
+            /** Existing */
+            existing: number;
+            /** Found */
+            found: number;
+            /** Pending */
+            pending: number;
+            /** Rejected */
+            rejected: number;
+            /** Stored */
+            stored: number;
+        };
         /** ValidatedOut */
         ValidatedOut: {
             config: components["schemas"]["RunConfig"];
@@ -2870,6 +3000,72 @@ export interface operations {
             };
         };
     };
+    get_backfill_sites__site_id__backfill_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackfillProgress"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    control_backfill_sites__site_id__backfill_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackfillAction"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackfillProgress"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     check_site_sites__site_id__check_post: {
         parameters: {
             query?: never;
@@ -2904,6 +3100,7 @@ export interface operations {
     site_crawls_sites__site_id__crawls_get: {
         parameters: {
             query?: {
+                trigger?: ("adhoc" | "manual" | "schedule" | "backfill") | null;
                 offset?: number;
                 limit?: number;
             };

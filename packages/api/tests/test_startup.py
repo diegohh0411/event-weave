@@ -42,7 +42,7 @@ def test_cold_start_does_not_probe_and_reports_not_ready_until_explicit_probe(da
 
     with TestClient(create_app()) as client:
         # Health and the crawl routes answer without any blocking external probe.
-        assert client.get("/health").json() == {"status": "ok", "schema": "0011_sites"}
+        assert client.get("/health").json() == {"status": "ok", "schema": "0013_backfill_frontier_settings"}
         created = client.post("/crawls", json={"sites": [{"domain": "example.com", "language": "en"}]}).json()
         assert client.get(f"/crawls/{created['id']}").json()["status"] == "queued"
         assert client.get("/crawls").json()["items"][0]["id"] == created["id"]

@@ -340,3 +340,77 @@ def test_concurrent_site_crawls_consume_cap_atomically(engine, monkeypatch):
         assert conn.scalar(sa.select(sa.func.count()).select_from(documents)) == 1
         assert conn.scalar(sa.select(sa.func.count()).select_from(crawl_articles).where(crawl_articles.c.status == 'stored')) == 1
         assert conn.scalar(sa.select(sa.func.count()).select_from(crawl_articles).where(crawl_articles.c.reason == 'daily cap reached')) >= 1
+
+
+def test_backfill_worker_completes_and_records_claim_id(engine):
+    from uuid import uuid4
+    from weave_core.schema import sites, backfill_urls
+    from weave_providers.crawl.scheduler import schedule_due_backfills
+    now = datetime.now(timezone.utc)
+    site_id = uuid4()
+    with engine.begin() as conn:
+        conn.execute(sites.insert().values(id=site_id, name='example.test', domain='example.test', language='en',
+            sitemaps=[BASE + '/sitemap.xml'], backfill_state='running', backfill_mode='all', backfill_until=now))
+    crawl_id = schedule_due_backfills(engine, now)[0]
+    claim = claim_crawl(engine, now)
+    worker.process_claim(engine, claim, Event(), fetcher_factory=factory(), min_interval=0)
+    assert status(engine, crawl_id)['status'] == 'completed'
+    with engine.connect() as conn:
+        assert conn.scalar(sa.select(sites.c.backfill_state).where(sites.c.id == site_id)) == 'done'
+        assert conn.scalars(sa.select(backfill_urls.c.crawl_id)).all() == [crawl_id, crawl_id]
+
+
+def test_backfill_restart_resumes_existing_frontier(engine):
+    from uuid import uuid4
+    from weave_core.schema import sites, backfill_sitemaps, backfill_urls
+    from weave_providers.crawl.scheduler import schedule_due_backfills
+    now = datetime.now(timezone.utc)
+    site_id = uuid4()
+    with engine.begin() as conn:
+        conn.execute(sites.insert().values(id=site_id, name='example.test', domain='example.test', language='en',
+            sitemaps=[BASE + '/sitemap.xml'], backfill_state='running', backfill_mode='all', backfill_until=now))
+        conn.execute(backfill_sitemaps.insert().values(site_id=site_id, url=BASE + '/sitemap.xml', status='done', depth=0))
+        conn.execute(backfill_urls.insert().values(site_id=site_id, canonical_url=BASE + '/a', status='pending'))
+    schedule_due_backfills(engine, now)
+    calls = []
+    worker.process_claim(engine, claim_crawl(engine, now), Event(), fetcher_factory=factory(on_fetch=calls.append), min_interval=0)
+    assert BASE + '/sitemap.xml' not in calls
+    assert BASE + '/a' in calls
+    with engine.connect() as conn:
+        assert conn.scalar(sa.select(backfill_urls.c.status).where(backfill_urls.c.site_id == site_id)) == 'done'
+
+
+def test_backfill_stored_articles_do_not_consume_daily_cap(engine, monkeypatch):
+    from uuid import uuid4
+    from weave_core.schema import sites
+    site_id = uuid4()
+    now = datetime.now(timezone.utc)
+    with engine.begin() as conn:
+        conn.execute(sites.insert().values(id=site_id, name='Example', domain='example.test', language='en', daily_cap=1))
+    old = create_crawl(engine, request(), site_id=site_id)
+    with engine.begin() as conn:
+        conn.execute(crawl_runs.update().where(crawl_runs.c.id == old).values(status='completed', trigger='backfill'))
+        conn.execute(crawl_articles.insert().values(crawl_id=old, canonical_url=BASE+'/old', url=BASE+'/old', outlet='Example', status='stored', fetched=True, updated_at=now))
+    create_crawl(engine, request(), site_id=site_id)
+    claim = claim_crawl(engine, now)
+    received = []
+    monkeypatch.setattr(worker, 'crawl', lambda *args, **kwargs: received.append(kwargs['caps']))
+    worker.process_claim(engine, claim, Event(), fetcher_factory=factory(), min_interval=0)
+    assert received == [{'Example': 1}]
+
+
+def test_consume_cap_excludes_backfill_articles(engine):
+    from uuid import uuid4
+    from weave_core.schema import sites
+    site_id = uuid4()
+    now = datetime.now(timezone.utc)
+    with engine.begin() as conn:
+        conn.execute(sites.insert().values(id=site_id, name='Example', domain='example.test', language='en', daily_cap=1))
+    old = create_crawl(engine, request(), site_id=site_id)
+    with engine.begin() as conn:
+        conn.execute(crawl_runs.update().where(crawl_runs.c.id == old).values(status='completed', trigger='backfill'))
+        conn.execute(crawl_articles.insert().values(crawl_id=old, canonical_url=BASE+'/old', url=BASE+'/old', outlet='Example', status='stored', fetched=True, updated_at=now))
+    create_crawl(engine, request(), site_id=site_id)
+    worker.process_claim(engine, claim_crawl(engine, now), Event(), fetcher_factory=factory(), min_interval=0)
+    with engine.connect() as conn:
+        assert conn.scalar(sa.select(sa.func.count()).select_from(documents)) == 1
