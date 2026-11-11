@@ -5,6 +5,8 @@ from typing import Mapping
 from uuid import UUID
 
 import sqlalchemy as sa
+
+from weave_core import library as change_status
 from pydantic import BaseModel
 
 from weave_core.adapters import AdapterContext, AdapterSpec, StageResult, UnitRef
@@ -22,6 +24,8 @@ class ReplaySettings(BaseModel):
     published_from: datetime | None = None
     published_to: datetime | None = None
     limit: int | None = None
+    exclude_edited: bool = False
+    exclude_removed: bool = False
 
 
 class ReplayProvider:
@@ -52,6 +56,10 @@ class ReplayProvider:
             query = query.where(d.published_at >= s.published_from)
         if s.published_to is not None:
             query = query.where(d.published_at < s.published_to)
+        if s.exclude_edited:
+            query = query.where(~change_status.edited(d))
+        if s.exclude_removed:
+            query = query.where(~change_status.removed(d))
         query = query.order_by(d.order_key, d.url, d.id)
         if s.limit is not None:
             query = query.limit(s.limit)

@@ -114,7 +114,7 @@ let facetGeneration = 0
 watch(() => [chosen.provide, settings.provide] as const, async () => {
   const mine = ++facetGeneration
   if (chosen.provide !== 'replay') { matchCount.value = null; return }
-  const { provider, outlets, languages, published_from, published_to, search, limit } = settings.provide
+  const { provider, outlets, languages, published_from, published_to, search, limit, exclude_edited, exclude_removed } = settings.provide
   try {
     const result = await api.GET('/library/facets', { params: { query: {
       providers: [typeof provider === 'string' ? provider : 'crawl'],
@@ -122,7 +122,9 @@ watch(() => [chosen.provide, settings.provide] as const, async () => {
       languages: Array.isArray(languages) ? languages as string[] : undefined,
       published_from: typeof published_from === 'string' ? published_from : undefined,
       published_to: typeof published_to === 'string' ? published_to : undefined,
-      search: typeof search === 'string' ? search : undefined
+      search: typeof search === 'string' ? search : undefined,
+      exclude_edited: exclude_edited === true || undefined,
+      exclude_removed: exclude_removed === true || undefined
     } } })
     if (!result.data) throw new Error(apiError(result.error))
     if (mine === facetGeneration) { matchCount.value = typeof limit === 'number' ? Math.min(result.data.total, limit) : result.data.total; matchError.value = '' }

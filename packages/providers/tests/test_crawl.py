@@ -462,3 +462,14 @@ def test_refetch_exact_content_is_unchanged_not_duplicate(engine):
     assert report.unchanged == 1
     assert report.duplicates == 0
     assert rows(engine, 'select count(*) from documents') == [(1,)]
+
+
+def test_offsite_redirect_recorded_rejected_not_retried(engine):
+    moved = routes()
+    moved[f"{BASE}/a/elpais"] = Fetched("x", 301, None, None, None, "https://elsewhere.test/x")
+    crawl(engine, OUTLETS, polite(moved)[0], NOW)
+    assert rows(engine, "select status, reason from crawled_pages where url like '%/a/elpais'") == [
+        ("rejected", "redirect outside requested domain")]
+    _, inner = polite(moved)
+    crawl(engine, OUTLETS, PoliteFetcher(inner, min_interval=0, clock=lambda: 0.0, sleep=lambda s: None), NOW)
+    assert f"{BASE}/a/elpais" not in inner.calls

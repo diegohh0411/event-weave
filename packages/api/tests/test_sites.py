@@ -79,3 +79,42 @@ def test_list_sites_batches_queries(client, engine):
     assert len(response.json()['items']) == 3
     assert all(site['last_crawl'] for site in response.json()['items'])
     assert len(statements) <= 5
+
+
+def test_site_recheck_backfilled_roundtrip(client):
+    site = client.post('/sites', json={'domain': 'toggle.com', 'language': 'en'}).json()
+    assert site['recheck_backfilled'] is True
+    assert client.patch(f"/sites/{site['id']}", json={'recheck_backfilled': False}).json()['recheck_backfilled'] is False
+    assert client.get(f"/sites/{site['id']}").json()['recheck_backfilled'] is False
+    assert client.post('/sites', json={'domain': 'off.com', 'language': 'en', 'recheck_backfilled': False}).json()['recheck_backfilled'] is False
+
+
+def test_site_rechecks_summary(client, engine):
+    from datetime import datetime, timedelta, timezone
+    from weave_core.schema import crawled_pages, page_rechecks
+    site = client.post('/sites', json={'name': 'Sum', 'domain': 'sum.com', 'language': 'en'}).json()
+    now = datetime.now(timezone.utc)
+    with engine.begin() as conn:
+        for name, due, status in (('due', now - timedelta(hours=1), 'stored'), ('later', now + timedelta(days=3), 'stored'),
+                                  ('done', None, 'stored'), ('gone', None, 'gone')):
+            conn.execute(crawled_pages.insert().values(canonical_url=f'https://sum.com/{name}', url=f'https://sum.com/{name}',
+                outlet='Sum', fetched_at=now, status=status, recheck_due_at=due))
+        for name, outcome, age in (('done', 'unchanged', 1), ('done', 'edited', 2), ('gone', 'gone', 3), ('done', 'unchanged', 40)):
+            conn.execute(page_rechecks.insert().values(canonical_url=f'https://sum.com/{name}', stage=0, outcome=outcome,
+                checked_at=now - timedelta(days=age)))
+    body = client.get(f"/sites/{site['id']}/rechecks").json()
+    assert (body['due_now'], body['scheduled'], body['done']) == (1, 2, 2)
+    assert body['by_outcome'] == {'unchanged': 1, 'edited': 1, 'gone': 1, 'redirected': 0, 'error': 0}
+    assert body['last_checked_at'] is not None
+
+
+def test_crawls_trigger_recheck_filter(client, engine):
+    from datetime import datetime, timezone
+    from uuid import UUID
+    from weave_core.schema import crawl_runs
+    site = client.post('/sites', json={'domain': 'trig.com', 'language': 'en'}).json()
+    with engine.begin() as conn:
+        conn.execute(crawl_runs.insert().values(id=uuid4(), site_id=UUID(site['id']), trigger='recheck', request={'sites': [{'domain': 'trig.com', 'language': 'en'}]},
+                                                status='completed', created_at=datetime.now(timezone.utc), progress={}))
+    body = client.get(f"/sites/{site['id']}/crawls", params={'trigger': 'recheck'}).json()
+    assert [c['trigger'] for c in body['items']] == ['recheck']

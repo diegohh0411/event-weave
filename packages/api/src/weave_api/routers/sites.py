@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from weave_api.paging import Page, Paging, paginate
 from weave_api.routers.crawls import Engine, CrawlOut, _crawl_out
-from weave_core.schema import sites, crawl_runs, crawl_articles, backfill_sitemaps, backfill_urls
+from weave_core.schema import sites, crawl_runs, crawl_articles, crawled_pages, backfill_sitemaps, backfill_urls, page_rechecks
 from weave_providers.crawl.jobs import crawl_counters_many
 from weave_providers.crawl.requests import CrawlSite, _domain, _source_url
 from weave_providers.crawl.scheduler import queue_check, AlreadyQueued, SiteNotFound
@@ -33,6 +33,7 @@ class SiteCreate(CrawlSite):
     backfill_mode: Literal['off', 'date', 'all'] = 'off'
     backfill_from: date | None = None
     backfill_per_hour: int = Field(default=60, ge=1, le=1000)
+    recheck_backfilled: bool = True
 
     @model_validator(mode='after')
     def validate_backfill(self):
@@ -56,6 +57,7 @@ class SitePatch(BaseModel):
     backfill_mode: Literal['off', 'date', 'all'] | None = None
     backfill_from: date | None = None
     backfill_per_hour: int | None = Field(default=None, ge=1, le=1000)
+    recheck_backfilled: bool | None = None
 
     @field_validator('domain')
     @classmethod
@@ -183,7 +185,7 @@ def check_site(site_id: UUID, engine: Engine) -> CrawlOut:
 
 
 @router.get('/sites/{site_id}/crawls')
-def site_crawls(site_id: UUID, paging: Annotated[Paging, Depends()], engine: Engine, trigger: Literal['adhoc', 'manual', 'schedule', 'backfill'] | None = None) -> Page[CrawlOut]:
+def site_crawls(site_id: UUID, paging: Annotated[Paging, Depends()], engine: Engine, trigger: Literal['adhoc', 'manual', 'schedule', 'backfill', 'recheck'] | None = None) -> Page[CrawlOut]:
     with engine.connect() as conn:
         site_row(conn, site_id)
         query = sa.select(crawl_runs).where(crawl_runs.c.site_id == site_id).order_by(crawl_runs.c.created_at.desc(), crawl_runs.c.id.desc())
@@ -280,3 +282,38 @@ def control_backfill(site_id: UUID, body: BackfillAction, engine: Engine) -> Bac
             conn.execute(backfill_sitemaps.delete().where(backfill_sitemaps.c.site_id == site_id))
         row = conn.execute(sites.update().where(sites.c.id == site_id).values(**values).returning(sites)).one()
         return backfill_progress(conn, row)
+
+
+class RecheckOutcomes(BaseModel):
+    unchanged: int
+    edited: int
+    gone: int
+    redirected: int
+    error: int
+
+
+class RecheckSummary(BaseModel):
+    due_now: int
+    scheduled: int
+    done: int
+    by_outcome: RecheckOutcomes
+    last_checked_at: datetime | None
+
+
+@router.get('/sites/{site_id}/rechecks')
+def get_rechecks(site_id: UUID, engine: Engine) -> RecheckSummary:
+    """Recheck schedule for the site's stored pages, and outcomes from the last 30 days."""
+    p, r = crawled_pages.c, page_rechecks.c
+    now = datetime.now(timezone.utc)
+    with engine.connect() as conn:
+        site = site_row(conn, site_id)
+        count = lambda *where: conn.scalar(sa.select(sa.func.count()).select_from(crawled_pages).where(p.outlet == site.name, *where))
+        stored = p.status == 'stored'
+        pages = sa.select(p.canonical_url).where(p.outlet == site.name)
+        outcomes = dict(conn.execute(sa.select(r.outcome, sa.func.count()).where(
+            r.canonical_url.in_(pages), r.checked_at >= now - timedelta(days=30)).group_by(r.outcome)).all())
+        last = conn.scalar(sa.select(sa.func.max(r.checked_at)).where(r.canonical_url.in_(pages)))
+        # done: stored pages past their last recheck, plus pages a recheck found gone.
+        return RecheckSummary(due_now=count(stored, p.recheck_due_at <= now), scheduled=count(stored, p.recheck_due_at.is_not(None)),
+                              done=count(p.status.in_(['stored', 'gone']), p.recheck_due_at.is_(None)), last_checked_at=last,
+                              by_outcome=RecheckOutcomes(**{k: outcomes.get(k, 0) for k in RecheckOutcomes.model_fields}))

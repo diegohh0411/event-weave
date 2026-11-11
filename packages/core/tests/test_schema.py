@@ -37,7 +37,7 @@ def test_migration_creates_ledger_and_run_deployments(database_url):
     assert insp.get_pk_constraint("run_deployments")["constrained_columns"] == ["run_id", "deployment"]
     cfg = Config()
     cfg.set_main_option("script_location", str(Path(weave_core.__file__).parent / "migrations"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["0013_backfill_frontier_settings"]
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0014_rechecks"]
 
 
 def test_documents_have_order_key_and_no_gold_columns(database_url):
@@ -55,7 +55,8 @@ def test_gold_and_crawl_tables_exist(database_url):
         "id", "language", "kind", "split", "topic", "source_document_id", "source_mention_id",
         "target_document_id", "target_mention_id", "label"}
     assert {c["name"] for c in insp.get_columns("crawled_pages")} == {
-        "canonical_url", "url", "outlet", "fetched_at", "status", "reason", "raw_html_gz", "document_id", "gone_at"}
+        "canonical_url", "url", "outlet", "fetched_at", "status", "reason", "raw_html_gz", "document_id", "gone_at",
+        "first_fetched_at", "recheck_stage", "recheck_due_at", "recheck_attempts", "gone_reason"}
 
 
 def test_mentions_tables_exist(database_url):
@@ -126,7 +127,7 @@ def test_crawl_migration_preserves_existing_tables(database_url):
     assert inspector.get_pk_constraint("crawl_articles")["constrained_columns"] == ["crawl_id", "canonical_url"]
     assert inspector.get_pk_constraint("crawl_sources")["constrained_columns"] == ["crawl_id", "url"]
     with engine.connect() as conn:
-        assert conn.scalar(sa.text("select version_num from alembic_version")) == "0013_backfill_frontier_settings"
+        assert conn.scalar(sa.text("select version_num from alembic_version")) == "0014_rechecks"
 
 
 def test_sites_constraints_and_document_versions(database_url):

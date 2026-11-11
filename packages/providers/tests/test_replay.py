@@ -293,3 +293,24 @@ def test_rerun_replays_snapshot_or_current_library(engine, mode, scoped, expecte
         ids = list(c.scalars(sa.select(jobs.c.unit_id).where(jobs.c.run_id == rerun.run_id,
             jobs.c.stage == Stage.extract).order_by(jobs.c.order_key)))
     assert ids == expected
+
+
+def mark_gone(engine, doc_id, url):
+    from weave_core.schema import crawled_pages
+    with engine.begin() as c:
+        c.execute(sa.insert(crawled_pages).values(canonical_url=url, url=url, outlet="x", fetched_at=day(2),
+                                                  status="gone", gone_at=day(2), document_id=doc_id))
+
+
+def test_replay_exclude_removed(engine):
+    seed(engine, [("a", (1,), "crawl", "en", "x", day(1), "u1"), ("b", (2,), "crawl", "en", "x", day(1), "u2")])
+    mark_gone(engine, "crawl:b", "u2")
+    assert [u.id for u in run_replay(engine).emits] == ["crawl:a", "crawl:b"]
+    assert [u.id for u in run_replay(engine, exclude_removed=True).emits] == ["crawl:a"]
+
+
+def test_replay_exclude_edited(engine):
+    seed(engine, [("a", (1,), "crawl", "en", "x", day(1), "u1"), ("b", (2,), "crawl", "en", "x", day(1), "u2")])
+    add_second_version(engine)
+    assert [u.id for u in run_replay(engine).emits] == ["crawl:a@v2", "crawl:b"]
+    assert [u.id for u in run_replay(engine, exclude_edited=True).emits] == ["crawl:b"]

@@ -342,6 +342,10 @@ def respect_robots_from_env() -> bool:
     return value in ("true", "1")
 
 
+REDIRECTED_AWAY = "redirect outside requested domain"  # an HTTP redirect chain left the site
+NAVIGATED_AWAY = "navigated outside requested domain"  # a browser-reported final URL left the site
+
+
 class PoliteFetcher:
     """Wraps fetchers: honours robots.txt and spaces requests per domain.
 
@@ -431,7 +435,7 @@ class PoliteFetcher:
                 except ValueError as exc:
                     return Fetched(url, 0, None, str(exc))
             if hop and _origin(current) != _origin(url) and not self._in_domain(current):
-                return Fetched(url, 0, None, "robots disallowed" if not self.validator else "redirect outside requested domain")
+                return Fetched(url, 0, None, REDIRECTED_AWAY, current)
             if not self.allowed(current):
                 return Fetched(url, 0, None, "robots disallowed")
             got = self._safe_fetch(fetcher, current)
@@ -444,7 +448,9 @@ class PoliteFetcher:
             got = replace(got, url=url, final_url=current)
         final = got.final_url
         if final and final != url:
-            if (_origin(final) != _origin(url) and not self._in_domain(final)) or not self.allowed(final):
+            if _origin(final) != _origin(url) and not self._in_domain(final):
+                return Fetched(url, 0, None, NAVIGATED_AWAY, final)
+            if not self.allowed(final):
                 return Fetched(url, 0, None, "robots disallowed")
         return got
 
