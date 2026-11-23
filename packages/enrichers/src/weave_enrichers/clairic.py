@@ -88,13 +88,22 @@ class ClairicEnricher(EnricherBase):
         out = {}
         for i, mention in enumerate(mentions):
             kept, discarded = {}, {}
+            anchor = windows[i].trigger[0]
             for name in FIELDS:
-                found, bad = [], 0
+                # Spans of one quote are its occurrences (a local service returns all of them when the quote
+                # repeats): keep the occurrence nearest the trigger; the quote is discarded only if none maps.
+                by_quote: dict[str, list] = {}
                 for span in response.fields.get(f"m{i}_{name}", []):
-                    own = self.map_span(doc, windows[i], sections[i], span)
-                    if own is None:
+                    by_quote.setdefault(span.text, []).append(span)
+                found, bad = [], 0
+                for spans in by_quote.values():
+                    mapped = [(own, span) for span in spans
+                              if (own := self.map_span(doc, windows[i], sections[i], span)) is not None]
+                    if not mapped:
                         bad += 1
-                    elif own not in [f[:2] for f in found]:
+                        continue
+                    own, span = min(mapped, key=lambda m: (abs(m[0][0] - anchor), m[0][0]))
+                    if own not in [f[:2] for f in found]:
                         found.append((*own, span.confidence))
                 kept[name], discarded[name] = found, bad
             out[mention.get("id") or mention_id(mention)] = (self.build_enrichment(doc, kept), discarded)

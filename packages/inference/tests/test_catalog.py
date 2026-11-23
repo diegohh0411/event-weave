@@ -77,5 +77,6 @@ def test_readiness_defaults_to_not_ready():
 
 def test_repo_inference_yaml_loads():
     cat = load_catalog(REPO / "inference.yaml")
-    assert {"lfm2-d1", "jev-1.14.0", "nuextract3", "embeddinggemma-2", "clairic"} == cat.models.keys()
+    assert {"lfm2-d1", "jev-1.14.0", "nuextract3", "embeddinggemma-2", "clairic", "clairic-flash"} == cat.models.keys()
     assert {c for c in Capability} == {cat.capability_of(d) for d in cat.deployments}
+    assert cat.providers["clairic-local"].timeout == 300 and cat.providers["openrouter"].timeout == 5

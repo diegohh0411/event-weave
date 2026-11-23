@@ -192,3 +192,13 @@ def test_cloudflare_system_one_deployment_is_ready():
     t = serve({("api.cloudflare.com", "/client/v4/accounts/acc/ai/models/search"): fixture("cloudflare")})
     r = probe(cat, env={"CLOUDFLARE_API_TOKEN": "t", "CLOUDFLARE_ACCOUNT_ID": "acc"}, transport=t)
     assert r["clef@cloudflare"].render() == "ready"
+
+
+def test_clairic_local_ready_once_loaded():
+    health = {"status": "ok", "loaded": True, "model": "clairic-flash", "revision": "abc"}
+    r = probe(cat_with("clairic-flash@local"), transport=serve({(LOCAL, "/health"): health}))
+    assert r["clairic-flash@local"].ready and r["clairic-flash@local"].server_version == "abc"
+    r = probe(cat_with("clairic-flash@local"), transport=serve({(LOCAL, "/health"): dict(health, loaded=False)}))
+    assert r["clairic-flash@local"].render() == "not ready: model missing"
+    r = probe(cat_with("clairic-flash@local"), transport=serve({}))
+    assert r["clairic-flash@local"].render() == "not ready: unreachable"

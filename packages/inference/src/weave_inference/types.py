@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from weave_core.adapters import AdapterFailure
 from weave_core.stages import Capability
 
-ProviderKind = Literal['llamacpp', 'typesafe', 'openrouter', 'cloudflare', 'openai', 'stub']
+ProviderKind = Literal['llamacpp', 'typesafe', 'openrouter', 'cloudflare', 'openai', 'clairic-local', 'stub']
 
 
 class _Strict(BaseModel):
@@ -42,6 +42,7 @@ class Provider(_Strict):
     base_url: str
     credential_env: str | None = None
     rate: RateLimit = Field(default_factory=RateLimit)
+    timeout: float = Field(default=5.0, gt=0)  # seconds per HTTP request; local models need more than httpx's 5
 
 
 class Deployment(_Strict):
