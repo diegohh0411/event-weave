@@ -1,0 +1,22 @@
+# Local Clairic service on macOS (Apple GPU). The release's requirements.txt minus the Linux/CUDA-only
+# packages (sgl-deep-gemm, apache-tvm-ffi, flashinfer, cutlass, triton); those aren't used in float16.
+torch==2.13.0
+torchvision==0.28.0
+transformers==5.10.2
+kernels==0.13.0
+tomlkit==0.13.3
+flash-linear-attention==0.6.0
+fla-core==0.6.0
+einops==0.8.1
+xgrammar==0.2.1
+accelerate>=1.13.0
+huggingface_hub>=1.18.0
+safetensors>=0.8.0
+Pillow>=12.2.0
+pydantic>=2.13.4,<3
+jsonschema>=4.26.0,<5
+numpy>=2.2.6
+opencv-python-headless>=4.13.0.92
+pypdfium2>=5.14.0
+fastapi
+uvicorn

@@ -54,6 +54,17 @@ Model credentials are optional environment variables (`OPENROUTER_API_KEY`, `TYP
 
 The MCECR dataset is opt-in: the default compose stack mounts no dataset, and the override file `deploy/compose/mcecr.yaml` mounts a host checkout read-only into the pipeline workers (`podman compose -f compose.yaml -f deploy/compose/mcecr.yaml up -d`). Host model servers (llama.cpp) run on the host and are reached from containers at `http://host.containers.internal:<port>`.
 
+### Local Clairic Flash
+
+The `clairic-flash@local` deployment is Cloudflare's released Clairic Flash, run on the Mac's GPU by `weave_enrichers.clairic_service`. It runs natively, in its own environment (the release pins torch and transformers versions the workspace doesn't use), and needs about 20 GB of memory:
+
+```sh
+PYTORCH_ENABLE_MPS_FALLBACK=1 uv run --no-project --with-requirements services/clairic/requirements.txt \
+  uvicorn --app-dir packages/enrichers/src weave_enrichers.clairic_service:app --factory --host 0.0.0.0 --port 8002
+```
+
+The first start downloads the pinned weights (~20 GB) into the Hugging Face cache; later starts load in about 40 s. `/health` reports `loaded: true` once ready, and the deployment probe then marks the deployment ready. Settings: `WEAVE_CLAIRIC_REPO`, `WEAVE_CLAIRIC_REVISION`, `WEAVE_CLAIRIC_DEVICE` (default `mps`), `WEAVE_CLAIRIC_DTYPE` (default `float16` on `mps`; bfloat16 turns on the release's CUDA-only kernels). On an M4 Max it takes about 35 s per mention, so the deployment sends one mention per request (`max_fields: 4`); larger batches are much slower per mention.
+
 ## Development
 
 Backend tests: `WEAVE_TEST_DATABASE_URL=postgresql+psycopg://weave:weave@127.0.0.1:5432/postgres uv run pytest packages/<package>`.

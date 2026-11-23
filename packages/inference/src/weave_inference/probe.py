@@ -97,6 +97,13 @@ def _list_cloudflare(client, p, headers, env) -> Listing:
             for m in data.get('result', []) if isinstance(m, dict) and 'name' in m}, server
 
 
+def _list_clairic_local(client, p, headers, env) -> Listing:
+    """The service lists its one model once loaded; until then nothing is listed (model missing)."""
+    data, server = _get(client, f'{p.base_url.rstrip("/")}/health', headers)
+    loaded = data.get('loaded') and data.get('model')
+    return ({data['model']: frozenset({Capability.extraction})} if loaded else {}), data.get('revision') or server
+
+
 def _get(client: httpx.Client, url: str, headers: dict) -> tuple[dict, str | None]:
     r = client.get(url, headers=headers)
     r.raise_for_status()
@@ -105,7 +112,8 @@ def _get(client: httpx.Client, url: str, headers: dict) -> tuple[dict, str | Non
 
 # Generic OpenAI-compatible server: GET {base}/models, capability from architecture if given, else llm.
 _LISTERS = {'llamacpp': _list_llamacpp, 'openrouter': _list_openrouter, 'typesafe': _list_typesafe,
-            'cloudflare': _list_cloudflare, 'openai': _list_llamacpp}
+            'cloudflare': _list_cloudflare, 'openai': _list_llamacpp,
+            'clairic-local': _list_clairic_local}
 
 # Extra env var a kind needs besides provider.credential_env.
 _EXTRA_ENV = {'cloudflare': 'CLOUDFLARE_ACCOUNT_ID'}

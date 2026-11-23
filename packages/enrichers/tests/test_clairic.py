@@ -85,6 +85,20 @@ def test_discards_text_not_in_document(clairic):
     assert enrichment.action.spans == [(7, 15)] and enrichment.time.normalized is None
 
 
+def test_repeated_quote_keeps_occurrence_nearest_trigger(clairic):
+    # "Police" twice in the window (one quote, every occurrence returned): keep the one nearest the trigger,
+    # and don't count the other copy as discarded
+    doc = make_doc(TEXT)
+    m = make_mention(doc, 7, 15)
+    e = C(doc)
+    req, _ = request_of(e, doc, [m])
+    script(e, doc, [m], [{"m0_participants": [sp("Police", at(req.text, "Police")), sp("Police", at(req.text, "Police", 1))],
+                          "m0_location": [sp("Police", at(req.text, "Police")), sp("Police", at(req.text, "Police", 1))]}])
+    enrichment, discarded = next(iter(e.enrich_document(doc, [m]).values()))
+    assert enrichment.participants.spans == [(0, 6)] and enrichment.location.spans == [(0, 6)]
+    assert discarded["participants"] == 0 and discarded["location"] == 0
+
+
 def test_marker_offsets_removed(clairic):
     doc = make_doc(TEXT)
     m = make_mention(doc, 7, 15)
@@ -174,3 +188,23 @@ def test_different_documents_run_concurrently(clairic):
     [t.start() for t in threads]
     [t.join(10) for t in threads]
     assert errors == []
+
+
+@pytest.mark.skipif(not __import__("os").environ.get("WEAVE_CLAIRIC_URL"), reason="needs a running clairic service")
+def test_live_local_clairic_flash(db):
+    """Opt-in: the real model through the gateway. WEAVE_CLAIRIC_URL=http://127.0.0.1:8002"""
+    import os
+    from pathlib import Path
+    from weave_inference.catalog import load_catalog
+    cat = load_catalog(Path(__file__).resolve().parents[3] / "inference.yaml")
+    cat.providers["clairic-local"] = cat.providers["clairic-local"].model_copy(update={"base_url": os.environ["WEAVE_CLAIRIC_URL"]})
+    cat.readiness = {"clairic-flash@local": Readiness(ready=True)}
+    Inference.configure(cat, db)
+    clear_cache()
+    doc = make_doc(TEXT)
+    e = ClairicEnricher(ClairicSettings(), ctx())
+    e.ctx.deployments[Capability.extraction] = "clairic-flash@local"
+    e.load_document = lambda _id: doc
+    enrichment, discarded = next(iter(e.enrich_document(doc, [make_mention(doc, 7, 15)]).values()))
+    assert enrichment.action.text == "arrested" and enrichment.action.confidence > 0.5
+    assert enrichment.participants.text == "Police" and enrichment.time.text == "Monday"

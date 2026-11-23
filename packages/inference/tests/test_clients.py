@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from weave_inference.clients.chat import ChatClient
+from weave_inference.clients.clairic_local import ClairicLocalClient
 from weave_inference.clients.cloudflare import CloudflareClient
 from weave_inference.clients.embeddings import EmbeddingsClient
 from weave_inference.clients.openrouter import OpenRouterDecisionsClient
@@ -97,6 +98,18 @@ def test_cloudflare_system_one_and_extraction():
     assert (span.text, span.start, span.end, span.confidence) == ("Foro Indie", 10, 20, 0.95)
 
 
+def test_clairic_local_extraction():
+    c = ClairicLocalClient()
+    ex = ExtractionRequest(text="at Foro Indie", fields={"venue": "The venue."})
+    r = c.build(dep(), prov("clairic-local", "http://host.containers.internal:8002/"), ex, None)
+    assert str(r.url) == "http://host.containers.internal:8002/extract" and "authorization" not in r.headers
+    assert json.loads(r.content) == {"text": "at Foro Indie", "fields": {"venue": "The venue."}}
+    out, usage = c.parse(dep(), resp("clairic-local/extraction_response.json"))
+    span = out.fields["venue"][0]
+    assert (span.text, span.start, span.end, span.confidence) == ("Foro Indie", 3, 13, 0.95)
+    assert (usage.input_tokens, usage.output_tokens) == (40, 6)
+
+
 def test_chat_round_trip():
     c = ChatClient()
     req = ChatRequest(messages=[{"role": "user", "content": "x"}], max_tokens=50)
@@ -123,7 +136,7 @@ def test_embeddings_round_trip_orders_by_index():
     assert out.vectors == [[0.1, 0.2], [0.3, 0.4]] and usage.input_tokens == 8
 
 
-@pytest.mark.parametrize("client", [SystemOneClient(), OpenRouterDecisionsClient(), CloudflareClient(), ChatClient(), EmbeddingsClient()])
+@pytest.mark.parametrize("client", [SystemOneClient(), OpenRouterDecisionsClient(), CloudflareClient(), ClairicLocalClient(), ChatClient(), EmbeddingsClient()])
 @pytest.mark.parametrize("response", [httpx.Response(200, text="<html>"), httpx.Response(200, json={"unexpected": 1}), httpx.Response(200, json=[1])])
 def test_unparseable_response_is_provider_error_not_crash(client, response):
     with pytest.raises(ProviderError) as e:

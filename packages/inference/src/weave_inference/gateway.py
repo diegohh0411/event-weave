@@ -12,6 +12,7 @@ from weave_core.stages import Capability
 from .catalog import Catalog
 from .clients import WireClient
 from .clients.chat import ChatClient
+from .clients.clairic_local import ClairicLocalClient
 from .clients.cloudflare import CloudflareClient
 from .clients.embeddings import EmbeddingsClient
 from .clients.openrouter import OpenRouterDecisionsClient
@@ -32,6 +33,7 @@ _WIRE: dict[tuple[Capability, str], type[WireClient]] = {
     (Capability.system_one, "openrouter"): OpenRouterDecisionsClient,
     (Capability.system_one, "cloudflare"): CloudflareClient,
     (Capability.extraction, "cloudflare"): CloudflareClient,
+    (Capability.extraction, "clairic-local"): ClairicLocalClient,
     **{(Capability.llm, k): ChatClient for k in ("llamacpp", "openrouter", "openai")},
     **{(Capability.embeddings, k): EmbeddingsClient for k in ("llamacpp", "openrouter", "openai")},
 }
@@ -144,7 +146,7 @@ class Inference:
                 ) if many else [request]
         parts, attempts = [], 1
         try:
-            with httpx.Client(transport=self._transport) as client:
+            with httpx.Client(transport=self._transport, timeout=provider.timeout) as client:
                 for r, sub in zip(requests, subs):
                     response, n = send_with_retries(client, r, limiter, attempts=MAX_ATTEMPTS, sleep=lambda s: time.sleep(s))
                     attempts = max(attempts, n)

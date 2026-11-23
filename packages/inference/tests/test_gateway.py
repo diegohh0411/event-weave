@@ -172,6 +172,19 @@ def test_attempts_recorded_from_real_count(engine, run_id, monkeypatch):
     assert [(r.status, r.attempts) for r in rows(engine)] == [("error", 2)]
 
 
+def test_provider_timeout_reaches_the_http_request(engine, run_id, monkeypatch):
+    seen = []
+
+    def handler(r):
+        seen.append(r.extensions["timeout"]["read"])
+        return httpx.Response(400, text="x")
+    inf = _chat_inf(engine, run_id, monkeypatch, handler)
+    Inference._catalog.providers["or"] = Inference._catalog.providers["or"].model_copy(update={"timeout": 300.0})
+    with pytest.raises(ProviderError):
+        inf.chat(ChatRequest(messages=[{"role": "user", "content": "hi"}]))
+    assert seen == [300.0]
+
+
 def test_untyped_parse_failure_is_wrapped_in_provider_error(engine, run_id, monkeypatch):
     inf = _chat_inf(engine, run_id, monkeypatch, lambda r: httpx.Response(200, json={"unexpected": 1}))
     with pytest.raises(ProviderError):
